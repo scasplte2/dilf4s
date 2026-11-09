@@ -1,6 +1,7 @@
 /**
- * dilf4s signatures, key derivation, VRFs and key-evolving signatures. The normative specifications are
- * `docs/specs/signing.md`, `vrf.md` and `kes.md`; the conformance vectors in `shared/vectors` are part of them.
+ * dilf4s signatures, key derivation, VRFs, key-evolving signatures and sigma protocols. The normative specifications are
+ * `docs/specs/signing.md`, `vrf.md`, `kes.md` and `sigma.md`; the conformance vectors in `shared/vectors` are part of
+ * them.
  *
  * Malformed input (a wrong length, a key that does not decode) is a typed error; a well-formed input that fails
  * verification is `false`. An argument of the wrong type (from JavaScript, or a cast) is core's `TypeMismatch`, never a
@@ -10,7 +11,7 @@
  * (BIP32 and Icarus child keys, VRF and ristretto255 responses) is plain `bigint`. Verification is unaffected; sign
  * where an attacker can time you (a server, a shared host) with the Rust SDK, whose secret scalars are constant time.
  */
-export type { CryptoError, InvalidPath, KesError, KeyError, PathRefusal, VrfError } from "./errors.js";
+export type { CryptoError, InvalidPath, KesError, KeyError, PathRefusal, SigmaError, VrfError } from "./errors.js";
 export { Secret, Signature, SigningKey, VerifyingKey, type KeyPair, type SchemeName } from "./keys.js";
 export type { CryptoRefusal, SchemeCodec, SeedDerivation, Verifier } from "./scheme.js";
 export type { Bip39Refusal } from "./bip39.js";
@@ -40,3 +41,7 @@ export {
 
 export { ecvrfDraft03, ecvrfEll2, ecvrfTai, VrfOutput, VrfProof, type Vrf, type VrfSuiteName } from "./vrf.js";
 export { CardanoSumKes, CardanoSumKesKey, KesProduct, KesProductKey, KesSum, KesSumKey } from "./kes.js";
+
+/** Sigma protocols over secp256k1, byte-compatible with Ergo (`sigma.md`): `sigma.verify`, `sigma.Proposition`, ... */
+export * as sigma from "./sigma.js";
+export type { SigmaRefusal } from "./sigma.js";

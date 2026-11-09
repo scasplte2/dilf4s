@@ -71,8 +71,8 @@ A proposition is a canonical map per node, discriminated by `type`. Each type ta
 implementation refuses the same input with the same error. No check depends on a part of the value not yet reached,
 and no input is decoded in full before it is refused for its size.
 1. **Weight.** A value heavier than 7,900,416 is refused before anything is decoded. Weight is defined exactly in
-   `jlvm.md` §2, the table under **Weight**. Both implementations cache it on every value, so the check is O(1)
-   however much the value shares.
+   `jlvm.md` §2, the table under **Weight**. Every implementation (Scala, Rust and TypeScript) caches it on every
+   value, so the check is O(1) however much the value shares.
 2. **Each node, in pre-order, children in array order:**
    - it is a map; its `type` is one of the five; it has exactly its type's fields;
    - a leaf: refused if the proposition already has 4096 leaves. Then its points are decoded, `g`, `h`, `u`, `v` in
@@ -106,7 +106,7 @@ A proposition with `L` leaves and `C` connectives therefore weighs at most `158�
 - One tree meets both bounds: a `threshold` with `k = 1` over 255 more, which hold 4096 chains between them (16 hold
   17, the rest 16). Each chain is 61 one-child thresholds over a `dhtuple`, which sits at depth 64.
 
-The maximum is `158·4096 + 29·250,112` = 647,168 + 7,253,248 = **7,900,416**. The tests of both implementations
+The maximum is `158·4096 + 29·250,112` = 647,168 + 7,253,248 = **7,900,416**. The tests of every implementation
 decode that tree, and refuse a `dlog` that weighs 7,900,417 (a key of 7,900,402 bytes) for its weight, not its key.
 
 The verifier and the prover check every constraint again on the proposition they are given, rather than trust its

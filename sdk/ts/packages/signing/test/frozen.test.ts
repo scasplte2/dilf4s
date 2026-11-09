@@ -33,6 +33,7 @@ import {
   ristretto255Schnorr,
   secp256k1Ecdsa,
   Secret,
+  sigma,
   Signature,
   SigningKey,
   slip10Ed25519,
@@ -42,7 +43,7 @@ import {
   type KeyPair,
   type SchemeName,
 } from "../src/index.js";
-import type { Result } from "@kd5ujc/dilf4s-core";
+import { BytesValue, MapValue, TextValue, type Result, type Value } from "@kd5ujc/dilf4s-core";
 
 import * as keys from "../src/keys.js";
 import { expectOk } from "./vectors.js";
@@ -101,6 +102,16 @@ const message = Uint8Array.of(1, 2, 3);
 const ed = expectOk(ed25519.fromSeed(seed), "an Ed25519 key pair");
 const edSignature = expectOk(ed25519.sign(ed.signing, message), "an Ed25519 signature");
 
+/** `{"type": "dlog", "pk": G}`, the canonical form of a sigma proposition. */
+const dlogValue = (): Value =>
+  expectOk(
+    MapValue.of([
+      ["type", expectOk(TextValue.of("dlog"), "text")],
+      ["pk", expectOk(BytesValue.of(nobleSecp.secp256k1.Point.BASE.toBytes(true)), "bytes")],
+    ]),
+    "a map",
+  );
+
 /**
  * One instance of each class a caller is given, and what they hold. A key pair, or a proof with its output, is a fresh
  * object of the one caller's (as a result is), so the walk starts from what it holds.
@@ -129,6 +140,7 @@ function instances(): readonly unknown[] {
     product,
     expectOk(product.generate(seed), "a product key"),
     expectOk(CardanoSumKes.sum6.generate(seed), "a Cardano key"),
+    expectOk(sigma.Proposition.fromValue(dlogValue()), "a sigma proposition"),
   ];
 }
 
