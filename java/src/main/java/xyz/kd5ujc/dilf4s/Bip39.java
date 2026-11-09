@@ -11,10 +11,8 @@ import xyz.kd5ujc.dilf4s.internal.Signatures;
  * its bundled lists only in an effect ({@code WordList.load[F]}), so this layer takes the 2048 words (e.g. BIP-39's
  * {@code english.txt}) and checks them.
  *
- * <p>The 64-byte seed is not here: the reference's PBKDF2 ({@code Bip39.seed}) builds a lazy chain as deep as its 2048
- * rounds, and reading it overflows a small thread stack (448 KB does). The seed is PBKDF2-HMAC-SHA512 of the NFKD
- * phrase (its words joined by spaces) with the salt {@code "mnemonic"} + NFKD(passphrase), 2048 rounds, 64 bytes: JCA's
- * {@code PBKDF2WithHmacSHA512} computes it.
+ * <p>A phrase, a passphrase or a word holding a code point Unicode 15.0 does not assign (a lone surrogate included) is
+ * refused before it is normalised, so every SDK derives the same seed or the same refusal (signing.md section 2.1).
  */
 public final class Bip39 {
   private Bip39() {}
@@ -148,6 +146,20 @@ public final class Bip39 {
     public String toString() {
       return "Decoded(" + mnemonic + ", <entropy redacted>)";
     }
+  }
+
+  /**
+   * The 64-byte seed: PBKDF2-HMAC-SHA512 of the NFKD phrase (its words joined by spaces) with the salt {@code
+   * "mnemonic"} + NFKD(passphrase), 2048 rounds.
+   *
+   * @param mnemonic the mnemonic
+   * @param passphrase the passphrase ({@code ""} for none)
+   * @return the seed, or {@code InvalidPassphrase} for a passphrase holding a code point Unicode 15.0 does not assign
+   */
+  public static Result<byte[], KeyError> seed(Mnemonic mnemonic, String passphrase) {
+    return mnemonic == null || passphrase == null
+      ? Result.err(Wrap.nullArgument("a mnemonic and a passphrase"))
+      : Signatures.seed(mnemonic.scala, passphrase);
   }
 
   /**

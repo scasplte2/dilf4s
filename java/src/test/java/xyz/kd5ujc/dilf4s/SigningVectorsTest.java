@@ -12,6 +12,7 @@ import java.text.Normalizer;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.function.Executable;
 
 import xyz.kd5ujc.dilf4s.error.CryptoError;
 import xyz.kd5ujc.dilf4s.error.KesError;
+import xyz.kd5ujc.dilf4s.error.KeyError;
 import xyz.kd5ujc.dilf4s.error.SigmaError;
 import xyz.kd5ujc.dilf4s.error.VrfError;
 
@@ -112,25 +114,39 @@ public class SigningVectorsTest {
     }
   }
 
-  private static byte[] bip39Seed(Bip39.Mnemonic m, String passphrase) throws java.security.GeneralSecurityException {
-    final char[] phrase = Normalizer.normalize(String.join(" ", m.words()), Normalizer.Form.NFKD).toCharArray();
-    final byte[] salt = ("mnemonic" + Normalizer.normalize(passphrase, Normalizer.Form.NFKD)).getBytes(StandardCharsets.UTF_8);
-    return javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512").generateSecret(new javax.crypto.spec.PBEKeySpec(phrase, salt, 2048, 512)).getEncoded();
-  }
-
   @Test
   void bip39() throws IOException {
     final Bip39.WordList words = english();
     final List<Value.Map> rows = rows(signing, "bip39");
-    assertEquals(6, rows.size());
+    // a floor, so rows another change adds never break this test
+    assertTrue(rows.size() >= 7, rows.size() + " bip39 rows");
     assertAll(rows.stream().map(r -> () -> {
       final Bip39.Mnemonic m = ok(Bip39.toMnemonic(hexAt(r, "entropy"), words), "mnemonic");
       assertEquals(str(r, "mnemonic"), m.phrase(), "the phrase");
       final Bip39.Decoded d = ok(Bip39.toEntropy(str(r, "mnemonic"), words), "entropy");
       same(hexAt(r, "entropy"), d.entropy(), "the entropy");
-      // the seed is the caller's PBKDF2 (Bip39's documentation): the recipe it gives meets the vector
-      same(hexAt(r, "seed"), bip39Seed(m, str(r, "passphrase")), "the seed, by Bip39's recipe");
+      same(hexAt(r, "seed"), ok(Bip39.seed(m, str(r, "passphrase")), "seed"), "the seed");
     }));
+  }
+
+  /** The keyRefusals rows of BIP-39 phrases and passphrases holding a code point Unicode 15.0 does not assign. */
+  @Test
+  void bip39Refusals() throws IOException {
+    final Bip39.WordList words = english();
+    final List<Value.Map> rows = rows(signing, "keyRefusals").stream().filter(r -> str(r, "check").startsWith("bip39-")).toList();
+    assertTrue(rows.stream().anyMatch(r -> str(r, "check").equals("bip39-seed")), "bip39-seed rows");
+    assertAll(rows.stream().map(r -> () -> {
+      final Result<?, KeyError> got = switch (str(r, "check")) {
+        case "bip39-entropy" -> Bip39.toMnemonic(hexAt(r, "entropy"), words);
+        case "bip39-phrase" -> Bip39.toEntropy(str(r, "phrase"), words);
+        case "bip39-seed" -> Bip39.toEntropy(str(r, "phrase"), words).flatMap(d -> Bip39.seed(d.mnemonic(), str(r, "passphrase")));
+        default -> throw new AssertionError("unknown check " + str(r, "check"));
+      };
+      assertEquals(Optional.of(str(r, "kind")), got.failure().map(KeyError::kind), str(r, "check") + " " + str(r, "name"));
+    }));
+    // a lone surrogate, which JSON vectors cannot carry
+    final Bip39.Mnemonic m = ok(Bip39.toMnemonic(new byte[16], words), "mnemonic");
+    assertEquals(Optional.of("InvalidPassphrase"), Bip39.seed(m, "dilf4s\ud800").failure().map(KeyError::kind), "a lone surrogate");
   }
 
   /** Icarus's secret, PBKDF2-HMAC-SHA512(passphrase, entropy, 4096, 96), by BouncyCastle's generator (the caller's part). */

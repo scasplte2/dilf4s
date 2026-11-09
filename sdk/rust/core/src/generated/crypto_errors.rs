@@ -307,8 +307,9 @@ impl core::fmt::Display for KesErrorKind {
 
 /// `key-error` (`shared/schemas/crypto-errors.cddl`). An error family: its kinds are [`KeyErrorKind`].
 ///
-/// A key derivation the reference refuses (signing.md sections 2 and 3). InvalidPath carries the first rule the path
-/// breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
+/// A key derivation the reference refuses (signing.md sections 2 and 3). InvalidMnemonic, InvalidWordList and
+/// InvalidPassphrase include a phrase, a word or a passphrase holding a code point Unicode 15.0 does not assign
+/// (section 2.1). InvalidPath carries the first rule the path breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
 /// (a separator of more than one character is refused by its length, before it is read, and has none); the reference's
 /// word lists are its own languages', so it never names one.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -329,6 +330,11 @@ pub enum KeyError {
         reason: String,
         /// Its `separator`.
         separator: Option<c::Preview>,
+    },
+    /// The kind `InvalidPassphrase`.
+    InvalidPassphrase {
+        /// Its `reason`.
+        reason: String,
     },
     /// The kind `InvalidDerivation`.
     InvalidDerivation {
@@ -351,6 +357,7 @@ impl KeyError {
             Self::InvalidEntropy { .. } => KeyErrorKind::InvalidEntropy,
             Self::InvalidMnemonic { .. } => KeyErrorKind::InvalidMnemonic,
             Self::InvalidWordList { .. } => KeyErrorKind::InvalidWordList,
+            Self::InvalidPassphrase { .. } => KeyErrorKind::InvalidPassphrase,
             Self::InvalidDerivation { .. } => KeyErrorKind::InvalidDerivation,
             Self::InvalidPath { .. } => KeyErrorKind::InvalidPath,
         }
@@ -363,6 +370,7 @@ impl core::fmt::Display for KeyError {
             Self::InvalidEntropy { reason: a0 } => write!(f, "InvalidEntropy (reason: {a0})"),
             Self::InvalidMnemonic { reason: a0 } => write!(f, "InvalidMnemonic (reason: {a0})"),
             Self::InvalidWordList { reason: a0, separator: a1 } => write!(f, "InvalidWordList (reason: {a0}, separator: {a1:?})"),
+            Self::InvalidPassphrase { reason: a0 } => write!(f, "InvalidPassphrase (reason: {a0})"),
             Self::InvalidDerivation { reason: a0 } => write!(f, "InvalidDerivation (reason: {a0})"),
             Self::InvalidPath { refusal: a0, reason: a1 } => write!(f, "InvalidPath (refusal: {a0:?}, reason: {a1})"),
         }
@@ -380,6 +388,8 @@ pub enum KeyErrorKind {
     InvalidMnemonic,
     /// The text `InvalidWordList`.
     InvalidWordList,
+    /// The text `InvalidPassphrase`.
+    InvalidPassphrase,
     /// The text `InvalidDerivation`.
     InvalidDerivation,
     /// The text `InvalidPath`.
@@ -392,18 +402,20 @@ impl c::Model for KeyErrorKind {
             Self::InvalidEntropy => Ok(c::Value::text("InvalidEntropy")),
             Self::InvalidMnemonic => Ok(c::Value::text("InvalidMnemonic")),
             Self::InvalidWordList => Ok(c::Value::text("InvalidWordList")),
+            Self::InvalidPassphrase => Ok(c::Value::text("InvalidPassphrase")),
             Self::InvalidDerivation => Ok(c::Value::text("InvalidDerivation")),
             Self::InvalidPath => Ok(c::Value::text("InvalidPath")),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidDerivation", "InvalidPath"])? {
+        match c::select_alternative(value, &[], &["InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidPassphrase", "InvalidDerivation", "InvalidPath"])? {
             c::Alternative::Text(0) => Ok(Self::InvalidEntropy),
             c::Alternative::Text(1) => Ok(Self::InvalidMnemonic),
             c::Alternative::Text(2) => Ok(Self::InvalidWordList),
-            c::Alternative::Text(3) => Ok(Self::InvalidDerivation),
-            c::Alternative::Text(4) => Ok(Self::InvalidPath),
+            c::Alternative::Text(3) => Ok(Self::InvalidPassphrase),
+            c::Alternative::Text(4) => Ok(Self::InvalidDerivation),
+            c::Alternative::Text(5) => Ok(Self::InvalidPath),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -411,7 +423,7 @@ impl c::Model for KeyErrorKind {
 
 impl KeyErrorKind {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 5] = [Self::InvalidEntropy, Self::InvalidMnemonic, Self::InvalidWordList, Self::InvalidDerivation, Self::InvalidPath];
+    pub const ALL: [Self; 6] = [Self::InvalidEntropy, Self::InvalidMnemonic, Self::InvalidWordList, Self::InvalidPassphrase, Self::InvalidDerivation, Self::InvalidPath];
 }
 
 impl core::fmt::Display for KeyErrorKind {
@@ -420,6 +432,7 @@ impl core::fmt::Display for KeyErrorKind {
             Self::InvalidEntropy => f.write_str("InvalidEntropy"),
             Self::InvalidMnemonic => f.write_str("InvalidMnemonic"),
             Self::InvalidWordList => f.write_str("InvalidWordList"),
+            Self::InvalidPassphrase => f.write_str("InvalidPassphrase"),
             Self::InvalidDerivation => f.write_str("InvalidDerivation"),
             Self::InvalidPath => f.write_str("InvalidPath"),
         }

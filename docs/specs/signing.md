@@ -144,7 +144,16 @@ The backend is blst (`tech.pegasys:jblst`), which runs secret-key operations in 
 
 Entropy is 16, 20, 24, 28 or 32 bytes. Each mnemonic word encodes 11 bits of `entropy ‖ SHA-256(entropy)[0 : ENT/32 bits]`.
 
-- **Parsing:** NFKD-normalise, split on whitespace (including U+3000), and look each word up in the 2048-word list.
+- **Unicode:** NFKD is Unicode 15.0's. A phrase, a passphrase or a word of a caller's list holding a code point that
+  Unicode 15.0 does not assign (General_Category `Cn`, noncharacters included) or a lone surrogate is refused before
+  it is normalised: `InvalidMnemonic`, `InvalidPassphrase` and `InvalidWordList` respectively.
+  `shared/unicode/assigned-15.0.txt` lists the code points 15.0 assigns. Unicode's normalisation stability policy
+  keeps the NFKD of an assigned code point the same in every later version, so every runtime from 15.0 on derives the
+  same seed, and none derives one that another refuses or reads differently.
+- **Parsing:** NFKD-normalise, split on ASCII whitespace (U+0009–000D, U+0020) and U+3000, and look each word up in the
+  2048-word list.
+- **Word lists:** a caller's 2048 words are NFKD-normalised, and must be distinct, non-empty and free of separators
+  (`InvalidWordList`).
 - **Rejected:** wrong word counts, unknown words and checksum mismatches are all errors.
 - **Seed:** `PBKDF2-HMAC-SHA512(NFKD(words joined by " "), "mnemonic" ‖ NFKD(passphrase), 2048, 64)`.
 

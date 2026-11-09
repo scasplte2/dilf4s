@@ -51,12 +51,24 @@ final class WordList private (val language: Bip39.Language, val words: Vector[St
 
 object WordList {
 
-  def apply(language: Bip39.Language, words: Vector[String]): Either[KeyError, WordList] =
-    Either.cond(
-      words.size == 2048 && words.distinct.size == 2048,
-      new WordList(language, words),
-      KeyError.InvalidWordList(s"${language.name}: expected 2048 distinct words, got ${words.size}", None)
-    )
+  /**
+   * A list from 2048 words, each NFKD-normalised here, as the SDKs do: refused (`InvalidWordList`) unless every word
+   * holds only code points Unicode 15.0 assigns (signing.md section 2.1) and the normalised words are 2048 distinct,
+   * non-empty words without a separator.
+   */
+  def apply(language: Bip39.Language, words: Vector[String]): Either[KeyError, WordList] = {
+    def refused(reason: String): KeyError = KeyError.InvalidWordList(s"${language.name}: $reason", None)
+    for {
+      _ <- Either.cond(words.size == 2048, (), refused(s"expected 2048 words, got ${words.size}"))
+      _ <- Either.cond(words.forall(Unicode15.assignedText), (), refused("a word holds a code point Unicode 15.0 does not assign"))
+      normalised = words.map(Bip39.nfkd)
+      _ <- Either.cond(
+        normalised.distinct.size == 2048 && normalised.forall(w => w.nonEmpty && !w.exists(Bip39.isSeparator)),
+        (),
+        refused("expected 2048 distinct words without separators")
+      )
+    } yield new WordList(language, normalised)
+  }
 
   /** Loads a bundled word list (`bip-0039/<name>.txt`); reading a resource is an effect. */
   def load[F[_]: Sync](language: Bip39.Language): F[Either[KeyError, WordList]] =
@@ -94,7 +106,10 @@ object Bip39 {
     val d = new SHA256Digest(); val out = new Array[Byte](32); d.update(b.toArray, 0, b.size.toInt); d.doFinal(out, 0); ByteVector.view(out)
   }
 
-  private def nfkd(s: String): String = Normalizer.normalize(s, Normalizer.Form.NFKD)
+  private[keys] def nfkd(s: String): String = Normalizer.normalize(s, Normalizer.Form.NFKD)
+
+  /** What a phrase is split on: Java's `\s` (ASCII whitespace) and U+3000. */
+  private[keys] def isSeparator(c: Char): Boolean = c == ' ' || (c >= '\t' && c <= '\r') || c == '\u3000'
 
   /** 16, 20, 24, 28 or 32 bytes of entropy -> 12..24 words (ENT/32 checksum bits from SHA-256). */
   def toMnemonic(entropy: Secret, words: WordList): Either[KeyError, Mnemonic] = {
@@ -113,8 +128,16 @@ object Bip39 {
       (KeyError.InvalidEntropy(s"entropy must be 16..32 bytes in steps of 4, got $entropyBytes"): KeyError).asLeft[Mnemonic].pure[F]
     else R.nextBytes(entropyBytes).map(b => toMnemonic(Secret(ByteVector.view(b)), words))
 
-  /** Parses and validates a phrase (word count, membership, checksum), returning its entropy. */
-  def toEntropy(phrase: String, words: WordList): Either[KeyError, (Mnemonic, Secret)] = {
+  /**
+   * Parses and validates a phrase (its code points, word count, membership, checksum), returning its entropy. A phrase
+   * holding a code point Unicode 15.0 does not assign is `InvalidMnemonic` before it is normalised (signing.md 2.1).
+   */
+  def toEntropy(phrase: String, words: WordList): Either[KeyError, (Mnemonic, Secret)] =
+    Either
+      .cond(Unicode15.assignedText(phrase), (), KeyError.InvalidMnemonic("the phrase holds a code point Unicode 15.0 does not assign"))
+      .flatMap(_ => entropyOf(phrase, words))
+
+  private def entropyOf(phrase: String, words: WordList): Either[KeyError, (Mnemonic, Secret)] = {
     val tokens = nfkd(phrase).trim.split("[\\s　]+").toList.filter(_.nonEmpty)
     for {
       _ <- Either.cond(
@@ -134,13 +157,20 @@ object Bip39 {
     } yield (new Mnemonic(tokens, words.language), Secret(entropy))
   }
 
-  /** The 64-byte BIP-39 seed: PBKDF2-HMAC-SHA512(NFKD(mnemonic), "mnemonic" ++ NFKD(passphrase), 2048). */
-  def seed(mnemonic: Mnemonic, passphrase: String = ""): Secret =
-    Secret(
-      Hmac.pbkdf2Sha512Block(
-        ByteVector(nfkd(mnemonic.words.mkString(" ")).getBytes(UTF_8)),
-        ByteVector(("mnemonic" + nfkd(passphrase)).getBytes(UTF_8)),
-        2048
-      )
+  /**
+   * The 64-byte BIP-39 seed: PBKDF2-HMAC-SHA512(NFKD(mnemonic), "mnemonic" ++ NFKD(passphrase), 2048), or
+   * `InvalidPassphrase` for a passphrase holding a code point Unicode 15.0 does not assign (signing.md section 2.1).
+   */
+  def seed(mnemonic: Mnemonic, passphrase: String = ""): Either[KeyError, Secret] =
+    Either.cond(
+      Unicode15.assignedText(passphrase),
+      Secret(
+        Hmac.pbkdf2Sha512Block(
+          ByteVector(nfkd(mnemonic.words.mkString(" ")).getBytes(UTF_8)),
+          ByteVector(("mnemonic" + nfkd(passphrase)).getBytes(UTF_8)),
+          2048
+        )
+      ),
+      KeyError.InvalidPassphrase("the passphrase holds a code point Unicode 15.0 does not assign")
     )
 }

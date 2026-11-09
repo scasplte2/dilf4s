@@ -13,6 +13,8 @@ pub mod bip39;
 pub mod icarus;
 #[cfg(feature = "sign")]
 pub mod slip10;
+/// The code points Unicode 15.0 assigns, which BIP-39 accepts (signing.md section 2.1).
+pub mod unicode15;
 
 #[cfg(feature = "sign")]
 pub use extended::ExtendedKey;

@@ -501,6 +501,9 @@ const KeyCheckBip39Entropy KeyCheck = "bip39-entropy"
 // KeyCheckBip39Phrase is the text "bip39-phrase".
 const KeyCheckBip39Phrase KeyCheck = "bip39-phrase"
 
+// KeyCheckBip39Seed is the text "bip39-seed".
+const KeyCheckBip39Seed KeyCheck = "bip39-seed"
+
 // KeyCheckWordList is the text "word-list".
 const KeyCheckWordList KeyCheck = "word-list"
 
@@ -519,7 +522,7 @@ const KeyCheckIcarusPublic KeyCheck = "icarus-public"
 // Valid reports whether x is a member of KeyCheck.
 func (x KeyCheck) Valid() bool {
 	switch x {
-	case KeyCheckBip39Entropy, KeyCheckBip39Phrase, KeyCheckWordList, KeyCheckSlip10, KeyCheckBip32, KeyCheckBip32Public, KeyCheckIcarusPublic:
+	case KeyCheckBip39Entropy, KeyCheckBip39Phrase, KeyCheckBip39Seed, KeyCheckWordList, KeyCheckSlip10, KeyCheckBip32, KeyCheckBip32Public, KeyCheckIcarusPublic:
 		return true
 	}
 	return false
@@ -527,7 +530,7 @@ func (x KeyCheck) Valid() bool {
 
 // AllKeyCheck is every member of KeyCheck, in schema order: a fresh slice.
 func AllKeyCheck() []KeyCheck {
-	return []KeyCheck{KeyCheckBip39Entropy, KeyCheckBip39Phrase, KeyCheckWordList, KeyCheckSlip10, KeyCheckBip32, KeyCheckBip32Public, KeyCheckIcarusPublic}
+	return []KeyCheck{KeyCheckBip39Entropy, KeyCheckBip39Phrase, KeyCheckBip39Seed, KeyCheckWordList, KeyCheckSlip10, KeyCheckBip32, KeyCheckBip32Public, KeyCheckIcarusPublic}
 }
 
 // EncodeKeyCheck is the canonical value of x; a value that is not a member is a TypeMismatch.
@@ -707,7 +710,8 @@ func DecodeKeyPart(v core.Value) (KeyPart, error) {
 //
 // A key-derivation call the reference refuses, with its KeyError kind (signing.md sections 2 and 3). "check" names it:
 // "bip39-entropy" (BIP-39 entropy to a mnemonic: "entropy"), "bip39-phrase" (a phrase to its entropy, English list:
-// "phrase"), "word-list" (a word list from "words"), "slip10" and "bip32" (derivation from "seed" along "path"),
+// "phrase"), "bip39-seed" (a valid "phrase", English list, and "passphrase" to the seed), "word-list" (an English
+// word list from "words"), "slip10" and "bip32" (derivation from "seed" along "path"),
 // "bip32-public" and "icarus-public" (public derivation from "verifyingKey" and "chainCode" along "path"). Every
 // path given parses; a refused path is a "paths" row (InvalidPath).
 type KeyRefusal struct {
@@ -722,6 +726,9 @@ type KeyRefusal struct {
 
 	// Phrase is the `phrase` entry.
 	Phrase core.Optional[string]
+
+	// Passphrase is the `passphrase` entry.
+	Passphrase core.Optional[string]
 
 	// Words is the `words` entry.
 	Words core.Optional[[]string]
@@ -764,36 +771,40 @@ func EncodeKeyRefusal(x KeyRefusal, at core.Encoding) (core.Value, error) {
 	if err != nil {
 		return core.Value{}, err
 	}
-	f4, err := core.EncodeOptional(x.Words, inner, core.VecOf[string]{Lo: 0, Hi: -1, Enc: core.EncodeText, Dec: core.DecodeText}.Encode)
+	f4, err := core.EncodeOptional(x.Passphrase, inner, core.EncodeText)
 	if err != nil {
 		return core.Value{}, err
 	}
-	f5, err := core.EncodeOptional(x.Seed, inner, EncodeHex)
+	f5, err := core.EncodeOptional(x.Words, inner, core.VecOf[string]{Lo: 0, Hi: -1, Enc: core.EncodeText, Dec: core.DecodeText}.Encode)
 	if err != nil {
 		return core.Value{}, err
 	}
-	f6, err := core.EncodeOptional(x.VerifyingKey, inner, EncodeHex)
+	f6, err := core.EncodeOptional(x.Seed, inner, EncodeHex)
 	if err != nil {
 		return core.Value{}, err
 	}
-	f7, err := core.EncodeOptional(x.ChainCode, inner, EncodeHex)
+	f7, err := core.EncodeOptional(x.VerifyingKey, inner, EncodeHex)
 	if err != nil {
 		return core.Value{}, err
 	}
-	f8, err := core.EncodeOptional(x.Path, inner, core.EncodeText)
+	f8, err := core.EncodeOptional(x.ChainCode, inner, EncodeHex)
 	if err != nil {
 		return core.Value{}, err
 	}
-	f9, err := cryptoerrors.EncodeKeyErrorKind(x.Kind, inner)
+	f9, err := core.EncodeOptional(x.Path, inner, core.EncodeText)
 	if err != nil {
 		return core.Value{}, err
 	}
-	return inner.Record(core.Req("name", f0), core.Req("check", f1), core.Opt("entropy", f2), core.Opt("phrase", f3), core.Opt("words", f4), core.Opt("seed", f5), core.Opt("verifyingKey", f6), core.Opt("chainCode", f7), core.Opt("path", f8), core.Req("kind", f9))
+	f10, err := cryptoerrors.EncodeKeyErrorKind(x.Kind, inner)
+	if err != nil {
+		return core.Value{}, err
+	}
+	return inner.Record(core.Req("name", f0), core.Req("check", f1), core.Opt("entropy", f2), core.Opt("phrase", f3), core.Opt("passphrase", f4), core.Opt("words", f5), core.Opt("seed", f6), core.Opt("verifyingKey", f7), core.Opt("chainCode", f8), core.Opt("path", f9), core.Req("kind", f10))
 }
 
 // DecodeKeyRefusal is the KeyRefusal of v.
 func DecodeKeyRefusal(v core.Value) (KeyRefusal, error) {
-	f, err := core.RecordFields(v, "name", "check", "entropy", "phrase", "words", "seed", "verifyingKey", "chainCode", "path", "kind")
+	f, err := core.RecordFields(v, "name", "check", "entropy", "phrase", "passphrase", "words", "seed", "verifyingKey", "chainCode", "path", "kind")
 	if err != nil {
 		return KeyRefusal{}, err
 	}
@@ -813,31 +824,35 @@ func DecodeKeyRefusal(v core.Value) (KeyRefusal, error) {
 	if err != nil {
 		return KeyRefusal{}, err
 	}
-	f4, err := core.OptionalField(f, "words", core.VecOf[string]{Lo: 0, Hi: -1, Enc: core.EncodeText, Dec: core.DecodeText}.Decode)
+	f4, err := core.OptionalField(f, "passphrase", core.DecodeText)
 	if err != nil {
 		return KeyRefusal{}, err
 	}
-	f5, err := core.OptionalField(f, "seed", DecodeHex)
+	f5, err := core.OptionalField(f, "words", core.VecOf[string]{Lo: 0, Hi: -1, Enc: core.EncodeText, Dec: core.DecodeText}.Decode)
 	if err != nil {
 		return KeyRefusal{}, err
 	}
-	f6, err := core.OptionalField(f, "verifyingKey", DecodeHex)
+	f6, err := core.OptionalField(f, "seed", DecodeHex)
 	if err != nil {
 		return KeyRefusal{}, err
 	}
-	f7, err := core.OptionalField(f, "chainCode", DecodeHex)
+	f7, err := core.OptionalField(f, "verifyingKey", DecodeHex)
 	if err != nil {
 		return KeyRefusal{}, err
 	}
-	f8, err := core.OptionalField(f, "path", core.DecodeText)
+	f8, err := core.OptionalField(f, "chainCode", DecodeHex)
 	if err != nil {
 		return KeyRefusal{}, err
 	}
-	f9, err := core.Required(f, "kind", cryptoerrors.DecodeKeyErrorKind)
+	f9, err := core.OptionalField(f, "path", core.DecodeText)
 	if err != nil {
 		return KeyRefusal{}, err
 	}
-	return KeyRefusal{Name: f0, Check: f1, Entropy: f2, Phrase: f3, Words: f4, Seed: f5, VerifyingKey: f6, ChainCode: f7, Path: f8, Kind: f9}, nil
+	f10, err := core.Required(f, "kind", cryptoerrors.DecodeKeyErrorKind)
+	if err != nil {
+		return KeyRefusal{}, err
+	}
+	return KeyRefusal{Name: f0, Check: f1, Entropy: f2, Phrase: f3, Passphrase: f4, Words: f5, Seed: f6, VerifyingKey: f7, ChainCode: f8, Path: f9, Kind: f10}, nil
 }
 
 // PathCase is `path-case` (shared/schemas/signing-vectors.cddl).

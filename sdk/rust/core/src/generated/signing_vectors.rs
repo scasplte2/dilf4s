@@ -253,6 +253,8 @@ pub enum KeyCheck {
     Bip39Entropy,
     /// The text `bip39-phrase`.
     Bip39Phrase,
+    /// The text `bip39-seed`.
+    Bip39Seed,
     /// The text `word-list`.
     WordList,
     /// The text `slip10`.
@@ -270,6 +272,7 @@ impl c::Model for KeyCheck {
         match self {
             Self::Bip39Entropy => Ok(c::Value::text("bip39-entropy")),
             Self::Bip39Phrase => Ok(c::Value::text("bip39-phrase")),
+            Self::Bip39Seed => Ok(c::Value::text("bip39-seed")),
             Self::WordList => Ok(c::Value::text("word-list")),
             Self::Slip10 => Ok(c::Value::text("slip10")),
             Self::Bip32 => Ok(c::Value::text("bip32")),
@@ -279,14 +282,15 @@ impl c::Model for KeyCheck {
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["bip39-entropy", "bip39-phrase", "word-list", "slip10", "bip32", "bip32-public", "icarus-public"])? {
+        match c::select_alternative(value, &[], &["bip39-entropy", "bip39-phrase", "bip39-seed", "word-list", "slip10", "bip32", "bip32-public", "icarus-public"])? {
             c::Alternative::Text(0) => Ok(Self::Bip39Entropy),
             c::Alternative::Text(1) => Ok(Self::Bip39Phrase),
-            c::Alternative::Text(2) => Ok(Self::WordList),
-            c::Alternative::Text(3) => Ok(Self::Slip10),
-            c::Alternative::Text(4) => Ok(Self::Bip32),
-            c::Alternative::Text(5) => Ok(Self::Bip32Public),
-            c::Alternative::Text(6) => Ok(Self::IcarusPublic),
+            c::Alternative::Text(2) => Ok(Self::Bip39Seed),
+            c::Alternative::Text(3) => Ok(Self::WordList),
+            c::Alternative::Text(4) => Ok(Self::Slip10),
+            c::Alternative::Text(5) => Ok(Self::Bip32),
+            c::Alternative::Text(6) => Ok(Self::Bip32Public),
+            c::Alternative::Text(7) => Ok(Self::IcarusPublic),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -294,7 +298,7 @@ impl c::Model for KeyCheck {
 
 impl KeyCheck {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 7] = [Self::Bip39Entropy, Self::Bip39Phrase, Self::WordList, Self::Slip10, Self::Bip32, Self::Bip32Public, Self::IcarusPublic];
+    pub const ALL: [Self; 8] = [Self::Bip39Entropy, Self::Bip39Phrase, Self::Bip39Seed, Self::WordList, Self::Slip10, Self::Bip32, Self::Bip32Public, Self::IcarusPublic];
 }
 
 impl core::fmt::Display for KeyCheck {
@@ -302,6 +306,7 @@ impl core::fmt::Display for KeyCheck {
         match self {
             Self::Bip39Entropy => f.write_str("bip39-entropy"),
             Self::Bip39Phrase => f.write_str("bip39-phrase"),
+            Self::Bip39Seed => f.write_str("bip39-seed"),
             Self::WordList => f.write_str("word-list"),
             Self::Slip10 => f.write_str("slip10"),
             Self::Bip32 => f.write_str("bip32"),
@@ -440,7 +445,8 @@ impl core::fmt::Display for KeyPart {
 ///
 /// A key-derivation call the reference refuses, with its KeyError kind (signing.md sections 2 and 3). "check" names it:
 /// "bip39-entropy" (BIP-39 entropy to a mnemonic: "entropy"), "bip39-phrase" (a phrase to its entropy, English list:
-/// "phrase"), "word-list" (a word list from "words"), "slip10" and "bip32" (derivation from "seed" along "path"),
+/// "phrase"), "bip39-seed" (a valid "phrase", English list, and "passphrase" to the seed), "word-list" (an English
+/// word list from "words"), "slip10" and "bip32" (derivation from "seed" along "path"),
 /// "bip32-public" and "icarus-public" (public derivation from "verifyingKey" and "chainCode" along "path"). Every
 /// path given parses; a refused path is a "paths" row (InvalidPath).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -453,6 +459,8 @@ pub struct KeyRefusal {
     pub entropy: Option<Hex>,
     /// The `phrase` entry.
     pub phrase: Option<String>,
+    /// The `passphrase` entry.
+    pub passphrase: Option<String>,
     /// The `words` entry.
     pub words: Option<Vec<String>>,
     /// The `seed` entry.
@@ -475,6 +483,7 @@ impl c::Model for KeyRefusal {
             c::field("check", &c::ModelOf::<KeyCheck>::NEW, &self.check, inner)?,
             c::optional_field("entropy", &HEX, self.entropy.as_ref(), inner)?,
             c::optional_field("phrase", &c::Text, self.phrase.as_ref(), inner)?,
+            c::optional_field("passphrase", &c::Text, self.passphrase.as_ref(), inner)?,
             c::optional_field("words", &c::VecOf { element: c::Text, min: 0, max: None }, self.words.as_ref(), inner)?,
             c::optional_field("seed", &HEX, self.seed.as_ref(), inner)?,
             c::optional_field("verifyingKey", &HEX, self.verifying_key.as_ref(), inner)?,
@@ -485,18 +494,19 @@ impl c::Model for KeyRefusal {
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        let fields = c::Fields::of(value, &["name", "check", "entropy", "phrase", "words", "seed", "verifyingKey", "chainCode", "path", "kind"])?;
+        let fields = c::Fields::of(value, &["name", "check", "entropy", "phrase", "passphrase", "words", "seed", "verifyingKey", "chainCode", "path", "kind"])?;
         let f0 = fields.required("name", &c::Text)?;
         let f1 = fields.required("check", &c::ModelOf::<KeyCheck>::NEW)?;
         let f2 = fields.optional("entropy", &HEX)?;
         let f3 = fields.optional("phrase", &c::Text)?;
-        let f4 = fields.optional("words", &c::VecOf { element: c::Text, min: 0, max: None })?;
-        let f5 = fields.optional("seed", &HEX)?;
-        let f6 = fields.optional("verifyingKey", &HEX)?;
-        let f7 = fields.optional("chainCode", &HEX)?;
-        let f8 = fields.optional("path", &c::Text)?;
-        let f9 = fields.required("kind", &c::ModelOf::<super::crypto_errors::KeyErrorKind>::NEW)?;
-        Ok(Self { name: f0, check: f1, entropy: f2, phrase: f3, words: f4, seed: f5, verifying_key: f6, chain_code: f7, path: f8, kind: f9 })
+        let f4 = fields.optional("passphrase", &c::Text)?;
+        let f5 = fields.optional("words", &c::VecOf { element: c::Text, min: 0, max: None })?;
+        let f6 = fields.optional("seed", &HEX)?;
+        let f7 = fields.optional("verifyingKey", &HEX)?;
+        let f8 = fields.optional("chainCode", &HEX)?;
+        let f9 = fields.optional("path", &c::Text)?;
+        let f10 = fields.required("kind", &c::ModelOf::<super::crypto_errors::KeyErrorKind>::NEW)?;
+        Ok(Self { name: f0, check: f1, entropy: f2, phrase: f3, passphrase: f4, words: f5, seed: f6, verifying_key: f7, chain_code: f8, path: f9, kind: f10 })
     }
 }
 

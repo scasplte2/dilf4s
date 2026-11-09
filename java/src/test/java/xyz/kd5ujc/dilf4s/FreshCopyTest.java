@@ -62,7 +62,7 @@ public class FreshCopyTest {
     "VersionedTrie$State.lookup", "VersionedTrie$State.namespace", "VersionedTrie$State.range", "Zk.add", "Zk.mul", "Jlvm.encode",
     "Secp256k1.ecdsaSign", "Secp256k1.ecdsaPublicKey", "Secp256k1.ecdsaCheckVerifyingKey", "Secp256k1.bip340Sign",
     "Secp256k1.schnorrPublicKey", "Secp256k1.schnorrCheckVerifyingKey", "Secp256k1.taggedSign", "Bls.sign", "Bls.publicKey",
-    "Bls.checkVerifyingKey", "Bls.aggregate", "Bls.popProve", "Bls.eip2333Master", "Bls.eip2333Child"
+    "Bls.checkVerifyingKey", "Bls.aggregate", "Bls.popProve", "Bls.eip2333Master", "Bls.eip2333Child", "Bip39.seed"
   );
 
   @Test
@@ -93,7 +93,11 @@ public class FreshCopyTest {
     // r is the generator's x-coordinate, s is 1: a signature that recovers a key for any digest but 1
     final byte[] sig65 = V.hex("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798" + "00".repeat(31) + "01" + "1b");
     final byte[] digest = V.hex("00".repeat(31) + "02");
+    // any 2048 distinct words make a list
+    final Bip39.WordList words = V.ok(Bip39.wordList(Bip39.Language.ENGLISH, java.util.stream.IntStream.range(0, 2048).mapToObj(i -> "w" + i).toList()), "words");
+    final Bip39.Mnemonic mnemonic = V.ok(Bip39.toMnemonic(new byte[16], words), "mnemonic");
     assertAll(
+      fresh("Bip39.seed", () -> V.ok(Bip39.seed(mnemonic, ""), "x")),
       fresh("Cbor.encode", () -> V.ok(Cbor.encode(bytes), "x")),
       fresh("Cbor.encodeWithin", () -> V.ok(Cbor.encodeWithin(bytes, 100), "x")),
       fresh("ValueCommitment.bytes", () -> V.ok(ValueCommitment.bytes(bytes), "x")),

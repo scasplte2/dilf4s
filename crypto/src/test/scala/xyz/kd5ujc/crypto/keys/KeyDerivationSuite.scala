@@ -52,7 +52,7 @@ object KeyDerivationSuite extends SimpleIOSuite {
           expect
             .same(Right(phrase), mnemonic.map(_.phrase))
             .and(expect.same(Right(Secret(entropy)), Bip39.toEntropy(phrase, words).map(_._2)))
-            .and(expect.same(Right(seed), mnemonic.map(m => Bip39.seed(m, "TREZOR").bytes)))
+            .and(expect.same(Right(seed), mnemonic.flatMap(m => Bip39.seed(m, "TREZOR")).map(_.bytes)))
       }
     }
   }
@@ -86,8 +86,11 @@ object KeyDerivationSuite extends SimpleIOSuite {
           expect
             .same(Right(phrase.split("\u3000").map(nfkd).mkString("\u3000")), mnemonic.map(_.phrase))
             .and(expect.same(Right(Secret(entropy)), Bip39.toEntropy(phrase, words).map(_._2)))
-            .and(expect.same(Right(seed), Bip39.toEntropy(phrase, words).map { case (m, _) => Bip39.seed(m, japanesePassphrase).bytes }))
-            .and(expect.same(Right(seed), mnemonic.map(m => Bip39.seed(m, japanesePassphrase).bytes)))
+            .and(
+              expect
+                .same(Right(seed), Bip39.toEntropy(phrase, words).flatMap { case (m, _) => Bip39.seed(m, japanesePassphrase) }.map(_.bytes))
+            )
+            .and(expect.same(Right(seed), mnemonic.flatMap(m => Bip39.seed(m, japanesePassphrase)).map(_.bytes)))
       }
     }
   }

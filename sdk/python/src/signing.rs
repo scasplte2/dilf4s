@@ -688,7 +688,8 @@ fn mnemonic_to_seed(
         };
         let list = word_list(words)?.unwrap_or_else(bip39::WordList::english);
         let (m, _) = bip39::to_entropy(&p, &list).map_err(key_error(py))?;
-        Ok(py_bytes(py, py.detach(|| bip39::seed(&m, &pass)).expose()))
+        let seed = py.detach(|| bip39::seed(&m, &pass)).map_err(key_error(py))?;
+        Ok(py_bytes(py, seed.expose()))
     })
 }
 

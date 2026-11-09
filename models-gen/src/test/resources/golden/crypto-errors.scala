@@ -151,8 +151,9 @@ object KesErrorKind {
 /**
  * `key-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[KeyErrorKind]]).
  *
- * A key derivation the reference refuses (signing.md sections 2 and 3). InvalidPath carries the first rule the path
- * breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
+ * A key derivation the reference refuses (signing.md sections 2 and 3). InvalidMnemonic, InvalidWordList and
+ * InvalidPassphrase include a phrase, a word or a passphrase holding a code point Unicode 15.0 does not assign
+ * (section 2.1). InvalidPath carries the first rule the path breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
  * (a separator of more than one character is refused by its length, before it is read, and has none); the reference's
  * word lists are its own languages', so it never names one.
  */
@@ -175,6 +176,10 @@ object KeyError {
     def kind: KeyErrorKind = "InvalidWordList"
   }
 
+  final case class InvalidPassphrase(reason: String) extends KeyError {
+    def kind: KeyErrorKind = "InvalidPassphrase"
+  }
+
   final case class InvalidDerivation(reason: String) extends KeyError {
     def kind: KeyErrorKind = "InvalidDerivation"
   }
@@ -184,24 +189,25 @@ object KeyError {
   }
 }
 
-type KeyErrorKind = "InvalidEntropy" | "InvalidMnemonic" | "InvalidWordList" | "InvalidDerivation" | "InvalidPath"
+type KeyErrorKind = "InvalidEntropy" | "InvalidMnemonic" | "InvalidWordList" | "InvalidPassphrase" | "InvalidDerivation" | "InvalidPath"
 
 object KeyErrorKind {
   /** Every alternative, in schema order. */
-  val values: Vector[KeyErrorKind] = Vector("InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidDerivation", "InvalidPath")
+  val values: Vector[KeyErrorKind] = Vector("InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidPassphrase", "InvalidDerivation", "InvalidPath")
 
   lazy val codec: Codec[KeyErrorKind] = Codec(
     {
       case "InvalidEntropy" => Codec.literalText["InvalidEntropy"]("InvalidEntropy").encode("InvalidEntropy")
       case "InvalidMnemonic" => Codec.literalText["InvalidMnemonic"]("InvalidMnemonic").encode("InvalidMnemonic")
       case "InvalidWordList" => Codec.literalText["InvalidWordList"]("InvalidWordList").encode("InvalidWordList")
+      case "InvalidPassphrase" => Codec.literalText["InvalidPassphrase"]("InvalidPassphrase").encode("InvalidPassphrase")
       case "InvalidDerivation" => Codec.literalText["InvalidDerivation"]("InvalidDerivation").encode("InvalidDerivation")
       case "InvalidPath" => Codec.literalText["InvalidPath"]("InvalidPath").encode("InvalidPath")
     },
     (v: CanonicalValue) =>
       Codec.selectAlternative[KeyErrorKind](v, List(
 
-      ), List(("InvalidEntropy", "InvalidEntropy": KeyErrorKind), ("InvalidMnemonic", "InvalidMnemonic": KeyErrorKind), ("InvalidWordList", "InvalidWordList": KeyErrorKind), ("InvalidDerivation", "InvalidDerivation": KeyErrorKind), ("InvalidPath", "InvalidPath": KeyErrorKind)))
+      ), List(("InvalidEntropy", "InvalidEntropy": KeyErrorKind), ("InvalidMnemonic", "InvalidMnemonic": KeyErrorKind), ("InvalidWordList", "InvalidWordList": KeyErrorKind), ("InvalidPassphrase", "InvalidPassphrase": KeyErrorKind), ("InvalidDerivation", "InvalidDerivation": KeyErrorKind), ("InvalidPath", "InvalidPath": KeyErrorKind)))
   )
 }
 
