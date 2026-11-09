@@ -167,3 +167,11 @@ impl<K: VersionKey, H: Hasher> Replica<K, H> {
         Ok(())
     }
 }
+
+/// A copy that shares every node with the original: both tries are persistent, so a clone costs O(1) besides the
+/// configuration and the head, and a delta applied to it re-hashes only the paths it changes.
+impl<K: VersionKey + Clone, H: Hasher> Clone for Replica<K, H> {
+    fn clone(&self) -> Self {
+        Self { vt: self.vt.clone(), head: self.head.clone(), state: self.state.clone(), history: self.history.clone() }
+    }
+}

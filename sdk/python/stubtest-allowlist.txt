@@ -1,0 +1,2 @@
+# PyO3 writes the native module's __all__; the package's modules export the names, each with its own __all__
+dilf4s._native.__all__

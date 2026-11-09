@@ -1,0 +1,82 @@
+[build-system]
+requires = ["maturin==1.16.0"]
+build-backend = "maturin"
+
+[project]
+name = "dilf4s"
+version = "0.1.0"
+description = "dilf4s for Python: the canonical data model, signatures, proof verifiers and the JLVM, bound to the Rust SDK"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Rust",
+  "Typing :: Typed",
+]
+
+[dependency-groups]
+# Pinned; uv.lock pins what they pull in
+dev = [
+  "hypothesis==6.170.15",
+  "maturin==1.16.0",
+  "mypy==2.4.1",
+  "pytest==9.2.0",
+  "ruff==0.17.4",
+]
+
+[tool.uv]
+# uv only resolves and installs the tools: the package itself is built by maturin (see .github/workflows/ci.yml)
+package = false
+
+[tool.maturin]
+python-source = "python"
+module-name = "dilf4s._native"
+bindings = "pyo3"
+locked = true
+profile = "release"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["python", "tests", "tools"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "COM812",  # the formatter places trailing commas
+  "CPY001",  # the repository carries its licence once (LICENSE, NOTICE), not per file
+  "PYI021",  # the stubs carry the native module's docstrings, for editors
+  "D203",    # D211 is selected: no blank line before a class docstring
+  "D213",    # D212 is selected: a multi-line summary starts on the first line
+  "TD002",   # TODOs are not used
+  "TD003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, compare against literal vector values, and name their parameters after the vectors' fields
+"tests/**" = ["S101", "PLR2004", "D", "ANN401", "FBT", "PLR0911", "PLR0913", "C901", "PLR0912", "PLR0915", "SLF001", "E501"]
+# Generated from shared/schemas: one class per error kind, named as the schema names it
+# (and their unions are `TypeAlias` assignments, not `type` statements, so `isinstance` takes them)
+"python/dilf4s/errors/**" = ["N801", "E501", "D205", "D301", "D415", "D400", "A001", "A002", "A004", "UP040"]
+# The generator: a script that prints, and parses with many small branches
+"tools/**" = ["T201", "S105", "S603", "C901", "PLR0911", "PLR0912", "PLR0915"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["python", "tests", "tools"]
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool", "possibly-undefined"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_any_decorated = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+xfail_strict = true

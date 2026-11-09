@@ -1,0 +1,10 @@
+# The bindings crate's build, the virtual environment, the built extension and the tools' caches. Cargo.lock is
+# committed: the build is --locked.
+/target/
+/.venv/
+/.mypy_cache/
+/.ruff_cache/
+/.pytest_cache/
+/.hypothesis/
+__pycache__/
+*.so
