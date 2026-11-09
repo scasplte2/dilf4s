@@ -18,6 +18,7 @@ const ENTRY_POINTS: Readonly<Record<string, readonly string[]>> = {
   signing: ["."],
   proofs: ["."],
   jlvm: ["."],
+  mcp: ["."],
 };
 
 const workspace = fileURLToPath(new URL("../../..", import.meta.url));

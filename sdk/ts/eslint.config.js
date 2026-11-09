@@ -31,9 +31,10 @@ export default tseslint.config(
     },
   },
   {
-    // the two sanctioned catches, and only these files: signing's boundary around noble (which throws on adversarial
-    // bytes) and core's guard around Array.isArray (which throws on a revoked Proxy). A catch anywhere else fails lint.
-    files: ["packages/signing/src/internal/attempt.ts", "packages/core/src/guard.ts"],
+    // the three sanctioned catches, and only these files: signing's boundary around noble (which throws on adversarial
+    // bytes), core's guard around Array.isArray (which throws on a revoked Proxy), and the MCP server's stdio framing
+    // around JSON.parse (which has no form that does not throw). A catch anywhere else fails lint.
+    files: ["packages/signing/src/internal/attempt.ts", "packages/core/src/guard.ts", "packages/mcp/src/stdio.ts"],
     rules: {
       "no-restricted-syntax": ["error", { selector: "ThrowStatement", message: "Library code returns a Result; it never throws." }],
     },
