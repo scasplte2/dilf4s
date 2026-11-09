@@ -5,7 +5,7 @@
       "gasLimit": 16777216,
       "name": "contract multisig_wallet: 2 of 3 owners sign",
       "program": "{\"let\":[[[\"s\",{\"var\":\"state\"}],[\"c\",{\"var\":\"call\"}],[\"payload\",{\"keccak256\":{\"cat\":[{\"var\":\"$s.wallet\"},{\"int_to_bytes\":[{\"var\":\"$s.nonce\"},32]},{\"var\":\"$c.to\"},{\"int_to_bytes\":[{\"var\":\"$c.value\"},32]},{\"var\":\"$c.data\"}]}}],[\"digest\",{\"keccak256\":{\"cat\":[\"0x19457468657265756d205369676e6564204d6573736167653a0a3332\",{\"var\":\"$payload\"}]}}]],{\"if\":[{\"!=\":[{\"var\":\"$c.method\"},\"execute\"]},{\"object\":{\"reject\":\"unknown method\"}},{\"let\":[[[\"signers\",{\"unique\":{\"filter\":[{\"map\":[{\"var\":\"$c.signatures\"},{\"ecrecover\":[{\"var\":\"$digest\"},{\"var\":\"$current\"}]}]},{\"in\":[{\"var\":\"$current\"},{\"var\":\"$s.owners\"}]}]}}]],{\"if\":[{\">=\":[{\"count\":{\"var\":\"$signers\"}},{\"var\":\"$s.threshold\"}]},{\"state\":{\"set\":[{\"var\":\"$s\"},\"nonce\",{\"+\":[{\"var\":\"$s.nonce\"},1]}]},\"effects\":[{\"kind\":\"call\",\"to\":{\"var\":\"$c.to\"},\"value\":{\"var\":\"$c.value\"},\"data\":{\"var\":\"$c.data\"}}]},{\"object\":{\"reject\":\"too few distinct owners signed this transaction at this nonce\"}}]}]}]}]}",
-      "proofBytes": "4388a21c0000000000000000000000000000000000000000000000000000000000000000002f850ee998974d6cc00e50cd0814b098c05bfade466d28573240d057f2535200000000000000000000000000000000000000000000000000000000000000001b6c646b3ad35cc9d71386469880b10703877b33c1ff104eca554423ebbaaf521dc2a25685998aad47160eea8cd430826f6f2b4fb7bba4f4debaaed814b71ef5144d420e6e4e8b12369fbe1db91739cfcc233805975f5114a27492df97a3c60802aae4fe5414b467b6235b7db66ee5396b1e5901a76def3c0830738ccbe8a82e268f99d126babc34915e92d00231d3c6643154e7cf4f8d239233e6bc9307399b12614dce658618ea647756fbef07c627715cce01ee13bffbe185779374e4c73f1de40eba8b9622e7ecc17371e972dac10c9ab0bfb37517d19737c2eeaf67d87c0f61bf30d7b1b5fb5e1779a64c74bafcdee0553c21b3e6487e2cb0ae8adff092",
+      "proofBytes": "4388a21c0000000000000000000000000000000000000000000000000000000000000000002f850ee998974d6cc00e50cd0814b098c05bfade466d28573240d057f2535200000000000000000000000000000000000000000000000000000000000000002d77da27f9372da82861e895247dae1c51ef7115761bae65b3c6295c25cae4470ef2a44420f60bb92d41fa607ba9206f2c0e111a043bed32b370c0572af6e5722c3e7e90a07e6cbe3c3c104ba245ed0a3b5b36517c67b3f81ae668bfb7099c1e03ece87b122840a4d3ebd3793ce1e44d6126b82f32527810f9ded39063dec42f04256c3485757adceaf53f64d8f0a13d87cc1af9035bb71fd56bceab7e044d7c1bf806c6e30d407bba0e662891e552de909da06cf39a348b123f01ba91b667730b7370fbc798bfb28be9c8d3c9f62e6a7f63c0120b645768ddb8c8d104576bdc2b645b132077f8d64d926da733fb72137aed7ff79b4c7bc067cef9e670a5bb9f",
       "publicValues": "a965696e7075745820fd487ed5f4b6b2263c1054e9c27fd6b302ebd0589025e01c8d1dc8b91a39ebc367676173557365641a000112b2676f7574636f6d65a166726573756c745820bd3fa270960aaeb44a7c661e8866595dacbd7ef3b497f5af4687cead48404b086770726f6772616d582004291687bf285eaa3852c43b23f245106a308b7780fbaae44b7d22fc04652ddb6776657273696f6e016862696e64696e67735820e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575686761734c696d69741a01000000686c616e677561676501687363686564756c6501",
       "statement": {
         "bindings": "e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575",
@@ -168,8 +168,8 @@
     }
   ],
   "circuit": "v6.1.0",
-  "elfSha256": "0b0cb1908fbdeae6a0c1e1b983dc4e7a3b2d28878bf6496bf486e6b7963c6d53",
-  "programVKey": "00bc3f9b65fa2bdddd2f579c89bc3e7dba32adf7e4e82a9c3870d2b29ab4a9c8",
+  "elfSha256": "8c8903617dff2cb945b1e9bf5721c3f6ba93c012f02aa413803156576bfc8666",
+  "programVKey": "00cc21a4babfa18c4f61b0c5923d25986b94f7985ee4f400cdc3b1f7493f7927",
   "sp1": "v6.10.0",
   "spec": "docs/specs/zk-jlvm.md",
   "version": 1
