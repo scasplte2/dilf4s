@@ -3,21 +3,15 @@
  * program, the data and the host bindings (the first failure is the outcome, with no gas), add the bindings built with
  * shared parts, then evaluate with the case's gas limit (the file's when absent) and the latest schedule. Every case
  * must give the same value (canonical CBOR) or error (its kind, `op` and `cause`), the same gas and the same number of
- * warnings.
- *
- * Every section 6 operation runs, with the cause and gas the vectors pin, but three whose primitives the TypeScript SDK
- * lacks ({@link UNIMPLEMENTED}: sigma protocols and SP1's Groth16 verifier). A case whose evaluation reaches one of
- * those ends with `Unimplemented` there, after paying for it, and is skipped and listed by operation; a case reaching
- * any other operation as `Unimplemented` fails. Every other case, including those that name such an operation but fail
- * before reaching it, must pass.
+ * warnings. Every case runs: none is skipped.
  *
  * `JLVM_CASE=<substring>` runs only the matching cases and prints each outcome.
  */
 import { cbor, models, type Value } from "@kd5ujc/dilf4s-core";
 import { describe, expect, it } from "vitest";
 
-import { Bindings, CRYPTO_OPS, evaluate, fromCanonical, opNamed, parse, parseValue, siteOf, type CryptoOp, type EvalError, type JlvmError, type Outcome } from "../src/index.js";
-import { built, expectOk, hex, loadVectors, UNIMPLEMENTED } from "./vectors.js";
+import { Bindings, evaluate, fromCanonical, opNamed, parse, parseValue, siteOf, type JlvmError, type Outcome } from "../src/index.js";
+import { built, expectOk, hex, loadVectors } from "./vectors.js";
 
 type Case = models.jlvmVectors.JlvmCase;
 
@@ -68,47 +62,28 @@ function expected(c: Case): string {
 function actual(o: Outcome): string {
   if (o.result.ok) return `value ${hex(expectOk(cbor.encode(o.result.value), "encodes"))}`;
   const e = o.result.error;
-  return e.kind === "Unimplemented" ? `unimplemented ${e.op}` : `error ${e.kind} op ${siteOf(e) ?? "none"} cause ${cause(e)}`;
+  return `error ${e.kind} op ${siteOf(e) ?? "none"} cause ${cause(e)}`;
 }
 
-const isUnimplemented = (e: EvalError): e is Extract<EvalError, { kind: "Unimplemented" }> => e.kind === "Unimplemented";
-
 describe("jlvm_v1.json", { timeout: 600_000 }, () => {
-  it("every case not reaching an unimplemented operation gives the vector's outcome, gas and warnings", () => {
+  it("every case gives the vector's outcome, gas and warnings", () => {
     const filter = process.env["JLVM_CASE"];
     let passed = 0;
-    const skipped = new Map<CryptoOp, string[]>();
     const failures: string[] = [];
     for (const c of vectors.cases) {
       if (filter !== undefined && !c.name.includes(filter)) continue;
       const o = run(c, vectors.gasLimit);
       if (filter !== undefined) console.log(`${c.name}: ${actual(o)} gas ${o.gasUsed.toString()}`);
-      if (!o.result.ok && isUnimplemented(o.result.error)) {
-        const op = o.result.error.op;
-        // a case is skipped only where its program names the operation it reached, one the SDK has no primitive for
-        expect(c.program, `${c.name} reached ${op}`).toContain(`"${op}"`);
-        expect(UNIMPLEMENTED.has(op), `${c.name} reached ${op}, which is implemented`).toBe(true);
-        // the operation's own work is all that is left: its charges, and everything before them, were taken (an
-        // operation charges nothing once its size charge is paid), so the gas so far is at most the vector's, and is
-        // all of it when the operation itself refuses
-        if (o.gasUsed > c.gasUsed) failures.push(`gas ${c.name}: ${o.gasUsed.toString()} at ${op}, past the vector's ${c.gasUsed.toString()}`);
-        const refusedHere = "error" in c.outcome && c.outcome.op === op;
-        if (refusedHere && BigInt(o.gasUsed) !== c.gasUsed) failures.push(`gas ${c.name}: ${o.gasUsed.toString()} at ${op}, which refuses at the vector's ${c.gasUsed.toString()}`);
-        skipped.set(op, [...(skipped.get(op) ?? []), c.name]);
-        continue;
-      }
       const [want, got] = [expected(c), actual(o)];
       if (want !== got) failures.push(`outcome ${c.name}: want ${want}, got ${got} (${JSON.stringify(o.result.ok ? null : o.result.error)})`);
       else if (BigInt(o.gasUsed) !== c.gasUsed) failures.push(`gas ${c.name}: want ${c.gasUsed.toString()}, got ${o.gasUsed.toString()} (${got})`);
       else if (BigInt(o.warnings.length) !== c.warnings) failures.push(`warnings ${c.name}: want ${c.warnings.toString()}, got ${o.warnings.length.toString()}`);
       else passed++;
     }
-    const skips = [...skipped.values()].reduce((n, xs) => n + xs.length, 0);
-    console.log(`jlvm_v1.json: ${passed.toString()} of ${vectors.cases.length.toString()} cases pass; ${skips.toString()} reach an unimplemented operation and are skipped:`);
-    for (const op of CRYPTO_OPS.filter((o) => UNIMPLEMENTED.has(o))) console.log(`  ${op}: ${(skipped.get(op) ?? []).length.toString()}`);
+    console.log(`jlvm_v1.json: ${passed.toString()} of ${vectors.cases.length.toString()} cases pass`);
     for (const f of failures.slice(0, 60)) console.log(`  ${f}`);
     expect(failures, `${failures.length.toString()} cases differ`).toEqual([]);
-    if (filter === undefined) expect(passed + skips).toBe(vectors.cases.length);
+    if (filter === undefined) expect(passed).toBe(vectors.cases.length);
   });
 
   it("every canonical form is read as its row says, its refusals in the normative order (jlvm.md section 1)", () => {

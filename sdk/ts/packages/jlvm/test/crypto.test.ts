@@ -10,14 +10,14 @@ import { cbor, models } from "@kd5ujc/dilf4s-core";
 import { describe, expect, it } from "vitest";
 
 import { Bindings, evaluate, MAX_GAS_LIMIT, parse, parseValue, siteOf, type Outcome } from "../src/index.js";
-import { built, expectOk, hex, loadVectors, UNIMPLEMENTED } from "./vectors.js";
+import { built, expectOk, hex, loadVectors } from "./vectors.js";
 
 type Case = models.jlvmVectors.JlvmCase;
 
 const vectors = loadVectors("jlvm_v1.json", models.jlvmVectors.JlvmVectors);
 
 /** The operations whose arguments are, or hold, maps and arrays. */
-const CONTAINERS = ["merkle_verify", "merkle_consistency_verify", "trie_verify", "trie_prefix_verify", "trie_range_verify", "bls_aggregate_verify", "bn254_pairing", "pmt_verify", "poseidon", "ecvrf_verify"] as const;
+const CONTAINERS = ["merkle_verify", "merkle_consistency_verify", "trie_verify", "trie_prefix_verify", "trie_range_verify", "bls_aggregate_verify", "bn254_pairing", "pmt_verify", "poseidon", "ecvrf_verify", "sigma_verify"] as const;
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 
@@ -47,7 +47,7 @@ const cause = (e: { kind: string; cause?: { kind: string; error: { kind: string 
 function outcome(o: Outcome): string {
   if (o.result.ok) return `value ${hex(expectOk(cbor.encode(o.result.value), "encodes"))}`;
   const e = o.result.error;
-  return e.kind === "Unimplemented" ? `unimplemented ${e.op}` : `error ${e.kind} op ${siteOf(e) ?? "none"} cause ${cause(e)}`;
+  return `error ${e.kind} op ${siteOf(e) ?? "none"} cause ${cause(e)}`;
 }
 
 function expected(c: Case): string {
@@ -81,7 +81,6 @@ describe("section 6 operations on containers the machine built", { timeout: 600_
       if (original === undefined || outcome(original) !== expected(c)) continue;
       const again = run(c, JSON.stringify(rewrite(JSON.parse(c.program) as Json)));
       if (again === undefined) continue;
-      if (!again.result.ok && again.result.error.kind === "Unimplemented" && UNIMPLEMENTED.has(again.result.error.op)) continue;
       if (outcome(again) !== expected(c)) failures.push(`${c.name}: want ${expected(c)}, got ${outcome(again)}`);
       checked++;
     }

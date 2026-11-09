@@ -5,7 +5,7 @@
 import { err, type Err, type models } from "@kd5ujc/dilf4s-core";
 import { isResult, readGuarded } from "@kd5ujc/dilf4s-core/internal";
 
-import { opFromWire, type CryptoOp } from "./op.js";
+import { opFromWire } from "./op.js";
 
 /** A parse or evaluation failure (generated). */
 export type JlvmError = models.jlvmErrors.JlvmError;
@@ -15,21 +15,6 @@ export type JlvmErrorKind = models.jlvmErrors.JlvmErrorKind;
 
 /** Where an operation-level error arose: an operation's own wire name, or `var` (generated). */
 export type JlvmSite = models.jlvmErrors.JlvmSite;
-
-/**
- * A cryptographic or proof operation (jlvm.md section 6) that this package does not run yet (`sigma_verify`,
- * `schnorr_verify` and `groth16_verify`, whose primitives the TypeScript SDK lacks). The evaluation reached it: its
- * base, its arguments and its size charge were all paid, in the order section 7 gives, and it stopped there, where an
- * implementation calls the operation. It is not a language error, and no conforming evaluation ends with it.
- */
-export interface Unimplemented {
-  readonly kind: "Unimplemented";
-  /** The operation reached. */
-  readonly op: CryptoOp;
-}
-
-/** What an evaluation can end with instead of a value: a language error, or an operation not yet implemented. */
-export type EvalError = JlvmError | Unimplemented;
 
 export const malformed = (message: string): JlvmError => ({ kind: "Malformed", message });
 export const typeError = (op: JlvmSite, message: string): JlvmError => ({ kind: "Type", op, message });

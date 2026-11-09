@@ -64,24 +64,30 @@ entries' weights and depths would remove all three.
 
 `crypto.ts` checks each operation's arguments as the reference does (arity, kinds, fixed widths, canonical BN254
 scalars, Merkle heads, trie modes and keys, the claims' weight), in the reference's order, then calls `signing`,
-`proofs` and core's hashing: signatures, `ecrecover`, ECVRF, Poseidon and its Merkle tree, the BN254 group operations
-(`proofs`' `zk`, on noble's curve), Merkle trees and tries. A refusal a family made carries that family's typed error as
-its `cause`; the operations' own shape checks carry none. Gas is charged before a handler runs, so a refusal's gas is
-the vectors' too.
+`proofs` and core's hashing: signatures, `ecrecover`, sigma protocols (`signing`'s `sigma`), ECVRF, Poseidon and its
+Merkle tree, the BN254 group operations and SP1's Groth16 verifier (`proofs`' `zk` and `zk.groth16`, on noble's curve),
+Merkle trees and tries. A refusal a family made carries that family's typed error as its `cause`; the operations' own
+shape checks carry none. Gas is charged before a handler runs, so a refusal's gas is the vectors' too.
 
-Three operations are not implemented, because the TypeScript SDK has no primitive for them: `sigma_verify` and
-`schnorr_verify` (sigma protocols, `sigma.md`) and `groth16_verify` (SP1's Groth16 verifier, `zk.md` section 2). An
-evaluation that reaches one pays for it (its base, its arguments and its size charge, as section 7 orders them) and
-ends with `{ kind: "Unimplemented", op }`, from one place, `crypto.ts`'s table. The conformance test skips exactly the
-cases that reach one of these three, and lists them by operation; any other operation reached as `Unimplemented` fails
-it.
+Every operation runs: a handler's only outcomes are a value and a `JlvmError`, so a stub does not compile, and the
+conformance test runs every case, skipping none.
+
+- `sigma_verify` decodes the proposition first (`sigma.Proposition.fromValue`), then checks the proof's and the
+  message's kinds, then verifies (`sigma.verify`); `schnorr_verify` is `sigma.verifyDlogBytes` on its three byte
+  strings.
+- `groth16_verify` checks the key's width and the arguments' kinds, then verifies under SP1's verifying key (circuit
+  v6.1.0), decoded and checked once when the module loads, as the Rust backend holds it. A `Malformed` refusal is a
+  `Crypto` error caused by `Groth16`; a proof that SP1's framing rejects, that is invalid, or that fails the pairing
+  is `false`.
 
 ## Tests
 
 The package's tests are in `test/`:
 
 - `conformance.test.ts`: the vectors, the alias rows and the error-kind coverage.
-- `dispatch.test.ts`: one handler per operation, which three are unimplemented, and the spec's gas table.
+- `dispatch.test.ts`: one handler per operation, each running, and the spec's gas table.
+- `zk-jlvm.test.ts`: `shared/vectors/zk_jlvm_v1.json`: each call's statement and public values, and the pinned SP1
+  Groth16 proof through `groth16_verify`.
 - `crypto.test.ts`: the section 6 vectors rerun on arguments the machine built (its own maps and arrays).
 - `metering.test.ts`: the denial-of-service regressions.
 - `depth.test.ts`: no native stack growth at the depth limit.

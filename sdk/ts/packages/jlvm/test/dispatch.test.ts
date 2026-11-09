@@ -11,7 +11,7 @@ import { CRYPTO } from "../src/crypto.js";
 import { ALL_OPS, CRYPTO_OPS, evaluate, FORM_OPS, isCrypto, isForm, isStrict, NOT_A_JLVM_ERROR, opFromWire, opNamed, parse, SCHEDULE_V1, siteOf, type JlvmOp, type OpCost, type Rate, type SizeUnit } from "../src/index.js";
 import { Heap } from "../src/jvalue.js";
 import { STRICT } from "../src/ops.js";
-import { readRepoFile, UNIMPLEMENTED } from "./vectors.js";
+import { readRepoFile } from "./vectors.js";
 
 describe("dispatch", () => {
   it("the operations are exactly the generated JlvmOp's, each a form, strict or cryptographic, never two", () => {
@@ -42,20 +42,11 @@ describe("dispatch", () => {
     }
     for (const op of CRYPTO_OPS) {
       const r = CRYPTO[op]([], heap);
-      if (UNIMPLEMENTED.has(op)) expect(r, op).toEqual({ ok: false, error: { kind: "Unimplemented", op } });
-      // with no arguments, a cryptographic handler refuses at its own operation (no pairs is a pairing's true)
-      else if (!r.ok) expect(r.error.kind === "Unimplemented" ? r.error : { op: siteOf(r.error) }, op).toEqual({ op });
+      // with no arguments, every cryptographic handler runs and refuses the arity at its own operation (no pairs is a
+      // pairing's true): none is a stub, and the handler type admits no outcome but a value or a JLVM error
+      if (!r.ok) expect({ kind: r.error.kind, op: siteOf(r.error) }, op).toEqual({ kind: "Arity", op });
       else expect(op, "only bn254_pairing answers no arguments").toBe("bn254_pairing");
     }
-  });
-
-  it("every cryptographic operation runs but the three whose primitives the TypeScript SDK lacks", () => {
-    const missing = CRYPTO_OPS.filter((op) => {
-      const r = CRYPTO[op]([], new Heap());
-      return !r.ok && r.error.kind === "Unimplemented";
-    });
-    expect(missing).toEqual(CRYPTO_OPS.filter((op) => UNIMPLEMENTED.has(op)));
-    expect([...UNIMPLEMENTED].sort()).toEqual(["groth16_verify", "schnorr_verify", "sigma_verify"]);
   });
 
   it("the aliases name their operations, and are not wire names", () => {

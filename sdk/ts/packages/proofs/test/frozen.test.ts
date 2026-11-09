@@ -1,18 +1,18 @@
 // The proofs package's classes, their prototypes, its exported objects and tables (the trie's operations table, the
-// Poseidon tables, the version keys) and the refusals it shares are frozen when their modules load
+// Poseidon tables, the version keys, SP1's verifier) and the refusals it shares are frozen when their modules load
 // (canonical-encoding.md section 1, "Immutable models"), as core's are (core/test/frozen.test.ts, whose walk and write
 // attempts this repeats).
 import { readdirSync, readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
-import { Value } from "@kd5ujc/dilf4s-core";
+import { models, Value } from "@kd5ujc/dilf4s-core";
 
-import { merkle, poseidon, trie, versioned } from "../src/index.js";
+import { merkle, poseidon, trie, versioned, zk } from "../src/index.js";
 import { WIDTH3 } from "../src/poseidon-constants.js";
 import { Oversized } from "../src/check.js";
 import { TRIE } from "../src/trie-internal.js";
-import { expectOk } from "./vectors.js";
+import { bytes, expectOk, loadVectors } from "./vectors.js";
 
 /** `x` as a `T`, past the types, as a JavaScript caller passes it. */
 const bad = (x: unknown): never => x as never;
@@ -72,6 +72,11 @@ const poseidonRoot = expectOk(poseidon.computeRoot(leaf, poseidonProof), "its ro
 
 const vt = expectOk(versioned.VersionedTrie.of("SHA-256", versioned.VersionKey.long), "a versioned trie");
 
+const sp1Key = expectOk(zk.groth16.sp1.verifyingKey(), "SP1's verifying key");
+const [sp1Row] = loadVectors("zk_v1.json", models.zkVectors.ZkVectors).sp1Groth16;
+if (sp1Row === undefined) throw new Error("zk_v1.json has sp1Groth16 rows");
+const [programVKey, publicValues, proofBytes] = [bytes(sp1Row.programVKey), bytes(sp1Row.publicValues), bytes(sp1Row.proofBytes)];
+
 /** One instance of each class a caller is given, as the walk's further roots. */
 function instances(): readonly unknown[] {
   const tagged = expectOk(merkle.TaggedMerkleHashing.of("SHA-256"), "the tagged profile");
@@ -89,6 +94,7 @@ function instances(): readonly unknown[] {
     leaf,
     poseidonProof,
     vt,
+    sp1Key,
     expectOk(versioned.StateKey.parse("a/b"), "a state key"),
     expectOk(versioned.StateNamespace.parse("a"), "a namespace"),
     expectOk(versioned.Replica.empty(vt), "an empty replica"),
@@ -166,9 +172,13 @@ describe("no write to a proof class, its prototype or the package's tables chang
       poseidon.verifyInclusion(poseidon.Fr.zero, poseidonProof, poseidonRoot),
       expectOk(poseidon.hash([leaf]), "a hash").value,
       vt.checkValue(expectOk(versioned.StateKey.parse("a/b"), "a key"), Value.null),
+      zk.groth16.sp1.verifyWith(sp1Key, programVKey, publicValues, proofBytes),
+      zk.groth16.sp1.verifyWith(sp1Key, programVKey, new Uint8Array(1), proofBytes),
+      zk.groth16.sp1.verify(programVKey, publicValues, proofBytes),
     ];
     const before = probe();
     expect(before.slice(0, 4), "the verdicts").toEqual([{ ok: true, value: true }, { ok: true, value: false }, true, { ok: true, value: null }]);
+    expect(before.slice(-3), "SP1's verdicts").toEqual([{ ok: true, value: undefined }, { ok: false, error: { kind: "PairingCheckFailed" } }, { ok: true, value: undefined }]);
     const lie = (): unknown => ({ ok: true, value: true });
     const targets: readonly (readonly [string, object, PropertyKey, unknown])[] = [
       ["InclusionProof.prototype.path", merkle.InclusionProof.prototype, "path", []],
@@ -190,6 +200,10 @@ describe("no write to a proof class, its prototype or the package's tables chang
       ["a Poseidon table", WIDTH3, "partialRounds", 0],
       ["the version keys", versioned.VersionKey, "long", {}],
       ["StateKey.parse", versioned.StateKey, "parse", lie],
+      ["groth16.VerifyingKey.of", zk.groth16.VerifyingKey, "of", lie],
+      ["a verifying key's input count", sp1Key, "publicInputs", 0],
+      ["sp1.verifyWith", zk.groth16.sp1, "verifyWith", lie],
+      ["sp1.VK_ROOT", zk.groth16.sp1, "VK_ROOT", 0n],
     ];
     for (const m of ["strict", "sloppy"] as const) {
       for (const [what, t, k, x] of targets) {
@@ -214,6 +228,8 @@ describe("no shipped module gives a caller what builds a genuine instance", () =
       const path = [leafB];
       const inclusionForged = Reflect.construct(merkle.InclusionProof, [token, 0n, 2n, path]) as merkle.InclusionProof;
       expect(merkle.verifyInclusion(sha256, merkleRoot, leafA, inclusionForged), `an InclusionProof built with ${String(token)}`).toMatchObject({ ok: false, error: { kind: "TypeMismatch" } });
+      const keyForged = Reflect.construct(zk.groth16.VerifyingKey, [token, {}]) as zk.groth16.VerifyingKey;
+      expect(zk.groth16.sp1.verifyWith(keyForged, programVKey, publicValues, proofBytes), `a VerifyingKey built with ${String(token)}`).toMatchObject({ ok: false, error: { kind: "TypeMismatch" } });
     }
   });
 

@@ -43,7 +43,6 @@ describe("steps are linear in gas", { timeout: 600_000 }, () => {
       for (const [k, v] of c.env ?? []) env.push([k, expectOk(parseValue(v), "a binding")]);
       for (const [k, b] of c.built ?? []) env.push([k, built(b)]);
       const r = run(SCHEDULE_V1, root.value, d.value, expectOk(Bindings.of(env), "env"), Number(c.gasLimit ?? vectors.gasLimit));
-      if (!r.result.ok && r.result.error.kind === "Unimplemented") continue;
       expect(r.used, `${c.name}: the vector's gas`).toBe(Number(c.gasUsed));
       expect(r.steps, `${c.name}: ${r.steps.toString()} steps for ${r.used.toString()} gas`).toBeLessThanOrEqual(STEPS_PER_GAS * r.used + 2);
       worst = Math.max(worst, r.steps / Math.max(r.used, 1));

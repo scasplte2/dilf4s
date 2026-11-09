@@ -8,30 +8,26 @@
  * The JLVM checks what needs no cryptographic library: arity, kinds, fixed widths, canonical BN254 scalars, Merkle tree
  * heads, trie key modes and key lengths, the Merkle profile, and the claims' weight. The packages decode keys,
  * signatures and proofs, and verify. The checks interleave as the reference's do, so the first refusal is the same:
- * where the reference decodes a proof before checking a later argument's kind (`merkle_verify`'s RFC 6962 leaf), so
- * does this. A refusal that a family's library made is a `Crypto` error whose `cause` is that family's typed error
+ * where the reference decodes something before checking a later argument's kind (`sigma_verify`'s proposition,
+ * `merkle_verify`'s proof before its RFC 6962 leaf), so does this. A refusal that a family's library made is a `Crypto` error whose `cause` is that family's typed error
  * (jlvm.md section 3); the operations' own shape checks carry no cause, as the reference's do.
  *
  * Arguments are values the machine owns, so no caller bytes cross here: a byte string is read through core's
  * `bytesView`, uncopied, and measured before the packages copy it, so a fixed-width argument charged per argument (an
  * `ecrecover` signature, a `bls_aggregate_verify` key) is never copied past its width.
- *
- * Three operations are not implemented: `sigma_verify` and `schnorr_verify` (sigma protocols, `sigma.md`) and
- * `groth16_verify` (SP1's Groth16 verifier, `zk.md` section 2). The TypeScript SDK has neither primitive yet; they end
- * with {@link Unimplemented}, after paying for themselves.
  */
 import { BytesValue, MapValue, digestFromBytes, models, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
 import { bytesView } from "@kd5ujc/dilf4s-core/internal";
 import { MAX_PROOF_WEIGHT, merkle, poseidon, trie, zk } from "@kd5ujc/dilf4s-proofs";
-import { bip340, blsPop, ecrecover, ecvrfTai, ed25519, Message32, secp256k1Ecdsa, type VerifyingKey } from "@kd5ujc/dilf4s-signing";
+import { bip340, blsPop, ecrecover, ecvrfTai, ed25519, Message32, secp256k1Ecdsa, sigma, type VerifyingKey } from "@kd5ujc/dilf4s-signing";
 
-import { arity, domain, typeError, type JlvmError, type Unimplemented } from "./error.js";
+import { arity, domain, typeError, type JlvmError } from "./error.js";
 import type { AnyMap, Heap, JValue } from "./jvalue.js";
 import type { CryptoOp } from "./op.js";
 import { bad, bool, bounded, bytes as bytesResult, FALSE, good, kindName, TRUE, type Out } from "./values.js";
 
 /** A cryptographic operation's handler: its evaluated arguments, and the evaluation's heap. */
-export type CryptoHandler = (args: readonly JValue[], heap: Heap) => Out | { readonly ok: false; readonly error: Unimplemented };
+export type CryptoHandler = (args: readonly JValue[], heap: Heap) => Out;
 
 type Cause = models.jlvmErrors.JlvmCryptoCause;
 type Family = Cause["kind"];
@@ -216,7 +212,38 @@ const blsAggregate: CryptoHandler = (args) => {
   return r.ok ? good(bool(r.value)) : r;
 };
 
-// ------------------------------------------------------------------ Poseidon, VRF and BN254
+// ------------------------------------------------------------------ sigma protocols (sigma.md)
+
+/**
+ * `sigma_verify [proposition, proof, message]`: the proposition decoded first (its refusal is `Sigma`'s, whatever the
+ * later arguments' kinds), then the proof's and the message's kinds, then the proof checked.
+ */
+const sigmaVerify: CryptoHandler = (args, heap) => {
+  const op = "sigma_verify";
+  const [p, pf, m] = args;
+  if (args.length !== 3 || p === undefined || pf === undefined || m === undefined) return arityError(op, "takes [proposition, proof, message]", args);
+  const given = value(op, heap, p);
+  if (!given.ok) return given;
+  const proposition = from(op, "Sigma", sigma.Proposition.fromValue(given.value));
+  if (!proposition.ok) return proposition;
+  const proof = raw(op, pf);
+  if (!proof.ok) return proof;
+  const message = raw(op, m);
+  if (!message.ok) return message;
+  const r = from(op, "Sigma", sigma.verify(proposition.value, proof.value, message.value));
+  return r.ok ? good(bool(r.value)) : r;
+};
+
+/** `schnorr_verify [key33, message, proof56]`: a one-leaf `dlog` sigma proof (Ergo's P2PK signature), the key decoded first. */
+const schnorrVerify: CryptoHandler = (args) => {
+  const op = "schnorr_verify";
+  const t = triple(op, args);
+  if (!t.ok) return t;
+  const r = from(op, "Sigma", sigma.verifyDlogBytes(...t.value));
+  return r.ok ? good(bool(r.value)) : r;
+};
+
+// ------------------------------------------------------------------ Poseidon, Groth16, VRF and BN254
 
 /** `poseidon [x1, .., xn]` or `[[x1, .., xn]]`, `1 <= n <= 4`: 32 bytes. */
 const poseidonOp: CryptoHandler = (args) => {
@@ -277,6 +304,29 @@ const pmtVerify: CryptoHandler = (args) => {
   }
   const r = from(op, "PoseidonMerkle", poseidon.verifyInclusion(leaf.value, proof.value, root.value));
   return r.ok ? good(bool(r.value)) : r;
+};
+
+/** SP1's Groth16 verifying key (circuit v6.1.0), decoded and checked once, as the Rust backend holds it. */
+const SP1_KEY = zk.groth16.sp1.verifyingKey();
+
+/**
+ * `groth16_verify [vkey32, publicValues, proof]` (an SP1 Groth16 proof, zk.md section 2): a malformed key, framing or
+ * proof is `Groth16`'s refusal; a proof that is rejected, invalid or fails the pairing is false.
+ */
+const groth16Verify: CryptoHandler = (args) => {
+  const op = "groth16_verify";
+  const [k, pv, pf] = args;
+  if (args.length !== 3 || k === undefined || pv === undefined || pf === undefined) return arityError(op, "takes [vkey, publicValues, proof]", args);
+  const vkey = sized(op, "vkey", k, FIELD_BYTES);
+  if (!vkey.ok) return vkey;
+  const publicValues = raw(op, pv, "publicValues");
+  if (!publicValues.ok) return publicValues;
+  const proof = raw(op, pf, "proof");
+  if (!proof.ok) return proof;
+  if (!SP1_KEY.ok) return bad(crypto(op, "SP1's Groth16 verifying key is unavailable"));
+  const r = zk.groth16.sp1.verifyWith(SP1_KEY.value, vkey.value, publicValues.value, proof.value);
+  if (r.ok) return good(TRUE);
+  return r.error.kind === "Malformed" || r.error.kind === "TypeMismatch" ? bad(refused(op, "Groth16", r.error)) : good(FALSE);
 };
 
 /** `ecvrf_verify [pk32, alpha, proof80]` (ECVRF-EDWARDS25519-SHA512-TAI): `{valid: true, beta}` or `{valid: false}`. */
@@ -596,11 +646,6 @@ const trieRangeVerify: CryptoHandler = (args, heap) => {
 
 // ------------------------------------------------------------------ the table
 
-/** The outcome of an operation whose primitive the TypeScript SDK does not have yet. */
-const unimplemented =
-  (op: CryptoOp): CryptoHandler =>
-  () => ({ ok: false, error: { kind: "Unimplemented", op } });
-
 /** The cryptographic operations, one handler each. */
 export const CRYPTO: Readonly<Record<CryptoOp, CryptoHandler>> = Object.freeze({
   ed25519_verify: signature("ed25519_verify", ed25519.verifyBytes),
@@ -611,13 +656,13 @@ export const CRYPTO: Readonly<Record<CryptoOp, CryptoHandler>> = Object.freeze({
   bls_aggregate_verify: blsAggregate,
   poseidon: poseidonOp,
   pmt_verify: pmtVerify,
-  groth16_verify: unimplemented("groth16_verify"),
+  groth16_verify: groth16Verify,
   ecvrf_verify: ecvrfVerify,
   bn254_add: bn254Add,
   bn254_mul: bn254Mul,
   bn254_pairing: bn254Pairing,
-  schnorr_verify: unimplemented("schnorr_verify"),
-  sigma_verify: unimplemented("sigma_verify"),
+  schnorr_verify: schnorrVerify,
+  sigma_verify: sigmaVerify,
   merkle_verify: merkleVerify,
   merkle_consistency_verify: merkleConsistencyVerify,
   trie_verify: trieVerify,
