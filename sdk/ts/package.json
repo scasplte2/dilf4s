@@ -6,7 +6,8 @@
     "packages/core",
     "packages/signing",
     "packages/proofs",
-    "packages/jlvm"
+    "packages/jlvm",
+    "packages/mcp"
   ],
   "engines": {
     "node": ">=22.12"
