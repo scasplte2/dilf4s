@@ -33,7 +33,7 @@ lazy val commonScalacOptions = Seq(
   "-Wunused:all"
 )
 
-// Apache-2.0 section 4: every jar, sources and assemblies included, carries the licence, NOTICE and the licences it names
+// Apache-2.0 section 4: every jar (classes, sources, docs, assemblies) carries the licence, NOTICE and the licences it names
 lazy val licenceFiles = Def.setting {
   val root = (ThisBuild / baseDirectory).value
   Seq(root / "LICENSE" -> "META-INF/LICENSE", root / "NOTICE" -> "META-INF/NOTICE") ++
@@ -48,6 +48,7 @@ lazy val commonSettings = Seq(
     licenceFiles.value.map { case (from, to) => IO.copyFile(from, out / to); out / to }
   }.taskValue,
   Compile / packageSrc / mappings ++= licenceFiles.value,
+  Compile / packageDoc / mappings ++= licenceFiles.value,
   resolvers += Resolver.mavenLocal,
   // Hyperledger Besu's native libraries are not on Maven Central; the pinned copies are vendored here (vendor/README.md)
   resolvers += MavenRepository("dilf4s-vendor", ((ThisBuild / baseDirectory).value / "vendor" / "maven").toURI.toString),
