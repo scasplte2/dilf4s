@@ -598,9 +598,8 @@ fn listing(op: Op, args: Vec<Value>) -> Result<Value> {
         }
         let m = record(op, v)?;
         // the map keeps canonical order (shorter keys first); these list in code-point order, the order of UTF-8
-        // bytes. Keys and values are shared, not copied
-        let mut entries: Vec<(&Text, &Value)> = m.entries().collect();
-        entries.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
+        // bytes, derived from it in time linear in the map's weight. Keys and values are shared, not copied
+        let entries = m.code_point_entries();
         let key = |k: &Text| bounded(op.wire(), Value::Text(k.clone()));
         match op {
             Op::Keys => {

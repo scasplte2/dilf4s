@@ -433,10 +433,12 @@ impl From<CanonicalError> for RenderError {
 /// Fails for bytes, non-terminating rationals and over-long numbers, and with `TooLarge` at the first part found past
 /// the limit, whichever comes first. Never recursive: its explicit stack holds at most [`MAX_DEPTH`] open containers.
 ///
-/// O(min(weight, `max_bytes`)) apart from sorting object members: a value's JSON is at least as long in UTF-8 as its
-/// weight (each node writes at least a byte, a text or key its UTF-8 and quotes, a number of `l` whole limbs more than
-/// `l` digits), so each part is refused in O(1) when its weight is over what is left, and every part written fits;
-/// escaped text is counted before it is written. There is no render without a limit.
+/// O(min(weight, `max_bytes`)): a value's JSON is at least as long in UTF-8 as its weight (each node writes at least a
+/// byte, a text or key its UTF-8 and quotes, a number of `l` whole limbs more than `l` digits), so each part is refused
+/// in O(1) when its weight is over what is left, and every part written fits; escaped text is counted before it is
+/// written. An object's members are put in code-point order when it is opened, in time linear in its weight
+/// ([`Map::code_point_entries`](crate::Map::code_point_entries)), and only an object that fits is opened. There is no
+/// render without a limit.
 pub fn render_within(value: &Value, max_bytes: usize) -> Result<String, RenderError> {
     let mut out = Budget { out: String::new(), used: 0, max: max_bytes };
     write_json(&mut out, value)?;
@@ -541,10 +543,7 @@ fn write_json<O: TextOut>(out: &mut Budget<O>, value: &Value) -> Result<(), Rend
             }
             Some(Value::Map(m)) => {
                 out.push("{")?;
-                // Rust orders str by bytes, which for UTF-8 is code-point order
-                let mut members: Vec<(&Text, &Value)> = m.entries().collect();
-                members.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
-                stack.push(Open::Members { members: members.into_iter(), started: false });
+                stack.push(Open::Members { members: m.code_point_entries().into_iter(), started: false });
             }
             None => {}
         }

@@ -59,6 +59,13 @@ object CanonicalEntries {
     def values: Vector[A] = e.valuesIterator.toVector
     def toList: List[(String, A)] = e.toList
     def toVector: Vector[(String, A)] = e.toVector
+
+    /**
+     * The entries in code-point order of their keys, the order of their UTF-8 bytes alone: the order JSON writes an
+     * object's members in and the JLVM lists them in. Linear in the map's weight, whatever the keys ([[CodePointOrder]]).
+     */
+    def codePointOrdered: Vector[(String, A)] = CodePointOrder.sorted(e.toVector)
+
     def foldLeft[B](z: B)(op: (B, (String, A)) => B): B = e.foldLeft(z)(op)
     def forall(p:      ((String, A)) => Boolean): Boolean = e.forall(p)
     def exists(p:      ((String, A)) => Boolean): Boolean = e.exists(p)

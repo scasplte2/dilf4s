@@ -5,7 +5,7 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{CanonicalEntries, CanonicalValue, Cbor}
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor, CodePointOrder}
 import xyz.kd5ujc.numerics.Ratio
 
 import scodec.bits.ByteVector
@@ -152,21 +152,8 @@ object Values {
       case _                                               => JlvmError.Type(op, s"cannot order ${kind(a)} and ${kind(b)}").asLeft
     }
 
-  def compareCodePoints(x: String, y: String): Int = {
-    @tailrec
-    def go(i: Int): Int =
-      if (i >= x.length || i >= y.length) Integer.compare(x.length, y.length)
-      else if (x.charAt(i) == y.charAt(i)) go(i + 1)
-      else Integer.compare(codePointRank(x.charAt(i)), codePointRank(y.charAt(i)))
-    go(0)
-  }
-
-  /**
-   * UTF-16 units ranked so that comparing them at the first difference gives code-point order (ICU's fix-up): only a
-   * surrogate, which starts a code point above U+FFFF, can meet a unit in U+E000..U+FFFF out of order, so surrogates
-   * move above that range.
-   */
-  private def codePointRank(c: Char): Int = if (c < 0xd800) c.toInt else if (c < 0xe000) c + 0x2000 else c - 0x800
+  /** Code-point order, read as UTF-16 units ranked at the first difference (`CodePointOrder.rank`). */
+  def compareCodePoints(x: String, y: String): Int = CodePointOrder.compare(x, y)
 
   def codePoints(s:       String): Vector[Int] = s.codePoints().toArray.toVector
   def fromCodePoints(cps: Vector[Int]): String = new String(cps.toArray, 0, cps.size)
@@ -194,10 +181,6 @@ object Values {
     val from = start(0)
     s.substring(from, end(s.length, from))
   }
-
-  /** Map keys in Unicode code-point order (the order of `keys`, `values` and `entries`). */
-  def sortedKeys(m: CanonicalEntries[CanonicalValue]): List[String] =
-    m.keys.toList.sortWith((a, b) => compareCodePoints(a, b) < 0)
 
   /**
    * The bits of a number's decimal expansion, bounded from its size alone: the numerator's bits for an integer; for a

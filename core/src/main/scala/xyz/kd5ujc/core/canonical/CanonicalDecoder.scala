@@ -129,7 +129,7 @@ object CanonicalDecoder {
   }
 
   // the canonical order of encoded keys; each comparison measures both keys, so finding the least is linear in them
-  private val CanonicalKeyOrder: Ordering[String] = Ordering.by[String, Long](Utf16.utf8Length).orElse(CanonicalJson.CodePointOrder)
+  private val CanonicalKeyOrder: Ordering[String] = Ordering.by[String, Long](Utf16.utf8Length).orElse(CodePointOrder)
 
   /** The keys present in a map value, for choosing between record alternatives. */
   def keysOf(value: CanonicalValue): Option[CanonicalKeys] = value match {

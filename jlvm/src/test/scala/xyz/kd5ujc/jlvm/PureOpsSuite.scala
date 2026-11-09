@@ -584,4 +584,32 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
       )
       .and(expect.same(ok(a(t(""), t("e"), t("e\u0301"), t("\u00e9"))), run(Op.Keys, unnormalised)))
   }
+
+  /** Code-point order, independently: the keys' UTF-8 bytes, unsigned. */
+  private val utf8Order: Ordering[String] = (x, y) => java.util.Arrays.compareUnsigned(x.getBytes(UTF_8), y.getBytes(UTF_8))
+
+  /** keys, values and entries of the map of `ks` (each key to its index), against the keys sorted by their UTF-8. */
+  private def listsInOrder(ks: Vector[String]): weaver.Expectations = {
+    val o = m(ks.zipWithIndex.map((k, n) => k -> i(n.toLong))*)
+    val sorted = ks.zipWithIndex.sortBy(_._1)(using utf8Order)
+    expect
+      .same(ok(a(sorted.map((k, _) => t(k))*)), run(Op.Keys, o))
+      .and(expect.same(ok(a(sorted.map((_, n) => i(n.toLong))*)), run(Op.Values, o)))
+      .and(expect.same(ok(a(sorted.map((k, n) => a(t(k), i(n.toLong)))*)), run(Op.Entries, o)))
+  }
+
+  test("keys, values and entries list any map in the order of its keys' UTF-8 bytes, each key with its value") {
+    // either side of every UTF-8 width boundary and of the surrogate range, prefixes and the empty key
+    val char = Gen.oneOf("a", "b", "\u007f", "\u0080", "\u07ff", "\u0800", "\ud7ff", "\ue000", "\uffff", "\ud800\udc00", "\udbff\udfff")
+    val key = Gen.choose(0, 5).flatMap(l => Gen.listOfN(l, char).map(_.mkString))
+    forall(Gen.listOf(key).map(_.distinct.toVector))(listsInOrder)
+  }
+
+  pureTest("keys, values and entries list a map whose UTF-16 and code-point orders turn under a long shared prefix") {
+    // every string of 1 to 6 letters of a, U+E000 and U+10000 after a 256-unit prefix: UTF-16 order puts U+10000 (a
+    // surrogate pair) first of the two, code-point order last, so the map's own order turns under every shared node
+    val letters = Vector("a", "\ue000", "\ud800\udc00")
+    val suffixes = (1 to 6).scanLeft(Vector(""))((level, _) => level.flatMap(s => letters.map(s + _))).flatten.drop(1)
+    listsInOrder(suffixes.map("p" * 256 + _).toVector)
+  }
 }

@@ -1,5 +1,7 @@
 package xyz.kd5ujc.core.canonical
 
+import java.nio.charset.StandardCharsets.UTF_8
+
 import cats.Eval
 import cats.syntax.all._
 
@@ -25,6 +27,9 @@ object JsonRenderSuite extends SimpleIOSuite with Checkers {
 
   private def counted(v: CanonicalValue, maxBytes: Long = CanonicalJson.MaxRenderBytes): Either[RenderError, Count] =
     CanonicalJson.renderInto(v, maxBytes, Count(0L, 0L, 0))
+
+  /** Code-point order as the order of the keys' UTF-8 bytes, read as unsigned: independent of the renderer's. */
+  private val Utf8Order: Ordering[String] = (a, b) => java.util.Arrays.compareUnsigned(a.getBytes(UTF_8), b.getBytes(UTF_8))
 
   /**
    * The renderer before it was one pass: each level built its children's strings and joined them, so a character was
@@ -54,7 +59,7 @@ object JsonRenderSuite extends SimpleIOSuite with Checkers {
         case CArray(vs)   => Eval.defer(vs.traverse(go)).map(_.sequence.map(_.mkString("[", ",", "]")))
         case CMap(m) =>
           Eval
-            .defer(m.toVector.sortBy(_._1)(using CanonicalJson.CodePointOrder).traverse {
+            .defer(m.toVector.sortBy(_._1)(using Utf8Order).traverse {
               case (k, x) => go(x).map(_.map(quote(k) + ":" + _))
             })
             .map(_.sequence.map(_.mkString("{", ",", "}")))
