@@ -42,4 +42,4 @@ Contributions are welcome! If you would like to contribute to this project, plea
 6. Create a new Pull Request.
 
 ## License
-dilf4s is licensed under the Apache License, Version 2.0 (see LICENSE). Two source files and five test-vector files adapted from MPL-2.0 projects stay under the Mozilla Public License 2.0 (see LICENSES/MPL-2.0.txt); NOTICE lists them.
+dilf4s is licensed under the Apache License, Version 2.0 (see LICENSE). Two source files and five test-vector files adapted from MPL-2.0 projects stay under the Mozilla Public License 2.0, and third-party word lists and test data keep their own licences; NOTICE lists them, and LICENSES holds each licence's text.

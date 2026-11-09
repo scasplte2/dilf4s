@@ -1,7 +1,7 @@
 dilf4s
 Copyright (c) James Aman and contributors.
-Licensed under the Apache License, Version 2.0 (see LICENSE), except the files listed under the Mozilla Public
-License below.
+Licensed under the Apache License, Version 2.0 (see LICENSE), except the files listed below under another licence,
+whose text is in LICENSES.
 
 This product includes or adapts material from the following projects.
 Adapted files keep their original notices; entries are added as material is ported.
@@ -21,10 +21,16 @@ Other licences:
 
 - Topl Bifrost (https://github.com/Topl/Bifrost), MPL-2.0: the KES sum and product composition design, which
   crypto/src/main/scala/xyz/kd5ujc/crypto/kes/MerkleKes.scala implements.
-- BIP-39 word lists (https://github.com/bitcoin/bips/tree/master/bip-0039), MIT:
-  crypto/src/main/resources/bip-0039, sdk/rust/signing/src/keys/bip39-english.txt and
+- BIP-39 word lists (https://github.com/bitcoin/bips/tree/master/bip-0039), MIT, with its notice in
+  LICENSES/MIT-BIP-39.txt: crypto/src/main/resources/bip-0039, sdk/rust/signing/src/keys/bip39-english.txt and
   sdk/ts/packages/signing/src/wordlists/english.ts.
+- go-ethereum (https://github.com/ethereum/go-ethereum) precompile test vectors (core/vm/testdata/precompiles),
+  LGPL-3.0 (LICENSES/LGPL-3.0.txt, which supplements LICENSES/GPL-3.0.txt): docs/test-vectors/zk/bn256Add.json,
+  bn256ScalarMul.json and bn256Pairing.json, and the rows of shared/vectors/zk_v1.json named "go-ethereum ..." that
+  are made from them. Test data only: tests and the SP1 conformance host read them, and no published artifact holds
+  them.
 - metakit (https://github.com/Constellation-Labs/metakit), Apache-2.0:
   JLVM conformance programs adapted from its json_logic tests and shared vectors
   (jlvm/src/test/resources/vectors/jlvm_cases.json, shared/vectors/jlvm_v1.json,
-  jlvm/src/test/resources/vectors/jlvm_zk_from_metakit.json).
+  jlvm/src/test/resources/vectors/jlvm_zk_from_metakit.json), and its SP1 Groth16 proofs
+  (docs/test-vectors/zk/sp1-groth16-premium.json and sp1-groth16-shielded.json).

@@ -33,15 +33,20 @@ lazy val commonScalacOptions = Seq(
   "-Wunused:all"
 )
 
-// Apache-2.0 section 4: every published jar carries the licence and NOTICE, and the MPL for the files NOTICE lists
+// Apache-2.0 section 4: every jar, sources and assemblies included, carries the licence, NOTICE and the licences it names
 lazy val licenceFiles = Def.setting {
   val root = (ThisBuild / baseDirectory).value
-  Seq(root / "LICENSE" -> "META-INF/LICENSE", root / "NOTICE" -> "META-INF/NOTICE", root / "LICENSES" / "MPL-2.0.txt" -> "META-INF/LICENSES/MPL-2.0.txt")
+  Seq(root / "LICENSE" -> "META-INF/LICENSE", root / "NOTICE" -> "META-INF/NOTICE") ++
+    IO.listFiles(root / "LICENSES").toSeq.sorted.map(f => f -> s"META-INF/LICENSES/${f.getName}")
 }
 
 lazy val commonSettings = Seq(
   scalacOptions ++= commonScalacOptions,
-  Compile / packageBin / mappings ++= licenceFiles.value,
+  // as resources, so an assembly (built from the class directories, not the jars) carries them too
+  Compile / resourceGenerators += Def.task {
+    val out = (Compile / resourceManaged).value
+    licenceFiles.value.map { case (from, to) => IO.copyFile(from, out / to); out / to }
+  }.taskValue,
   Compile / packageSrc / mappings ++= licenceFiles.value,
   resolvers += Resolver.mavenLocal,
   // Hyperledger Besu's native libraries are not on Maven Central; the pinned copies are vendored here (vendor/README.md)
