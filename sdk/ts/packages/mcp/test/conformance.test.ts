@@ -40,6 +40,17 @@ function expected(c: Case): string {
   return `${outcome} gas ${c.gasUsed.toString()} warnings ${c.warnings.toString()}`;
 }
 
+/**
+ * What the server answers for a case: a limit past its highest cap never reaches the JLVM. One past 2^53 is not a whole
+ * number JSON carries exactly, so it is `InvalidArguments`; one past the cap is `GasLimitOutOfRange` (server.test.ts).
+ */
+function expectedOf(c: Case, limit: bigint): string {
+  const refused = (kind: string): string => `error ${kind} op none cause none gas 0 warnings 0`;
+  if (limit > BigInt(Number.MAX_SAFE_INTEGER)) return refused("InvalidArguments");
+  if (limit > BigInt(GAS_CAP_CEILING)) return refused("GasLimitOutOfRange");
+  return expected(c);
+}
+
 interface Shown {
   readonly error?: string;
   readonly op?: string;
@@ -90,7 +101,7 @@ describe("jlvm_v1.json through jlvm_evaluate", { timeout: 600_000 }, () => {
     const failures: string[] = [];
     for (const c of sample) {
       const got = actual(await call("jlvm_evaluate", argsOf(c, vectors.gasLimit)));
-      const want = expected(c);
+      const want = expectedOf(c, c.gasLimit ?? vectors.gasLimit);
       if (got !== want) failures.push(`${c.name}: want ${want.slice(0, 300)}, got ${got.slice(0, 300)}`);
     }
     await close();
