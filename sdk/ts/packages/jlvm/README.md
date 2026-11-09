@@ -32,11 +32,14 @@ if (program.ok && data.ok) {
 - **Gas before work.** Every charge is taken before the work it pays for, as section 7 of the spec says. The schedule
   is the spec's table (`gas.ts`); a test checks it row for row against `jlvm.md`. Amounts are `number`s, saturating at
   2^53 above every limit, which is at most `Number.MAX_SAFE_INTEGER`.
-- **Values.** Data, bindings and literals are core's canonical values. The arrays and maps the machine builds are its
-  own (`jvalue.ts`): a map is a persistent AVL tree, so `set`, `unset` and `merge` cost O(log n) per entry, as gas
-  charges them. A host's map is updated in place of a copy: the tree lays its entries and tombstones over it, and
-  reads the rest through the map's own search, keeping the size, weight and depth exact. What leaves the machine is
-  converted to a core value once.
+- **Values.** The machine works on core's canonical values alone, as the Scala and Rust machines work on theirs: data,
+  bindings, literals and every array and map it builds. A core map is a persistent AVL tree in canonical key order
+  (core's `tree.ts`, the order Rust's `Map` keeps), so `set`, `unset` and `merge` cost O(log n) per entry, as gas
+  charges them: a host's map is updated in place of a copy, each update building the nodes on its search path and
+  sharing the rest, and the tree keeps the size, weight and depth exact. An object literal's keys are put in
+  canonical order once, at compilation (core's `MapShape`), so building it at run time compares no key. `keys`,
+  `values` and `entries` list in code-point order through the map's code-point view, linear in its weight. What
+  leaves the machine is the value it computed, as it is.
 - **Host bindings** are `Bindings` (which can bind a name to null: it then reads as null, where an unbound name is
   `Malformed`, as in Scala and Rust) or a core `MapValue` (which binds none to null).
 - **One table per class.** Strict operations (`ops.ts`) and cryptographic ones (`crypto.ts`) each have a handler table
@@ -45,20 +48,17 @@ if (program.ok && data.ok) {
 ## Work outside gas
 
 Gas prices the validating nodes' work (the Scala and Rust implementations); this package is a client, whose gas has
-only to match theirs. Three pieces of its work are bounded otherwise:
+only to match theirs. None of its map work goes past what gas charges for it:
 
-- **Converting the result** to a core value happens after the last charge. It is bounded by the result weight bound,
-  2^24, times a log factor for sorting map keys, not by the gas used.
-- **A host map whose weight saturates** (2^63 or more, which takes shared parts) is converted into the machine's own
-  tree when an update first hides one of its entries, so its weight can be recounted: O(n log n) in that map, once per
-  evaluation. Any other host map is converted only after half of it was hidden by charged updates.
-
-- **A host map's depths:** when an update first hides one of a host map's deepest values, the map's values are
-  counted by depth, one pass over it, once per evaluation, so the depth stays exact. Every later update reads that
-  count in O(1) of the map's size.
-
-Every other update is O(log n), and every listing is charged by weight. A persistent core `MapValue` carrying its
-entries' weights and depths would remove all three.
+- **Every update** (`set`, `unset`, each entry `merge` sets) is O(log n) in the map's size, a host map's included, and
+  keeps the weight exact through any updates, a saturated one (2^63 or more, which takes shared parts) too: the tree
+  holds each subtree's exact sum and saturates only when the weight is read. No update lists a map.
+- **Every listing** in code-point order (`keys`, `values`, `entries`) is charged by weight, and the code-point view is
+  linear in the weight: core merges the map's runs of one UTF-8 length by their common prefixes, reading fewer than
+  10 pairs of bytes per unit of weight (`codePointOrder` in core's `tree.ts` proves the bound, and a test counts it).
+  A host map or a literal keeps its view once found; a map an update made finds it at each listing, and keeps nothing,
+  so versions sharing their nodes share their memory too.
+- **The result** is a core value already: nothing is converted after the last charge.
 
 ## Section 6: cryptographic and proof operations
 
@@ -88,10 +88,11 @@ The package's tests are in `test/`:
 - `dispatch.test.ts`: one handler per operation, each running, and the spec's gas table.
 - `zk-jlvm.test.ts`: `shared/vectors/zk_jlvm_v1.json`: each call's statement and public values, and the pinned SP1
   Groth16 proof through `groth16_verify`.
-- `crypto.test.ts`: the section 6 vectors rerun on arguments the machine built (its own maps and arrays).
+- `crypto.test.ts`: the section 6 vectors rerun on arguments the machine built (maps and arrays from expressions).
 - `metering.test.ts`: the denial-of-service regressions.
 - `depth.test.ts`: no native stack growth at the depth limit.
-- `linear.test.ts`: steps linear in gas, and the persistent map's work per update.
-- `overlay.test.ts`: host maps updated without listing them, and programs refused before they are read.
+- `linear.test.ts`: steps linear in gas, and an update's nodes against the map's size.
+- `host-maps.test.ts`: host maps updated without listing or copying them, exact through any updates, and programs
+  refused before they are read.
 - `api.test.ts`: typed refusals, host bindings and canonical round trips.
 - `render.test.ts`: exact rendering.

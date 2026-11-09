@@ -4,12 +4,11 @@
  * walks the program bottom up with an explicit stack, carrying the `let` names in scope as a persistent sorted set,
  * so it never recurses and never hashes a name the program chose.
  */
-import { BoolValue, NullValue, Preview, type Value } from "@kd5ujc/dilf4s-core";
-import { compareCodePoints, utf8LengthOf } from "@kd5ujc/dilf4s-core/internal";
+import { BoolValue, MapValue, NullValue, Preview, type Value } from "@kd5ujc/dilf4s-core";
+import { compareCodePoints, MapShape } from "@kd5ujc/dilf4s-core/internal";
 
 import { parseVar, programExpr, sortedFields, view, type Expr, type Program, type VarRef } from "./ast.js";
 import { malformed } from "./error.js";
-import { JMap } from "./jvalue.js";
 import { isCrypto, isStrict, isVariadic, type CryptoOp, type JlvmOp, type StrictOp, type VariadicOp } from "./op.js";
 import { bad, good, kindName, segmentCount, type Out } from "./values.js";
 
@@ -50,8 +49,8 @@ export type Node =
   /** `var` with a computed path. */
   | { readonly t: "readAt"; readonly path: Node; readonly default: Value | undefined }
   | { readonly t: "arrayOf"; readonly items: readonly Node[] }
-  /** Field values in code-point order of their keys, the evaluation order. */
-  | { readonly t: "objectOf"; readonly keys: readonly string[]; readonly keyBytes: readonly number[]; readonly fields: readonly Node[] }
+  /** Field values in code-point order of their keys, the evaluation order; the keys' shape builds the map from them. */
+  | { readonly t: "objectOf"; readonly shape: MapShape; readonly fields: readonly Node[] }
   | { readonly t: "strict"; readonly op: StrictOp; readonly args: readonly Node[] }
   /** A variadic strict operation on the elements of one array value. */
   | { readonly t: "spread"; readonly op: VariadicOp; readonly arg: Node }
@@ -72,13 +71,19 @@ const NULL: Node = { t: "const", value: NullValue.instance };
 /** The names a `let` may bind: non-empty, without `.` or a leading `$`. */
 const bindable = (name: string): boolean => name.length > 0 && !name.includes(".") && !name.startsWith("$");
 
-/** The `let` names in scope: a persistent sorted set, shared by every node under the same scope. */
-type Lets = JMap;
+/**
+ * The `let` names in scope: a persistent sorted set (core's map, each name bound to true), shared by every node under
+ * the same scope.
+ */
+type Lets = MapValue;
 
-const inScope = (lets: Lets, name: string): boolean => lets.get(name) !== undefined;
+const inScope = (lets: Lets, name: string): boolean => lets.has(name);
 
-/** `lets` with `name` added. */
-const adding = (lets: Lets, name: string): Lets => lets.set(name, BoolValue.true) ?? lets;
+/** `lets` with `name` added: a name is program text, so well-formed, and true nests nothing, so it is never refused. */
+const adding = (lets: Lets, name: string): Lets => {
+  const added = lets.set(name, BoolValue.true);
+  return added.ok ? added.value : lets;
+};
 
 /** A node's sub-expressions, each compiled in its scope, and how their nodes make the node's. */
 interface Plan {
@@ -94,7 +99,7 @@ const all = (es: readonly Expr[], lets: Lets): readonly (readonly [Expr, Lets])[
 
 /** Compiles a program: bottom up, with an explicit stack. The work is linear in the program's size, times the log of its scope. */
 export function compile(program: Program): Out<Node> {
-  const first = plan(programExpr(program), JMap.empty);
+  const first = plan(programExpr(program), MapValue.empty);
   if (!isPlan(first)) return first;
   const stack: { readonly plan: Plan; readonly out: Node[] }[] = [{ plan: first, out: [] }];
   for (let top = stack.at(-1); top !== undefined; top = stack.at(-1)) {
@@ -159,10 +164,12 @@ function plan(e: Expr, lets: Lets): Planned {
       return { kids: all(v.items, lets), combine: (ns) => good({ t: "arrayOf", items: ns }) };
     case "map": {
       const fields = sortedFields(v.fields);
-      const keys = fields.map(([k]) => k);
-      // each key's UTF-8 length, found once here: building the map at run time reads no key
-      const keyBytes = keys.map((k) => utf8LengthOf(k));
-      return { kids: all(fields.map(([, x]) => x), lets), combine: (ns) => good({ t: "objectOf", keys, keyBytes, fields: ns }) };
+      // the keys' canonical order, found once here: building the map at run time compares, measures and encodes no key.
+      // A program's keys are distinct, well-formed text, so the shape is never refused
+      const shape = MapShape.of(fields.map(([k]) => k));
+      if (!shape.ok) return failed("an object literal's keys are distinct text");
+      const s = shape.value;
+      return { kids: all(fields.map(([, x]) => x), lets), combine: (ns) => good({ t: "objectOf", shape: s, fields: ns }) };
     }
     case "apply":
       return apply(v.op, v.args, lets);

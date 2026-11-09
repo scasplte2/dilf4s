@@ -1,12 +1,12 @@
 /**
  * Evaluation work is linear in the gas charged, counted, never timed: the machine's steps against the gas of every
- * conformance case and of loops that grow, and the persistent map's work per update against its size.
+ * conformance case and of loops that grow, and an update's work on core's persistent map against the map's size.
  */
 import { ArrayValue, MapValue, models, Value, type Value as V } from "@kd5ujc/dilf4s-core";
+import { treeStats, unsharedNodes } from "@kd5ujc/dilf4s-core/internal";
 import { describe, expect, it } from "vitest";
 
-import { Bindings, DEFAULT_GAS_LIMIT, parse, parseValue, SCHEDULE_V1 } from "../src/index.js";
-import { JMap, type JValue } from "../src/jvalue.js";
+import { Bindings, DEFAULT_GAS_LIMIT, evaluate, parse, parseValue, SCHEDULE_V1 } from "../src/index.js";
 import { run } from "../src/machine.js";
 import { compile } from "../src/node.js";
 import { built, expectOk, loadVectors } from "./vectors.js";
@@ -71,72 +71,54 @@ describe("steps are linear in gas", { timeout: 600_000 }, () => {
   });
 });
 
-/** The nodes of `m`'s tree that `n` does not share. */
-function unshared(m: JMap, n: JMap): number {
-  const shared = new Set<object>();
-  const walk = (root: unknown, visit: (t: object) => boolean): void => {
-    const todo: unknown[] = [root];
-    for (let t = todo.pop(); t !== undefined; t = todo.pop()) {
-      if (typeof t !== "object" || t === null || !visit(t)) continue;
-      todo.push(Reflect.get(t, "left"), Reflect.get(t, "right"));
-    }
-  };
-  walk(Reflect.get(m, "root"), (t) => {
-    shared.add(t);
-    return true;
-  });
-  let fresh = 0;
-  walk(Reflect.get(n, "root"), (t) => {
-    if (shared.has(t)) return false;
-    fresh++;
-    return true;
-  });
-  return fresh;
+/** The AVL bound on the height of a tree of `n` entries. */
+const avlHeight = (n: number): number => Math.floor(1.4405 * Math.log2(n + 2) - 0.3277);
+
+/** The map a program gives on `data`, within the gas limit. */
+function mapOf(program: string, data: V, env?: MapValue): MapValue {
+  const o = expectOk(evaluate(expectOk(parse(program), program.slice(0, 60)), data, { env, gasLimit: 1e12 }), "evaluates");
+  if (!o.result.ok || o.result.value.kind !== "map") throw new Error(`${program}: ${JSON.stringify(o.result.ok ? o.result.value.kind : o.result.error)}`);
+  return o.result.value;
 }
 
-const heightOf = (m: JMap): number => {
-  const root: unknown = Reflect.get(m, "root");
-  return typeof root === "object" && root !== null ? Number(Reflect.get(root, "height")) : 0;
-};
-
-describe("the persistent map", () => {
+describe("an update of core's persistent map, from a program", { timeout: 120_000 }, () => {
   const sizes = [1 << 10, 1 << 14, 1 << 17];
+  const key = (i: number): string => `k${i.toString().padStart(8, "0")}`;
 
-  it("stays balanced: its height is within the AVL bound, 1.44 log2(n + 2)", () => {
+  it("builds O(log n) nodes of a host map's tree and shares every other one, however large the host map", () => {
     for (const n of sizes) {
-      let m = JMap.empty;
-      // keys inserted in order, the worst case for an unbalanced tree, then every other one removed
-      for (let i = 0; i < n; i++) m = m.set(`k${i.toString().padStart(8, "0")}`, int(i)) ?? m;
-      expect(m.size).toBe(n);
-      expect(heightOf(m), `${n.toString()} entries`).toBeLessThanOrEqual(Math.ceil(1.44 * Math.log2(n + 2)));
-      for (let i = 0; i < n; i += 2) m = m.removed(`k${i.toString().padStart(8, "0")}`);
-      expect(m.size).toBe(n / 2);
-      expect(heightOf(m), `${(n / 2).toString()} entries after removals`).toBeLessThanOrEqual(Math.ceil(1.44 * Math.log2(n / 2 + 2)));
-    }
-  });
-
-  it("an update builds O(log n) nodes and shares every other one", () => {
-    for (const n of sizes) {
-      const entries = Array.from({ length: n }, (_, i) => [`k${i.toString().padStart(8, "0")}`, int(i)] as const);
-      const m = JMap.sorted(entries);
-      if (m === undefined) throw new Error("builds");
-      const bound = 2 * Math.ceil(1.44 * Math.log2(n + 2)) + 2;
-      for (const key of ["k00000000", `k${(n >> 1).toString().padStart(8, "0")}`, "new", "zzz"]) {
-        const set = m.set(key, int(-1));
-        if (set === undefined) throw new Error("sets");
-        expect(unshared(m, set), `set ${key} in ${n.toString()}`).toBeLessThanOrEqual(bound);
-        expect(unshared(m, m.removed(key)), `remove ${key} from ${n.toString()}`).toBeLessThanOrEqual(bound);
+      const host = expectOk(MapValue.of(Array.from({ length: n }, (_, i) => [key(i), int(i)] as const)), "a host map");
+      // one update builds a node per level and a rotation's more
+      const bound = 2 * avlHeight(n) + 3;
+      for (const k of [key(0), key(n >> 1), "new", "zzz"]) {
+        for (const p of [`{"set": [{"var": ""}, "${k}", -1]}`, `{"unset": [{"var": ""}, "${k}"]}`]) {
+          const r = mapOf(p, host);
+          expect(unsharedNodes(host, r), `${p} on ${n.toString()} entries`).toBeLessThanOrEqual(bound);
+        }
+        expect(unsharedNodes(host, mapOf(`{"set": [{"var": ""}, "${k}", -1]}`, host)), "the count is not vacuous").toBeGreaterThan(0);
       }
+      // a loop of updates builds at most that many nodes per update: the host map is never copied
+      const m = 64;
+      const env = expectOk(MapValue.of([["xs", expectOk(ArrayValue.of(Array.from({ length: m }, (_, i) => int(i))), "xs")]]), "env");
+      const looped = mapOf('{"reduce": [{"var": "$xs"}, {"set": [{"var": "$accumulator"}, {"cat": ["n", {"var": "$current"}]}, 1]}, {"var": ""}]}', host, env);
+      expect(looped.size).toBe(n + m);
+      expect(unsharedNodes(host, looped), `${m.toString()} updates of ${n.toString()} entries`).toBeLessThanOrEqual(m * bound);
+      expect(treeStats(looped).height).toBeLessThanOrEqual(avlHeight(n + m));
     }
   });
 
-  it("lists its entries in code-point order, which UTF-16 order is not", () => {
-    // U+FF61 sorts after U+1F600 in UTF-16 units (0xFF61 > 0xD83D) and before it by code point
-    const keys = ["\u{1F600}", "｡", "a", "", "é"];
-    let m = JMap.empty;
-    for (const k of keys) m = m.set(k, int(1)) ?? m;
-    expect(m.entries().map(([k]) => k)).toEqual(["", "a", "é", "｡", "\u{1F600}"]);
-    const v: JValue | undefined = m.get("｡");
-    expect(v).toEqual(int(1));
+  it("lists its keys in code-point order, which UTF-16 order is not, whichever way the map was built", () => {
+    // U+FF61 sorts after U+1F600 in UTF-16 units (0xFF61 > 0xD83D) and before it by code point; canonical order puts
+    // the shorter UTF-8 first, so it differs from both
+    const keys = ["\u{1F600}", "｡", "a", "", "é", "aa"];
+    const listed = ["", "a", "aa", "é", "｡", "\u{1F600}"];
+    const text = (s: string): string => JSON.stringify(s);
+    const host = expectOk(MapValue.of(keys.map((k) => [k, int(1)] as const)), "a host map");
+    const literal = `{"object": {${keys.map((k) => `${text(k)}: 1`).join(", ")}}}`;
+    const updated = keys.reduce((m, k) => `{"set": [${m}, ${text(k)}, 1]}`, '{"object": {}}');
+    for (const source of ['{"var": ""}', literal, updated]) {
+      const o = expectOk(evaluate(expectOk(parse(`{"keys": [${source}]}`), source), host), "evaluates");
+      expect(o.result.ok && o.result.value.kind === "array" && o.result.value.items.map((t) => (t.kind === "text" ? t.value : ""))).toEqual(listed);
+    }
   });
 });

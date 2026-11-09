@@ -22,12 +22,11 @@ import { MAX_PROOF_WEIGHT, merkle, poseidon, trie, zk } from "@kd5ujc/dilf4s-pro
 import { bip340, blsPop, ecrecover, ecvrfTai, ed25519, Message32, secp256k1Ecdsa, sigma, type VerifyingKey } from "@kd5ujc/dilf4s-signing";
 
 import { arity, domain, typeError, type JlvmError } from "./error.js";
-import type { AnyMap, Heap, JValue } from "./jvalue.js";
 import type { CryptoOp } from "./op.js";
 import { bad, bool, bounded, bytes as bytesResult, FALSE, good, kindName, TRUE, type Out } from "./values.js";
 
-/** A cryptographic operation's handler: its evaluated arguments, and the evaluation's heap. */
-export type CryptoHandler = (args: readonly JValue[], heap: Heap) => Out;
+/** A cryptographic operation's handler: its evaluated arguments. */
+export type CryptoHandler = (args: readonly Value[]) => Out;
 
 type Cause = models.jlvmErrors.JlvmCryptoCause;
 type Family = Cause["kind"];
@@ -71,25 +70,25 @@ function from<T, F extends Family>(op: CryptoOp, family: F, r: { readonly ok: tr
   return r.ok ? good(r.value) : bad(refused(op, family, r.error));
 }
 
-const arityError = (op: CryptoOp, message: string, args: readonly JValue[]): Out<never> => bad(arity(op, `${message}, got ${args.length.toString()} arguments`));
+const arityError = (op: CryptoOp, message: string, args: readonly Value[]): Out<never> => bad(arity(op, `${message}, got ${args.length.toString()} arguments`));
 
 // ------------------------------------------------------------------ argument decoding
 
 /** Bytes, read in place; another kind is `Type`, named by `role` when given. */
-function raw(op: CryptoOp, v: JValue, role?: string): Out<Uint8Array> {
+function raw(op: CryptoOp, v: Value, role?: string): Out<Uint8Array> {
   if (v.kind === "bytes") return good(bytesView(v));
   return bad(typeError(op, `${role === undefined ? "" : `${role}: `}expected bytes, got ${kindName(v)}`));
 }
 
 /** Bytes of exactly `width`, measured before they are read: the wrong kind is `Type`, the wrong width `Crypto`. */
-function sized(op: CryptoOp, role: string, v: JValue, width: number): Out<Uint8Array> {
+function sized(op: CryptoOp, role: string, v: Value, width: number): Out<Uint8Array> {
   const b = raw(op, v, role);
   if (!b.ok || b.value.length === width) return b;
   return bad(crypto(op, `${role}: expected ${width.toString()} bytes, got ${b.value.length.toString()}`));
 }
 
 /** 32 bytes, big-endian, below the BN254 scalar field modulus `r`: else `Crypto`, caused by Poseidon's `NonCanonical`. */
-function fr(op: CryptoOp, role: string, v: JValue): Out<poseidon.Fr> {
+function fr(op: CryptoOp, role: string, v: Value): Out<poseidon.Fr> {
   const b = sized(op, role, v, FIELD_BYTES);
   if (!b.ok) return b;
   const x = poseidon.Fr.of(beToBig(b.value));
@@ -105,22 +104,16 @@ function beToBig(b: Uint8Array): bigint {
   return n;
 }
 
-function integer(op: CryptoOp, role: string, v: JValue): Out<bigint> {
+function integer(op: CryptoOp, role: string, v: Value): Out<bigint> {
   return v.kind === "int" ? good(v.value) : bad(typeError(op, `${role}: expected an integer, got ${kindName(v)}`));
 }
 
-function array(op: CryptoOp, role: string, v: JValue): Out<readonly JValue[]> {
+function array(op: CryptoOp, role: string, v: Value): Out<readonly Value[]> {
   return v.kind === "array" ? good(v.items) : bad(typeError(op, `${role}: expected an array, got ${kindName(v)}`));
 }
 
-/** `v` as a core value: a container the machine built is converted once, by the heap (its weight paid for it). */
-function value(op: CryptoOp, heap: Heap, v: JValue): Out<Value> {
-  const x = heap.value(v);
-  return x === undefined ? bad(crypto(op, "a value the machine could not convert")) : good(x);
-}
-
 /** `[key, message, signature]`, all bytes. */
-function triple(op: CryptoOp, args: readonly JValue[]): Out<readonly [Uint8Array, Uint8Array, Uint8Array]> {
+function triple(op: CryptoOp, args: readonly Value[]): Out<readonly [Uint8Array, Uint8Array, Uint8Array]> {
   const [k, m, s] = args;
   if (args.length !== 3 || k === undefined || m === undefined || s === undefined) return arityError(op, "takes [key, message, signature]", args);
   const key = raw(op, k);
@@ -218,13 +211,11 @@ const blsAggregate: CryptoHandler = (args) => {
  * `sigma_verify [proposition, proof, message]`: the proposition decoded first (its refusal is `Sigma`'s, whatever the
  * later arguments' kinds), then the proof's and the message's kinds, then the proof checked.
  */
-const sigmaVerify: CryptoHandler = (args, heap) => {
+const sigmaVerify: CryptoHandler = (args) => {
   const op = "sigma_verify";
   const [p, pf, m] = args;
   if (args.length !== 3 || p === undefined || pf === undefined || m === undefined) return arityError(op, "takes [proposition, proof, message]", args);
-  const given = value(op, heap, p);
-  if (!given.ok) return given;
-  const proposition = from(op, "Sigma", sigma.Proposition.fromValue(given.value));
+  const proposition = from(op, "Sigma", sigma.Proposition.fromValue(p));
   if (!proposition.ok) return proposition;
   const proof = raw(op, pf);
   if (!proof.ok) return proof;
@@ -408,7 +399,7 @@ const RFC6962 = merkle.Rfc6962MerkleHashing.of(SHA256);
 const TRIE_HASHING = trie.TrieHashing.of(SHA256);
 
 /** Claims (a leaf, a value, a listing's values) together at most `MAX_PROOF_WEIGHT`, from their weights: else the structure's `TooLarge`. */
-function claims(values: readonly JValue[]): boolean {
+function claims(values: readonly Value[]): boolean {
   let total = 0n;
   for (const v of values) total += v.weight;
   return total <= MAX_PROOF_WEIGHT;
@@ -429,7 +420,7 @@ const trieTooLarge = (op: CryptoOp): JlvmError => ({
 });
 
 /** A SHA-256 digest: bytes (`Type`) of 32 bytes (`Crypto`, caused by the hash family's `InvalidLength`). */
-function digest(op: CryptoOp, what: string, v: JValue): Out<Uint8Array> {
+function digest(op: CryptoOp, what: string, v: Value): Out<Uint8Array> {
   if (v.kind !== "bytes") return bad(typeError(op, `${what} is bytes, got ${kindName(v)}`));
   const b = bytesView(v);
   const d = digestFromBytes(SHA256, b);
@@ -440,10 +431,10 @@ function digest(op: CryptoOp, what: string, v: JValue): Out<Uint8Array> {
 }
 
 /** The entry at `key` of a map the machine holds. */
-const entry = (m: AnyMap, key: string): JValue | undefined => m.get(key);
+const entry = (m: MapValue, key: string): Value | undefined => m.get(key);
 
 /** A trusted tree head `{root, size}`: anything else, or a size that is no tree size, is `Crypto` with no cause. */
-function head(op: CryptoOp, what: string, v: JValue): Out<merkle.MerkleHead> {
+function head(op: CryptoOp, what: string, v: Value): Out<merkle.MerkleHead> {
   const shape = `${what} is a tree head {root, size}`;
   if (v.kind !== "map" || v.size !== 2) return bad(crypto(op, shape));
   const [rootV, sizeV] = [entry(v, "root"), entry(v, "size")];
@@ -456,7 +447,7 @@ function head(op: CryptoOp, what: string, v: JValue): Out<merkle.MerkleHead> {
 type Profile = "tagged" | "rfc6962";
 
 /** The optional last argument: none, or `"rfc6962"`; anything else is `Domain`. */
-function profile(op: CryptoOp, rest: readonly JValue[]): Out<Profile> {
+function profile(op: CryptoOp, rest: readonly Value[]): Out<Profile> {
   const [p] = rest;
   if (rest.length === 0) return good("tagged");
   return rest.length === 1 && p?.kind === "text" && p.value === "rfc6962" ? good("rfc6962") : bad(domain(op, 'the only optional profile is "rfc6962"'));
@@ -471,7 +462,7 @@ function merkleVerdict(op: CryptoOp, r: { readonly ok: true; readonly value: boo
  * `merkle_verify [head, leaf, proof]` or with `"rfc6962"`: the head, the profile, the leaf's weight, the proof's
  * decoding, then an RFC 6962 leaf's kind, in that order. A proof of another size than the trusted head's is false.
  */
-const merkleVerify: CryptoHandler = (args, heap) => {
+const merkleVerify: CryptoHandler = (args) => {
   const op = "merkle_verify";
   const [h, leaf, proofV] = args;
   if (h === undefined || leaf === undefined || proofV === undefined) return bad(arity(op, "takes [head, leaf, proof] or [head, leaf, proof, profile]"));
@@ -482,28 +473,25 @@ const merkleVerify: CryptoHandler = (args, heap) => {
   if (!claims([leaf])) return bad(merkleTooLarge(op));
   if (!TAGGED.ok || !RFC6962.ok) return bad(crypto(op, "SHA-256 Merkle hashing is unavailable"));
   const hashing = p.value === "tagged" ? TAGGED.value : RFC6962.value;
-  const proofValue = value(op, heap, proofV);
-  if (!proofValue.ok) return proofValue;
-  const proof = from(op, "Merkle", merkle.InclusionProof.decode(hashing, proofValue.value));
+  const proof = from(op, "Merkle", merkle.InclusionProof.decode(hashing, proofV));
   if (!proof.ok) return proof;
   if (p.value === "rfc6962" && leaf.kind !== "bytes") return bad(typeError(op, `an rfc6962 leaf is bytes, got ${kindName(leaf)}`));
   // the size comes from the trusted head: a smaller tree's root can satisfy a proof claiming a larger size
   if (proof.value.size !== hd.value.size) return good(FALSE);
-  const leafHash = leafHashOf(op, heap, p.value, leaf);
+  const leafHash = leafHashOf(op, p.value, leaf);
   if (!leafHash.ok) return leafHash;
   return merkleVerdict(op, merkle.verifyInclusion(hashing, hd.value.root, leafHash.value, proof.value));
 };
 
 /** A leaf's hash: the tagged profile commits the value (`commit(v)`), RFC 6962 hashes its raw bytes. */
-function leafHashOf(op: CryptoOp, heap: Heap, p: Profile, leaf: JValue): Out<Uint8Array> {
+function leafHashOf(op: CryptoOp, p: Profile, leaf: Value): Out<Uint8Array> {
   if (!TAGGED.ok || !RFC6962.ok) return bad(crypto(op, "SHA-256 Merkle hashing is unavailable"));
   if (p === "rfc6962") return leaf.kind === "bytes" ? from(op, "Merkle", RFC6962.value.leaf(bytesView(leaf))) : bad(typeError(op, "an rfc6962 leaf is bytes"));
-  const v = value(op, heap, leaf);
-  return v.ok ? from(op, "Merkle", TAGGED.value.leaf(v.value)) : v;
+  return from(op, "Merkle", TAGGED.value.leaf(leaf));
 }
 
 /** `merkle_consistency_verify [oldHead, newHead, proof]` or with `"rfc6962"`: sizes other than the heads' are false. */
-const merkleConsistencyVerify: CryptoHandler = (args, heap) => {
+const merkleConsistencyVerify: CryptoHandler = (args) => {
   const op = "merkle_consistency_verify";
   const [o, n, proofV] = args;
   if (o === undefined || n === undefined || proofV === undefined) return bad(arity(op, "takes [oldHead, newHead, proof] or [oldHead, newHead, proof, profile]"));
@@ -515,9 +503,7 @@ const merkleConsistencyVerify: CryptoHandler = (args, heap) => {
   if (!p.ok) return p;
   if (!TAGGED.ok || !RFC6962.ok) return bad(crypto(op, "SHA-256 Merkle hashing is unavailable"));
   const hashing = p.value === "tagged" ? TAGGED.value : RFC6962.value;
-  const proofValue = value(op, heap, proofV);
-  if (!proofValue.ok) return proofValue;
-  const proof = from(op, "Merkle", merkle.ConsistencyProof.decode(hashing, proofValue.value));
+  const proof = from(op, "Merkle", merkle.ConsistencyProof.decode(hashing, proofV));
   if (!proof.ok) return proof;
   if (proof.value.oldSize !== oldHead.value.size || proof.value.newSize !== newHead.value.size) return good(FALSE);
   return merkleVerdict(op, merkle.verifyConsistency(hashing, oldHead.value.root, newHead.value.root, proof.value));
@@ -528,7 +514,7 @@ const INT32_MIN = -(2n ** 31n);
 const INT32_MAX = 2n ** 31n - 1n;
 
 /** `{"fixed": n}` or `{"variable": max}`: anything else, or a bound out of range, is `Domain`; not a map is `Type`. */
-function mode(op: CryptoOp, v: JValue): Out<trie.KeyMode> {
+function mode(op: CryptoOp, v: Value): Out<trie.KeyMode> {
   if (v.kind !== "map") return bad(typeError(op, `a mode is an object, got ${kindName(v)}`));
   const [only] = v.size === 1 ? v.entries() : [];
   const n = only?.[1];
@@ -539,7 +525,7 @@ function mode(op: CryptoOp, v: JValue): Out<trie.KeyMode> {
 }
 
 /** A key: bytes (`Type`) of a length the mode admits (`Crypto`, caused by the trie's `InvalidKey`). */
-function key(op: CryptoOp, m: trie.KeyMode, v: JValue): Out<Uint8Array> {
+function key(op: CryptoOp, m: trie.KeyMode, v: Value): Out<Uint8Array> {
   if (v.kind !== "bytes") return bad(typeError(op, `a key is bytes, got ${kindName(v)}`));
   const b = bytesView(v);
   const checked = from(op, "Trie", m.checkKey(b));
@@ -552,7 +538,7 @@ function trieVerdict(op: CryptoOp, r: { readonly ok: true; readonly value: boole
 }
 
 /** `trie_verify [mode, root, key, value, proof]`: the mode, the key, the claim's weight, the root, then the proof. */
-const trieVerify: CryptoHandler = (args, heap) => {
+const trieVerify: CryptoHandler = (args) => {
   const op = "trie_verify";
   const [md, rootV, keyV, claimed, proofV] = args;
   if (args.length !== 5 || md === undefined || rootV === undefined || keyV === undefined || claimed === undefined || proofV === undefined) {
@@ -567,19 +553,15 @@ const trieVerify: CryptoHandler = (args, heap) => {
   const root = digest(op, "root", rootV);
   if (!root.ok) return root;
   if (!TRIE_HASHING.ok) return bad(crypto(op, "SHA-256 trie hashing is unavailable"));
-  const claim = absent ? good(null) : value(op, heap, claimed);
-  if (!claim.ok) return claim;
-  const proof = value(op, heap, proofV);
-  if (!proof.ok) return proof;
-  return trieVerdict(op, trie.trieVerify(TRIE_HASHING.value, m.value, root.value, k.value, claim.value, proof.value));
+  return trieVerdict(op, trie.trieVerify(TRIE_HASHING.value, m.value, root.value, k.value, absent ? null : claimed, proofV));
 };
 
 const ENTRY_SHAPE = "an entry is [key, value], with a value";
 
 /** Claimed entries: `[key, value]` pairs with a value, in order, each key valid for the mode; then their weight. */
-function entries(op: CryptoOp, heap: Heap, m: trie.KeyMode, v: JValue): Out<readonly trie.ClaimedEntry[]> {
+function entries(op: CryptoOp, m: trie.KeyMode, v: Value): Out<readonly trie.ClaimedEntry[]> {
   if (v.kind !== "array") return bad(typeError(op, `entries is an array, got ${kindName(v)}`));
-  const read: (readonly [Uint8Array, JValue])[] = [];
+  const read: (readonly [Uint8Array, Value])[] = [];
   for (const e of v.items) {
     const [k, x] = e.kind === "array" && e.items.length === 2 ? e.items : [];
     if (k === undefined || x === undefined || x.kind === "null") return bad(typeError(op, ENTRY_SHAPE));
@@ -587,21 +569,14 @@ function entries(op: CryptoOp, heap: Heap, m: trie.KeyMode, v: JValue): Out<read
     if (!kb.ok) return kb;
     read.push([kb.value, x]);
   }
-  if (!claims(read.map(([, x]) => x))) return bad(trieTooLarge(op));
-  const out: trie.ClaimedEntry[] = [];
-  for (const [k, x] of read) {
-    const c = value(op, heap, x);
-    if (!c.ok) return c;
-    out.push([k, c.value]);
-  }
-  return good(out);
+  return claims(read.map(([, x]) => x)) ? good(read) : bad(trieTooLarge(op));
 }
 
 /** Bytes named `what` for a query bound: another kind is `Type`. */
-const query = (op: CryptoOp, what: string, v: JValue): Out<Uint8Array> => (v.kind === "bytes" ? good(bytesView(v)) : bad(typeError(op, `${what} is bytes, got ${kindName(v)}`)));
+const query = (op: CryptoOp, what: string, v: Value): Out<Uint8Array> => (v.kind === "bytes" ? good(bytesView(v)) : bad(typeError(op, `${what} is bytes, got ${kindName(v)}`)));
 
 /** `trie_prefix_verify [mode, root, prefix, entries, proof]`: the mode, the prefix, the entries, the root, then the proof. */
-const triePrefixVerify: CryptoHandler = (args, heap) => {
+const triePrefixVerify: CryptoHandler = (args) => {
   const op = "trie_prefix_verify";
   const [md, rootV, prefixV, es, proofV] = args;
   if (args.length !== 5 || md === undefined || rootV === undefined || prefixV === undefined || es === undefined || proofV === undefined) {
@@ -611,18 +586,16 @@ const triePrefixVerify: CryptoHandler = (args, heap) => {
   if (!m.ok) return m;
   const prefix = query(op, "a prefix", prefixV);
   if (!prefix.ok) return prefix;
-  const claimed = entries(op, heap, m.value, es);
+  const claimed = entries(op, m.value, es);
   if (!claimed.ok) return claimed;
   const root = digest(op, "root", rootV);
   if (!root.ok) return root;
   if (!TRIE_HASHING.ok) return bad(crypto(op, "SHA-256 trie hashing is unavailable"));
-  const proof = value(op, heap, proofV);
-  if (!proof.ok) return proof;
-  return trieVerdict(op, trie.triePrefixVerify(TRIE_HASHING.value, m.value, root.value, prefix.value, claimed.value, proof.value));
+  return trieVerdict(op, trie.triePrefixVerify(TRIE_HASHING.value, m.value, root.value, prefix.value, claimed.value, proofV));
 };
 
 /** `trie_range_verify [mode, root, from, until, entries, proof]` (`until` null is unbounded): checked as `trie_prefix_verify`. */
-const trieRangeVerify: CryptoHandler = (args, heap) => {
+const trieRangeVerify: CryptoHandler = (args) => {
   const op = "trie_range_verify";
   const [md, rootV, fromV, untilV, es, proofV] = args;
   if (args.length !== 6 || md === undefined || rootV === undefined || fromV === undefined || untilV === undefined || es === undefined || proofV === undefined) {
@@ -634,14 +607,12 @@ const trieRangeVerify: CryptoHandler = (args, heap) => {
   if (!lo.ok) return lo;
   const hi = untilV.kind === "null" ? good(null) : query(op, "until", untilV);
   if (!hi.ok) return hi;
-  const claimed = entries(op, heap, m.value, es);
+  const claimed = entries(op, m.value, es);
   if (!claimed.ok) return claimed;
   const root = digest(op, "root", rootV);
   if (!root.ok) return root;
   if (!TRIE_HASHING.ok) return bad(crypto(op, "SHA-256 trie hashing is unavailable"));
-  const proof = value(op, heap, proofV);
-  if (!proof.ok) return proof;
-  return trieVerdict(op, trie.trieRangeVerify(TRIE_HASHING.value, m.value, root.value, lo.value, hi.value, claimed.value, proof.value));
+  return trieVerdict(op, trie.trieRangeVerify(TRIE_HASHING.value, m.value, root.value, lo.value, hi.value, claimed.value, proofV));
 };
 
 // ------------------------------------------------------------------ the table

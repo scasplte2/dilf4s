@@ -10,8 +10,9 @@ import {
   BoolValue,
   bytesOfValues,
   bytesView,
-  entriesView,
+  entryCursor,
   IntValue,
+  mapOfCanonical,
   mapOfValues,
   MAX_DEPTH,
   MAX_INTEGER_BITS,
@@ -238,7 +239,7 @@ function single(out: Out, b: number): boolean {
 }
 
 /** An array or map being written: its parts, and the next one. */
-type Open = { readonly map: false; readonly items: readonly Value[]; at: number } | { readonly map: true; readonly entries: readonly Entry[]; at: number };
+type Open = { readonly map: false; readonly items: readonly Value[]; at: number } | { readonly map: true; readonly next: () => Entry | undefined; at: number };
 
 /** Writes `v`'s first bytes: all of a scalar, or a container's head (its parts are then open on `stack`). */
 function node(out: Out, v: Value, stack: Open[]): boolean {
@@ -260,9 +261,9 @@ function node(out: Out, v: Value, stack: Open[]): boolean {
       stack.push({ map: false, items: v.items, at: 0 });
       return true;
     case "map":
-      // entries are held in canonical key order
+      // entries come in canonical key order, one at a time: a map an update made is walked, never listed
       if (!head(out, 5, BigInt(v.size))) return false;
-      stack.push({ map: true, entries: entriesView(v), at: 0 });
+      stack.push({ map: true, next: entryCursor(v), at: 0 });
       return true;
   }
 }
@@ -277,7 +278,7 @@ function write(out: Out, value: Value): boolean {
   for (let top = stack.at(-1); top !== undefined; top = stack.at(-1)) {
     const i = top.at++;
     if (top.map) {
-      const e = top.entries[i];
+      const e = top.next();
       if (e === undefined) stack.pop();
       else if (!span(out, 3, e.utf8) || !node(out, e.value, stack)) return false;
     } else {
@@ -383,14 +384,14 @@ type Item =
   | { readonly open: true; readonly map: boolean; readonly count: number; readonly end: number };
 
 interface PendingKey {
-  readonly key: string;
+  readonly key: TextValue;
   readonly start: number;
   readonly end: number;
 }
 
 type Frame =
   | { readonly map: false; remaining: number; readonly items: Value[] }
-  | { readonly map: true; remaining: number; readonly entries: [string, Value][]; lastKey: Uint8Array | undefined; pending: PendingKey | undefined };
+  | { readonly map: true; remaining: number; readonly entries: Entry[]; lastKey: Uint8Array | undefined; pending: PendingKey | undefined };
 
 const nonCanonical = (offset: number, reason: NonCanonicalReason): CanonicalError => ({ kind: "NonCanonical", offset, reason });
 const unsupported = (offset: number, item: UnsupportedItem): CanonicalError => ({ kind: "Unsupported", offset, item });
@@ -468,18 +469,21 @@ class Decoder {
         if (frame.lastKey !== undefined && compareBytes(frame.lastKey, keyBytes) >= 0) {
           return err(nonCanonical(from, "keyOrder"));
         }
-        frame.pending = { key: current.value, start: from, end };
+        frame.pending = { key: current, start: from, end };
         return ok({ done: false, pos: end });
       } else {
         if (current.kind === "null") return err(nonCanonical(from, "nullMapValue"));
-        frame.entries.push([frame.pending.key, current]);
+        // the key's own UTF-8, which its text value holds: never encoded again
+        frame.entries.push({ key: frame.pending.key.value, utf8: utf8View(frame.pending.key), value: current });
         frame.lastKey = this.input.subarray(frame.pending.start, frame.pending.end);
         frame.pending = undefined;
         frame.remaining--;
       }
       if (frame.remaining > 0) return ok({ done: false, pos: end });
       this.#stack.pop();
-      const closed = frame.map ? mapOfValues(frame.entries) : arrayOfValues(frame.items);
+      // a map's keys are distinct, well-formed text in canonical order (each encoded key above the last), its values
+      // not null: built as they are, without a key compared again
+      const closed = frame.map ? mapOfCanonical(frame.entries) : arrayOfValues(frame.items);
       if (!closed.ok) return closed;
       current = closed.value;
       from = end;

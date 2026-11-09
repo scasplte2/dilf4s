@@ -3,7 +3,8 @@
  * bindings (core's values), and only a few build one at run time. Here every `jlvm_v1.json` case that reaches an
  * operation taking a map or an array is run again with each of the operation's arguments rebuilt by the machine (a map
  * merged with itself, an array and each array or map in it rebuilt by `map` and `merge`), so its heads, modes, entries,
- * keys, pairs and proofs are the machine's own containers. The outcome (the value, or the error's kind, op and cause)
+ * keys, pairs and proofs are containers built at run time (a merged map holds the tree its updates built, never the
+ * one it was decoded with). The outcome (the value, or the error's kind, op and cause)
  * must be the vector's; the gas differs, since rebuilding costs.
  */
 import { cbor, models } from "@kd5ujc/dilf4s-core";

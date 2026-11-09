@@ -9,12 +9,12 @@
  * the program or the data.
  */
 import { models, Preview, type TextValue, type Value } from "@kd5ujc/dilf4s-core";
+import type { MapShape } from "@kd5ujc/dilf4s-core/internal";
 
 import { segments as splitPath, parseVar, type VarRef } from "./ast.js";
 import { CRYPTO } from "./crypto.js";
-import { arity, domain, limit, malformed, typeError, type JlvmError } from "./error.js";
+import { arity, domain, malformed, typeError, type JlvmError } from "./error.js";
 import { base, perUnit, pathText, plus, rendered as renderCharge, sized, sizedWithin, times, type GasSchedule } from "./gas.js";
-import { Heap, JMap, type JValue } from "./jvalue.js";
 import { position, type Bindings as LetBindings, type Iteration, type Logical, type Node } from "./node.js";
 import type { CryptoOp, StrictOp, VariadicOp } from "./op.js";
 import * as ops from "./ops.js";
@@ -53,11 +53,11 @@ type Bindings =
   | { readonly t: "host"; readonly env: HostEnv | undefined }
   /** The first `count` bindings of a `let`, whose values are `slots[slot]`. */
   | { readonly t: "let"; readonly parent: Bindings; readonly node: LetBindings; readonly slot: number; readonly count: number }
-  | { readonly t: "element"; readonly parent: Bindings; readonly current: JValue; readonly index: JValue }
-  | { readonly t: "accumulating"; readonly parent: Bindings; readonly current: JValue; readonly index: JValue; readonly accumulator: JValue };
+  | { readonly t: "element"; readonly parent: Bindings; readonly current: Value; readonly index: Value }
+  | { readonly t: "accumulating"; readonly parent: Bindings; readonly current: Value; readonly index: Value; readonly accumulator: Value };
 
 /** An enclosing callback's contribution to plain paths (`Machine.scala` `Frame`). */
-type Frame = { readonly t: "element"; readonly value: JValue } | { readonly t: "accumulating"; readonly current: JValue; readonly accumulator: JValue };
+type Frame = { readonly t: "element"; readonly value: Value } | { readonly t: "accumulating"; readonly current: Value; readonly accumulator: Value };
 
 interface Frames {
   readonly frame: Frame;
@@ -65,10 +65,10 @@ interface Frames {
 }
 
 /** What `""` reads. */
-const frameElement = (f: Frame): JValue => (f.t === "element" ? f.value : f.current);
+const frameElement = (f: Frame): Value => (f.t === "element" ? f.value : f.current);
 
 /** The value a frame binds to `key`, if it binds it. */
-function frameLookup(f: Frame, key: string): JValue | undefined {
+function frameLookup(f: Frame, key: string): Value | undefined {
   if (f.t === "element") return f.value.kind === "map" ? f.value.get(key) : undefined;
   return key === "current" ? f.current : key === "accumulator" ? f.accumulator : undefined;
 }
@@ -91,7 +91,7 @@ const enter = (scope: Scope, bindings: Bindings, frame: Frame): Scope => ({
  * path is read from the innermost frame binding its first key, else from the data; it is ambiguous when an outer frame
  * or the data also binds that key.
  */
-function resolve(data: JValue, scope: Scope, path: readonly string[]): readonly [JValue, boolean] {
+function resolve(data: Value, scope: Scope, path: readonly string[]): readonly [Value, boolean] {
   const [key, ...rest] = path;
   if (key === undefined) return [scope.frames === undefined ? data : frameElement(scope.frames.frame), false];
   for (let f = scope.frames; f !== undefined; f = f.parent) {
@@ -105,7 +105,7 @@ function resolve(data: JValue, scope: Scope, path: readonly string[]): readonly 
 }
 
 /** The binding `$name`, innermost first. */
-function binding(slots: readonly (readonly JValue[])[], scope: Scope, name: string): JValue | undefined {
+function binding(slots: readonly (readonly Value[])[], scope: Scope, name: string): Value | undefined {
   for (let here: Bindings = scope.bindings; ; ) {
     switch (here.t) {
       case "host":
@@ -139,7 +139,7 @@ type AllThen =
   /** `Machine.scala:145` */
   | { readonly t: "array" }
   /** `Machine.scala:150` */
-  | { readonly t: "object"; readonly keys: readonly string[]; readonly keyBytes: readonly number[] }
+  | { readonly t: "object"; readonly shape: MapShape }
   /** `Machine.scala:156` */
   | { readonly t: "strict"; readonly op: StrictOp }
   /** `Machine.scala:222-225` */
@@ -154,12 +154,12 @@ type CollThen =
   | { readonly t: "fold"; readonly body: Node; readonly init: Node | undefined; readonly scope: Scope };
 
 /** A callback's collection: the array's items, shared. */
-type Elements = readonly JValue[];
+type Elements = readonly Value[];
 
 /** The work a `charge` pays for: each is the reference's `() => Step` thunk at the cited line. */
 type Then =
   /** `Machine.scala:113` */
-  | { readonly t: "done"; readonly value: JValue }
+  | { readonly t: "done"; readonly value: Value }
   /** `Machine.scala:256`: reads a path already paid for. */
   | { readonly t: "lookup"; readonly ref: VarRef; readonly default: Value | undefined; readonly scope: Scope }
   /** `Machine.scala:126`: parses a computed text path, already paid for. */
@@ -189,7 +189,7 @@ type Then =
   /** `Machine.scala:427` */
   | { readonly t: "quorumRun"; readonly q: Quorum }
   /** `Machine.scala:438` */
-  | { readonly t: "foldRun"; readonly vs: Elements; readonly body: Node; readonly scope: Scope; readonly i: number; readonly acc: JValue }
+  | { readonly t: "foldRun"; readonly vs: Elements; readonly body: Node; readonly scope: Scope; readonly i: number; readonly acc: Value }
   /** `Machine.scala:325-326`: one step of `+` or `*`, after its accumulator's charge. */
   | { readonly t: "accumulate"; readonly op: "+" | "*"; readonly rest: readonly Num[]; readonly i: number; readonly acc: Num }
   /** `Machine.scala:308`: renders `join`'s pieces, after the rendering charge. */
@@ -211,7 +211,7 @@ interface Iterating {
   readonly scope: Scope;
   readonly i: number;
   /** `map`'s results so far, owned by this run alone. */
-  readonly acc: JValue[];
+  readonly acc: Value[];
   /** `filter`'s kept positions so far, owned by this run alone. */
   readonly picked: number[];
   readonly n: number;
@@ -234,7 +234,7 @@ type Kont =
   /** `Machine.scala:122-141` */
   | { readonly t: "readAt"; readonly default: Value | undefined; readonly scope: Scope }
   /** `Machine.scala:107` */
-  | { readonly t: "all"; readonly args: readonly Node[]; readonly i: number; readonly acc: JValue[]; readonly scope: Scope; readonly then: AllThen }
+  | { readonly t: "all"; readonly args: readonly Node[]; readonly i: number; readonly acc: Value[]; readonly scope: Scope; readonly then: AllThen }
   /** `Machine.scala:166-169` */
   | { readonly t: "spread"; readonly op: VariadicOp }
   /** `Machine.scala:335` */
@@ -260,16 +260,16 @@ type Kont =
 
 /** One step of evaluation (`Machine.scala` `Step`). */
 type Step =
-  | { readonly t: "done"; readonly value: JValue }
+  | { readonly t: "done"; readonly value: Value }
   | { readonly t: "fail"; readonly error: JlvmError }
   /** Pay, then do the work: nothing is done before it is paid for. */
   | { readonly t: "charge"; readonly gas: number; readonly then: Then }
   /** Evaluate the node, then continue with its value. */
   | { readonly t: "eval"; readonly node: Node; readonly scope: Scope; readonly k: Kont }
   /** Record a warning (free), then finish with the value. */
-  | { readonly t: "note"; readonly warning: Warning; readonly value: JValue };
+  | { readonly t: "note"; readonly warning: Warning; readonly value: Value };
 
-const done = (value: JValue): Step => ({ t: "done", value });
+const done = (value: Value): Step => ({ t: "done", value });
 const fail = (error: JlvmError): Step => ({ t: "fail", error });
 const charge = (gas: number, then: Then): Step => ({ t: "charge", gas, then });
 const evaluate = (node: Node, scope: Scope, k: Kont): Step => ({ t: "eval", node, scope, k });
@@ -295,10 +295,9 @@ export interface Ran {
  * bindings go out of scope when its body returns, and evaluation is depth-first).
  */
 class Machine {
-  readonly #slots: JValue[][] = [];
+  readonly #slots: Value[][] = [];
   readonly #warnings: Warning[] = [];
   readonly #seen: string[] = [];
-  readonly #heap = new Heap();
   #used = 0;
 
   constructor(
@@ -319,8 +318,7 @@ class Machine {
             step = this.resume(k, step.value);
             break;
           }
-          const v = this.#heap.value(step.value);
-          return this.ran(v === undefined ? { ok: false, error: limit("the result nests too deep") } : { ok: true, value: v }, steps);
+          return this.ran({ ok: true, value: step.value }, steps);
         }
         case "fail":
           return this.ran({ ok: false, error: step.error }, steps);
@@ -376,7 +374,7 @@ class Machine {
       case "arrayOf":
         return charge(plus(s.literal, times(s.element, node.items.length)), { t: "all", args: node.items, scope, then: { t: "array" } });
       case "objectOf":
-        return charge(plus(s.literal, times(s.element, node.fields.length)), { t: "all", args: node.fields, scope, then: { t: "object", keys: node.keys, keyBytes: node.keyBytes } });
+        return charge(plus(s.literal, times(s.element, node.fields.length)), { t: "all", args: node.fields, scope, then: { t: "object", shape: node.shape } });
       case "strict":
         return charge(base(s, node.op), { t: "all", args: node.args, scope, then: { t: "strict", op: node.op } });
       case "spread":
@@ -472,12 +470,12 @@ class Machine {
       case "lookupRun":
         return result(lookups(then.op, then.vs, (p) => resolve(this.data, then.scope, p)[0].kind === "null"));
       case "cryptoRun":
-        return result(CRYPTO[then.op](then.vs, this.#heap));
+        return result(CRYPTO[then.op](then.vs));
     }
   }
 
   /** What a continuation does with a value. */
-  private resume(k: Kont, v: JValue): Step {
+  private resume(k: Kont, v: Value): Step {
     switch (k.t) {
       case "return":
         return done(v);
@@ -578,7 +576,7 @@ class Machine {
 
   /** Reads a path already paid for (`Machine.scala:260-272`). */
   private lookup(ref: VarRef, d: Value | undefined, scope: Scope): Step {
-    const orDefault = (v: JValue): JValue => (v.kind === "null" ? (d ?? NULL) : v);
+    const orDefault = (v: Value): Value => (v.kind === "null" ? (d ?? NULL) : v);
     if (!ref.bound) {
       const [v, ambiguous] = resolve(this.data, scope, ref.path);
       const value = orDefault(v);
@@ -592,22 +590,19 @@ class Machine {
   // ---- strict operations
 
   /** `Machine.scala:105-109`: evaluates the arguments from `i` on, then continues with all their values. */
-  private all(args: readonly Node[], i: number, acc: JValue[], scope: Scope, then: AllThen): Step {
+  private all(args: readonly Node[], i: number, acc: Value[], scope: Scope, then: AllThen): Step {
     const n = args[i];
     return n === undefined ? this.allDone(then, acc, scope) : evaluate(n, scope, { t: "all", args, i, acc, scope, then });
   }
 
-  private allDone(then: AllThen, vs: JValue[], scope: Scope): Step {
+  private allDone(then: AllThen, vs: Value[], scope: Scope): Step {
     switch (then.t) {
       case "array":
         return result(array("array", vs));
-      case "object": {
-        const m = JMap.sorted(
-          then.keys.map((k, i) => [k, vs[i] ?? NULL] as const),
-          then.keyBytes,
-        );
-        return result(mapResult("object", m));
-      }
+      case "object":
+        // the values were evaluated in code-point order of the keys; the shape found their canonical order at
+        // compilation, so the map is built in O(n), comparing no key
+        return result(mapResult("object", then.shape.map(vs)));
       case "strict":
         return charge(sized(this.schedule, then.op, vs), { t: "operate", op: then.op, vs });
       // each key is a path parsed at run time, and searches every enclosing frame: both paid before resolving
@@ -640,7 +635,7 @@ class Machine {
     }
     if (op === "join") return charge(renderCharge(this.schedule, ops.rendered(op, vs)), { t: "joinPieces", vs });
     if (op === "cat") return charge(renderCharge(this.schedule, ops.rendered(op, vs)), { t: "cat", vs });
-    return result(ops.STRICT[op](vs, this.#heap));
+    return result(ops.STRICT[op](vs));
   }
 
   /** `+` or `*`, left to right (`Machine.scala:322-327`): each step after the first pays the size charge of its accumulator before it runs. */
@@ -697,7 +692,7 @@ class Machine {
   }
 
   /** One body's value, `Machine.scala:403-414`: kept, counted, or deciding the result. */
-  private iterated(it: Iterating, v: JValue): Step {
+  private iterated(it: Iterating, v: Value): Step {
     const t = truthy(v);
     const next = { ...it, i: it.i + 1 };
     switch (it.kind) {
@@ -744,7 +739,7 @@ class Machine {
   }
 
   /** `Machine.scala:433-439` */
-  private fold(vs: Elements, body: Node, scope: Scope, i: number, acc: JValue): Step {
+  private fold(vs: Elements, body: Node, scope: Scope, i: number, acc: Value): Step {
     return i < vs.length ? charge(this.schedule.callbackRun, { t: "foldRun", vs, body, scope, i, acc }) : done(acc);
   }
 }
@@ -758,7 +753,7 @@ function element(scope: Scope, vs: Elements, i: number): Out<Scope> {
 }
 
 /** `Machine.scala:430-431` */
-function accumulating(scope: Scope, vs: Elements, i: number, acc: JValue): Out<Scope> {
+function accumulating(scope: Scope, vs: Elements, i: number, acc: Value): Out<Scope> {
   const current = vs[i] ?? NULL;
   const index = count(i);
   if (!index.ok) return index;
@@ -772,7 +767,7 @@ function accumulating(scope: Scope, vs: Elements, i: number, acc: JValue): Out<S
  * A segment of a computed data path (`Machine.scala:278-284`): text is an exact key; an integer is an index, or the
  * key that is its decimal form, bounded to 64 bits before it is rendered.
  */
-function segment(v: JValue): Out<string> {
+function segment(v: Value): Out<string> {
   if (v.kind === "text") return { ok: true, value: v.value };
   if (v.kind === "int") {
     const t = smallIntegerText(v.value);
@@ -805,7 +800,7 @@ function lookups(op: "missing" | "missing_some", args: Elements, absent: (path: 
     }
     return { ok: true, value: out };
   };
-  const missing = (ks: readonly TextValue[]): readonly JValue[] => ks.filter((k) => absent(k.value.length === 0 ? [] : splitPath(k.value)));
+  const missing = (ks: readonly TextValue[]): readonly Value[] => ks.filter((k) => absent(k.value.length === 0 ? [] : splitPath(k.value)));
   if (op === "missing") {
     const ks = keys(args);
     if (!ks.ok) return ks;

@@ -8,7 +8,8 @@
  * 2^53 whose true value is below 2^53 is exact in a double, and one whose true value is not rounds to at least 2^53,
  * so clamping after each operation saturates exactly.
  */
-import type { JValue } from "./jvalue.js";
+import type { Value } from "@kd5ujc/dilf4s-core";
+
 import type { JlvmOp } from "./op.js";
 import { elements, renderedBits, SEARCH_BLOCK } from "./values.js";
 
@@ -39,7 +40,7 @@ export const RENDER_LIMBS = 6;
 /** The fixed cost of a gcd, in limbs (`Limbs2`). */
 export const GCD_LIMBS = 8;
 
-function limbs(v: JValue, integers: boolean): number {
+function limbs(v: Value, integers: boolean): number {
   const n =
     v.kind === "int" && integers
       ? Math.floor(v.bitLength / 64)
@@ -50,7 +51,7 @@ function limbs(v: JValue, integers: boolean): number {
 }
 
 /** One argument's size in `unit` (`GasSchedule.units`): O(1), from cached sizes. */
-export function units(unit: SizeUnit, v: JValue): number {
+export function units(unit: SizeUnit, v: Value): number {
   switch (unit) {
     case "None":
       return 0;
@@ -119,7 +120,7 @@ export function depth(entries: number): number {
 export const levels = (entries: number): number => depth(entries) + 1;
 
 /** A {@link Search}'s charge on a map and a key: 0 unless they are a map and text. */
-function searchCharge(s: Search, map: JValue, key: JValue): number {
+function searchCharge(s: Search, map: Value, key: Value): number {
   if (map.kind !== "map" || key.kind !== "text") return 0;
   return times(plus(times(s.perBlock, Math.floor(key.value.length / SEARCH_BLOCK)), s.perLevel), levels(map.size));
 }
@@ -297,10 +298,10 @@ export const base = (s: GasSchedule, op: JlvmOp): number => s.costs[op].base;
 export const perUnit = (s: GasSchedule, op: JlvmOp): number => s.costs[op].perUnit;
 
 /** A path parsed at run time (a computed `var` path, a `missing` key) is charged at `split`'s rate per unit of its weight. */
-export const pathText = (s: GasSchedule, path: JValue): number => times(perUnit(s, "split"), amount(path.weight));
+export const pathText = (s: GasSchedule, path: Value): number => times(perUnit(s, "split"), amount(path.weight));
 
 /** Rendering numbers as decimal text (`cat`, `join`): `rendering` per unit of `(RENDER_LIMBS + floor(bits/64))^2`. */
-export function rendered(s: GasSchedule, numbers: readonly JValue[]): number {
+export function rendered(s: GasSchedule, numbers: readonly Value[]): number {
   return numbers.reduce((g, v) => {
     const l = Math.floor(renderedBits(v) / 64) + RENDER_LIMBS;
     return plus(g, times(s.rendering, times(l, l)));
@@ -308,7 +309,7 @@ export function rendered(s: GasSchedule, numbers: readonly JValue[]): number {
 }
 
 /** The size charge of `op` on its evaluated arguments: each argument at its position's rate, plus any extra rate. */
-export const sized = (s: GasSchedule, op: JlvmOp, args: readonly JValue[]): number => sizedWithin(s, op, args, GAS_CAP);
+export const sized = (s: GasSchedule, op: JlvmOp, args: readonly Value[]): number => sizedWithin(s, op, args, GAS_CAP);
 
 /**
  * {@link sized}, stopping as soon as the sum exceeds `cap` (the gas left): the sum so far, already more than can be
@@ -316,10 +317,10 @@ export const sized = (s: GasSchedule, op: JlvmOp, args: readonly JValue[]): numb
  * is walked only as far as the gas left can pay for. A {@link Search} is charged with the second argument, on the
  * first two; {@link Merging} after the last.
  */
-export function sizedWithin(s: GasSchedule, op: JlvmOp, args: readonly JValue[], cap: number): number {
+export function sizedWithin(s: GasSchedule, op: JlvmOp, args: readonly Value[], cap: number): number {
   const cost = s.costs[op];
   let sum = 0;
-  let first: JValue | undefined;
+  let first: Value | undefined;
   let allMaps = false;
   let entries = 0;
   let laterEntries = 0;
