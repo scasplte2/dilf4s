@@ -7,18 +7,17 @@
  * right), so the first error is the same. {@link STRICT} has exactly one handler per strict operation: its type is a
  * record over every {@link StrictOp}, so a missing or extra one does not compile.
  */
-import { fromHex, json, models, type HashAlgorithm } from "@kd5ujc/dilf4s-core";
-import { digestOf, toHexOf } from "@kd5ujc/dilf4s-core/internal";
+import { cbor, json, models, type HashAlgorithm } from "@kd5ujc/dilf4s-core";
+import { bitLengthOf, digestOf, toHexOf, utf8LengthOf } from "@kd5ujc/dilf4s-core/internal";
 
 import { arithmetic, arity, domain, limit, typeError, type JlvmError } from "./error.js";
-import { JMap, utf8Length, type AnyMap, type Heap, type JValue } from "./jvalue.js";
+import { JMap, type AnyMap, type Heap, type JValue } from "./jvalue.js";
 import type { StrictOp } from "./op.js";
 import * as ratio from "./ratio.js";
 import {
   array,
   asciiCase,
   bad,
-  bitLengthOf,
   bool,
   bounded,
   bytes,
@@ -266,7 +265,7 @@ function piece(op: "cat" | "join", v: JValue): Out<string> {
 }
 
 /** The weight of the text `pieces` make with `separators` more bytes. */
-const projected = (pieces: readonly string[], separators: number): bigint => pieces.reduce((n, p) => n + BigInt(utf8Length(p)), 1n) + BigInt(separators);
+const projected = (pieces: readonly string[], separators: number): bigint => pieces.reduce((n, p) => n + BigInt(utf8LengthOf(p)), 1n) + BigInt(separators);
 
 /** A text result's weight, checked before the text is built. */
 function fitting(op: "cat" | "join", weight: bigint): JlvmError | undefined {
@@ -349,7 +348,7 @@ export interface Joining {
 /** The separator bytes the result will copy. */
 export function separatorBytes(j: Joining): number {
   const n = j.pieces.length;
-  return n === 0 ? 0 : Math.min(utf8Length(j.separator) * (n - 1), Number.MAX_SAFE_INTEGER);
+  return n === 0 ? 0 : Math.min(utf8LengthOf(j.separator) * (n - 1), Number.MAX_SAFE_INTEGER);
 }
 
 /** Validates and renders a `join`'s pieces, and rejects a result past the weight bound, without building it. */
@@ -561,21 +560,15 @@ function unsignedInt(op: StrictOp, b: Uint8Array): Out {
   return r.ok ? num(op, r.value) : r;
 }
 
-/** The big-endian bytes of `n >= 0`, minimal (`0` is empty). */
-function magnitude(n: bigint): Uint8Array {
-  if (n === 0n) return new Uint8Array(0);
-  const hex = n.toString(16);
-  const h = fromHex(hex.length % 2 === 0 ? hex : `0${hex}`);
-  return h.ok ? h.value : new Uint8Array(0);
-}
-
 /** Big-endian and unsigned: minimal (`0` is empty), or left-padded to a fixed width. */
 function intToBytes(args: readonly JValue[]): Out {
   const op = "int_to_bytes";
   const unsigned = (v: JValue): Out<Uint8Array> => {
     const i = integer(op, v);
     if (!i.ok) return i;
-    return i.value.value < 0n ? bad(domain(op, "negative integer")) : good(magnitude(i.value.value));
+    // core's minimal big-endian bytes (empty for 0), which refuse only a negative integer
+    const m = cbor.magnitudeBytes(i.value.value);
+    return m.ok ? good(m.value) : bad(domain(op, "negative integer"));
   };
   const [i, w] = args;
   if (args.length === 1 && i !== undefined) {

@@ -16,3 +16,5 @@ export { mint, type Mint } from "./mint.js";
 // not by its size, is measured before signing or proofs copy it, so a longer one is never copied (jlvm.md section 7)
 export { bytesView } from "./value.js";
 export { close, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, open, openWith, readStep, walksAsArray, type Reader, type Step } from "./iterator.js";
+// the JLVM measures and orders the text it holds, and orders encodings, as core does: one form of each, never a copy
+export { compareBytes, compareCodePoints, utf8LengthOf } from "./utf8.js";
