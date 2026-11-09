@@ -5836,6 +5836,18 @@
       "kind" : "InvalidMnemonic"
     },
     {
+      "name" : "leading-nul",
+      "check" : "bip39-phrase",
+      "phrase" : "\u0000abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "kind" : "InvalidMnemonic"
+    },
+    {
+      "name" : "trailing-nul",
+      "check" : "bip39-phrase",
+      "phrase" : "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about\u0000",
+      "kind" : "InvalidMnemonic"
+    },
+    {
       "name" : "unassigned-code-point",
       "check" : "bip39-seed",
       "phrase" : "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",

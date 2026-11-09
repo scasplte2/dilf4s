@@ -139,7 +139,9 @@ object Bip39 {
       .flatMap(_ => entropyOf(phrase, words))
 
   private def entropyOf(phrase: String, words: WordList): Either[KeyError, (Mnemonic, Secret)] = {
-    val tokens = nfkd(phrase).trim.split("[\\s　]+").toList.filter(_.nonEmpty)
+    // split on the separators alone, empty pieces dropped: String.trim would also drop NUL and the other controls
+    // below U+0020 at the ends, which no SDK treats as separators
+    val tokens = nfkd(phrase).split("[\\s　]+").toList.filter(_.nonEmpty)
     for {
       _ <- Either.cond(
         Set(12, 15, 18, 21, 24).contains(tokens.size),

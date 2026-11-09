@@ -175,6 +175,9 @@ object CryptoVectors {
       phrase("empty", ""),
       phrase("unassigned-code-point", s"$valid $unicode16"),
       phrase("noncharacter", valid + noncharacter),
+      // NUL is no separator: at either end it joins the word next to it
+      phrase("leading-nul", "\u0000" + valid),
+      phrase("trailing-nul", valid + "\u0000"),
       seeded("unassigned-code-point", s"dilf4s$unicode16"),
       seeded("noncharacter", s"dilf4s$noncharacter"),
       row("two-words", "word-list", List("words" -> List("abandon", "ability").asJson), "InvalidWordList")(
