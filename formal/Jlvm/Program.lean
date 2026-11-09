@@ -313,15 +313,19 @@ def compileFields : List (String × Expr) → Except Err (List (String × Node))
   | (k, x) :: fs => do pure ((k, ← compile x) :: (← compileFields fs))
 end
 
-/-- Program text to its evaluation form: the strict JSON parser (a depth refusal is `Limit`, anything else
-`Malformed`), the surface, the bounds, then compilation. -/
-def parseProgram (text : String) : Except Err Node := do
+/-- Program text to its form (`Parser.parse`): the strict JSON parser (a depth refusal is `Limit`, anything else
+`Malformed`), the surface, then the bounds. -/
+def readProgram (text : String) : Except Err Expr := do
   let j ← match Json.parse text with
     | .ok j => pure j
     | .error .depthExceeded => throw .limit
     | .error _ => throw .malformed
   let e ← expression j
   checkProgram e
-  compile e
+  pure e
+
+/-- Program text to its evaluation form: `readProgram`, then compilation. -/
+def parseProgram (text : String) : Except Err Node := do
+  compile (← readProgram text)
 
 end Jlvm

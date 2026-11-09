@@ -642,8 +642,9 @@ JVM and 140 ms on Rust on the reference machine. Hosts pass their own limit per 
 - A limit at the maximum is metered like any other. Amounts saturate above every limit, so `OutOfGas` can occur at
   any limit, and the gas used is exact.
 - A limit outside that range is `Limit`, with no gas used: a larger one, or a negative one where a host's types can
-  hold it (a host's arithmetic gone below zero is refused, never taken as 0). It is checked before the program is
-  compiled, so it is `Limit` whatever the program.
+  hold it (a host's arithmetic gone below zero is refused, never taken as 0). It is checked once the program, data
+  and bindings are read and before the program is compiled: text that does not read is refused as it would be under
+  any limit, and a program that reads but does not compile is `Limit`.
 - Hosts cap the limits they accept. "As much gas as possible" means the host's own cap, which the host resolves before
   it evaluates.
 

@@ -37228,6 +37228,31 @@
       "warnings" : 0
     },
     {
+      "name" : "dilf4s gas limit: a program that is not JSON is Malformed, even at 2^53",
+      "program" : "{",
+      "data" : "null",
+      "gasLimit" : 9007199254740992,
+      "outcome" : {
+        "error" : "Malformed"
+      },
+      "gasUsed" : 0,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s gas limit: a binding that is not JSON is Malformed, even at 2^53",
+      "program" : "{\"var\": \"$x\"}",
+      "data" : "null",
+      "env" : {
+        "x" : "{"
+      },
+      "gasLimit" : 9007199254740992,
+      "outcome" : {
+        "error" : "Malformed"
+      },
+      "gasUsed" : 0,
+      "warnings" : 0
+    },
+    {
       "name" : "dilf4s unique: an element past the sort-key ceiling is Limit",
       "program" : "{\"unique\": {\"var\": \"$xs\"}}",
       "data" : "null",
