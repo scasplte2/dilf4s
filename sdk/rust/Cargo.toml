@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["core", "fixtures", "jlvm", "proofs", "signing"]
+members = ["core", "fixtures", "jlvm", "proofs", "signing", "verify"]
 
 [workspace.package]
 version = "0.1.0"
@@ -23,8 +23,9 @@ sha3 = { version = "=0.10.8", default-features = false }
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"
-# SP1's guest target (riscv64im-succinct-zkvm-elf), which code specific to SP1's patches and syscalls is gated on
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_vendor, values("succinct"))'] }
+# SP1's guest target (riscv64im-succinct-zkvm-elf), which code specific to SP1's patches and syscalls is gated on, and
+# `cargo kani`, which the proofs in verify/ are gated on
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_vendor, values("succinct"))', 'cfg(kani)'] }
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }

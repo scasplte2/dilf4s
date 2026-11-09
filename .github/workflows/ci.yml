@@ -105,6 +105,35 @@ jobs:
       - run: cargo build -p dilf4s-signing --no-default-features --release --target riscv64imac-unknown-none-elf
       - run: cargo build -p dilf4s-signing --release --target riscv64imac-unknown-none-elf
 
+  # Kani, the Rust model checker (sdk/rust/verify/src/proofs.rs): each harness proves its property on every input it
+  # covers, with no panic, overflow or out-of-bounds access on the way. All of them, measured on euler one at a time
+  # under a 12 GB cap: a few minutes, under 4 GB each. They cover what Kani can take; proofs.rs says what it cannot
+  kani:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: sdk/rust
+    steps:
+      - uses: actions/checkout@v4
+      # cargo here resolves through rustup to sdk/rust/rust-toolchain.toml's version; Kani builds with its own nightly
+      - uses: dtolnay/rust-toolchain@1.99.1
+      # Kani 0.68.0: cargo-kani, its bundle (CBMC and the Kani compiler) and the nightly it pins
+      - id: kani-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-kani
+            ~/.cargo/bin/kani
+            ~/.kani/kani-0.68.0
+            ~/.rustup/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu
+          key: kani-0.68.0-nightly-2026-08-21-${{ runner.os }}
+      - if: steps.kani-cache.outputs.cache-hit != 'true'
+        run: cargo install --locked kani-verifier --version 0.68.0 && cargo kani setup
+      - run: cargo kani -p dilf4s-verify
+
   # A real SP1 v6 guest (riscv64im-succinct-zkvm-elf) with every SP1 patch, so the patches' target_os = "zkvm" paths
   # are compiled and run. Execute mode only: nothing is proved. sdk/rust/zk/README.md says what each patch changes.
   sp1-guest:
