@@ -29,6 +29,7 @@ jobs:
     outputs:
       ts: ${{ steps.filter.outputs.ts }}
       rust: ${{ steps.filter.outputs.rust }}
+      python: ${{ steps.filter.outputs.python }}
       sp1: ${{ steps.filter.outputs.sp1 }}
       go: ${{ steps.filter.outputs.go }}
     steps:
@@ -42,6 +43,12 @@ jobs:
               - 'shared/**'
               - '.github/workflows/ci.yml'
             rust:
+              - 'sdk/rust/**'
+              - 'shared/**'
+              - '.github/workflows/ci.yml'
+            # the bindings build sdk/rust's crates, and the tests run every shared vector through them
+            python:
+              - 'sdk/python/**'
               - 'sdk/rust/**'
               - 'shared/**'
               - '.github/workflows/ci.yml'
@@ -176,6 +183,49 @@ jobs:
       - if: steps.kani-cache.outputs.cache-hit != 'true'
         run: cargo install --locked kani-verifier --version 0.68.0 && cargo kani setup
       - run: cargo kani -p dilf4s-verify
+
+  # The Python SDK (sdk/python): PyO3 bindings over sdk/rust, in their own cargo workspace and lockfile. One abi3 wheel
+  # serves CPython 3.12 on; it is installed and tested on the oldest and newest supported Pythons, every shared vector
+  # through its API. The tools are pinned by uv.lock.
+  python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
+    defaults:
+      run:
+        working-directory: sdk/python
+    steps:
+      - uses: actions/checkout@v4
+      # the same pin as the rust job's and sdk/python/rust-toolchain.toml
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdk/python
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.7.11"
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: uv sync --locked --python ${{ matrix.python-version }}
+      - run: uv run --no-sync maturin build --release --locked --out dist
+      # the wheel, not the source tree, is what the tests import
+      - run: uv pip install --no-deps dist/*.whl
+      - run: uv run --no-sync ruff check python tests tools
+      - run: uv run --no-sync ruff format --check python tests tools
+      - run: uv run --no-sync mypy
+      - run: uv run --no-sync python -m mypy.stubtest dilf4s._native --allowlist stubtest-allowlist.txt
+      - run: uv run --no-sync pytest
+      # no lockfile may change while checking
+      - run: git diff --exit-code -- '*.lock'
 
   # A real SP1 v6 guest (riscv64im-succinct-zkvm-elf) with every SP1 patch, so the patches' target_os = "zkvm" paths
   # are compiled and run. Execute mode only: nothing is proved. sdk/rust/zk/README.md says what each patch changes.

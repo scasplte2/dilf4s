@@ -326,3 +326,22 @@ fn a_deep_key_costs_its_depth_and_nothing_more() {
     assert!(shallow <= bound(1, varying_bits(&bulk_bytes) + 1, 2), "{shallow} node hashes for one shallow key");
     eprintln!("replica: a key {depth} levels deep re-hashes {deep} nodes, one beside it {shallow}");
 }
+
+/// A clone shares the original's tries: a delta applied to the clone moves the clone alone, re-hashing only the paths
+/// the delta changes, and the original stays exactly as it was (the Python SDK's replicas are immutable this way).
+#[test]
+fn a_clone_follows_a_delta_and_the_original_does_not() {
+    let vt = vt();
+    let keys = universe();
+    let mut replica = Replica::empty(vt.clone());
+    let (first, model) = Model::new().delta(&vt, 1, &[(keys[0].clone(), Value::int(1))], &[]);
+    replica.apply_delta(&first).unwrap();
+    let before = (replica.root().unwrap(), entries(&replica));
+    let mut copy = replica.clone();
+    let (second, _) = model.delta(&vt, 2, &[(keys[1].clone(), Value::int(2))], &[]);
+    let ((), hashes) = counting(|| copy.apply_delta(&second).unwrap());
+    assert_eq!((replica.root().unwrap(), entries(&replica)), before, "the original is unchanged");
+    assert_eq!(copy.head().map(|h| h.version), Some(2), "the clone moved");
+    assert_ne!(copy.root().unwrap(), before.0, "to another root");
+    assert!(hashes < 64, "{hashes} node hashes: the clone re-hashed its delta's paths, not a copy of the tries");
+}
