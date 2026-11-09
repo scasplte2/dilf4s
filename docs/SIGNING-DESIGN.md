@@ -55,8 +55,8 @@ No BC needed for Extended Ed25519's BIP32 key derivation.
 
 ```
 dilf4s/
-├── build.sbt
-├── project/
+├── lang/scala/build.sbt
+├── lang/scala/project/
 │   └── Dependencies.scala
 │
 ├── models/                          # Pure data types, zero deps beyond cats
@@ -69,13 +69,13 @@ dilf4s/
 │       └── kes/
 │           └── KesBinaryTree.scala  # ADT: MerkleNode, SigningLeaf, Empty
 │
-├── shared-test/                     # Test utilities, generators, hex helpers
+├── lang/scala/shared-test/                     # Test utilities, generators, hex helpers
 │   └── src/main/scala/xyz/kd5ujc/
 │       └── test/
 │           ├── HexUtils.scala
 │           └── generators/
 │
-├── core/                            # Existing: hash, accumulators, storage
+├── lang/scala/core/                            # Existing: hash, accumulators, storage
 │   └── src/                         # (current root src/ moves here)
 │
 ├── signing/                         # Ed25519, Extended Ed25519

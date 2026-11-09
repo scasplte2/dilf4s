@@ -40,9 +40,9 @@ the whole limit.
 
 | Language | Runner | How it is run |
 |---|---|---|
-| Scala | `jlvm/src/test/scala/xyz/kd5ujc/jlvm/difffuzz/Runner.scala` (`Evaluate.record`) | in the driver's process; `Runner` is the same function as a main reading a file or standard input |
-| Rust | `sdk/rust/difffuzz` (`dilf4s-difffuzz`), on `dilf4s-jlvm` and `dilf4s-core` only | a child process, release build |
-| TypeScript | `sdk/ts/packages/jlvm/difffuzz/runner.ts`, on the built packages (not part of the published package) | `node --experimental-strip-types`, two child processes |
+| Scala | `lang/scala/jlvm/src/test/scala/xyz/kd5ujc/jlvm/difffuzz/Runner.scala` (`Evaluate.record`) | in the driver's process; `Runner` is the same function as a main reading a file or standard input |
+| Rust | `lang/rust/difffuzz` (`dilf4s-difffuzz`), on `dilf4s-jlvm` and `dilf4s-core` only | a child process, release build |
+| TypeScript | `lang/ts/packages/jlvm/difffuzz/runner.ts`, on the built packages (not part of the published package) | `node --experimental-strip-types`, two child processes |
 
 Every runner reads JSON lines and writes one record line per case, in order. It flushes after each record, so the
 driver streams to it. A case line is a `jlvm_v1.json` input case with every text written as the hex of its UTF-8, so
@@ -148,9 +148,9 @@ Planted bugs show what this finds. Each was found within a few thousand cases, a
 1. Decide from `docs/specs/jlvm.md` which implementation is wrong. Scala settles a dispute unless the spec says
    otherwise.
 2. Fix it, then add the shrunk case to `OpCoverageCases`, in a list of its own added to `run`'s cases.
-3. Regenerate: `sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.OpCoverageCases"`, then
-   `sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.JlvmVectorGen"`. All three languages then check the case on every build.
-4. If the fix touches the Rust JLVM, the SP1 guest's key moves (`sdk/rust/zk/README.md`).
+3. Regenerate: `tools/sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.OpCoverageCases"`, then
+   `tools/sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.JlvmVectorGen"`. All three languages then check the case on every build.
+4. If the fix touches the Rust JLVM, the SP1 guest's key moves (`lang/rust/zk/README.md`).
 
 `--replay target/difffuzz/findings.jsonl` reruns the findings. A replay writes what still mismatches to
 `replayed-findings.jsonl` beside them, never over the file it reads.

@@ -244,8 +244,8 @@ Simulated and real transcripts are identically distributed, so a proof does not 
 as the Ergo node does, because sigma-state 5.0.13 names an unpublished snapshot. Ergo's proofs are randomised, so
 regenerating changes `sigma_v1.json`. The order:
 
-1. In `tools/sigma-vectors`: `sbt "run generate <repo>/shared/vectors/sigma_v1.json"`.
-2. At the root: `sbt "crypto/Test/runMain xyz.kd5ujc.crypto.sigma.SigmaProofsGen"`, which writes our proofs to
+1. In `tools/sigma-vectors`: `tools/sbt "run generate <repo>/shared/vectors/sigma_v1.json"`.
+2. At the root: `tools/sbt "crypto/Test/runMain xyz.kd5ujc.crypto.sigma.SigmaProofsGen"`, which writes our proofs to
    `target/sigma_dilf4s_proofs.json`.
-3. In `tools/sigma-vectors`: `sbt "run check <repo>/target/sigma_dilf4s_proofs.json <repo>/shared/vectors/sigma_dilf4s_v1.json"`.
+3. In `tools/sigma-vectors`: `tools/sbt "run check <repo>/target/sigma_dilf4s_proofs.json <repo>/shared/vectors/sigma_dilf4s_v1.json"`.
 

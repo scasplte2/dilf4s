@@ -582,7 +582,7 @@ A versioned trie (`versioned-trie.md`) is verified with these same trie ops. Its
 - the scalar charges `literal`, `element`, `varAccess`, `perPathSegment`, `callbackRun` and `rendering`.
 
 **What gas pays for.** Gas meters the work a validating node does to execute a program, on every supported node backend:
-the JVM (the reference, the primary server backend) and Rust (`sdk/rust/jlvm`). Prover, SP1-guest and client costs play
+the JVM (the reference, the primary server backend) and Rust (`lang/rust/jlvm`). Prover, SP1-guest and client costs play
 no part. Every charge is at least the work's cost on the **slowest** backend, so no backend is underpaid and no
 operation is cheaper than its work (a denial-of-service vector).
 
@@ -593,7 +593,7 @@ runs the anchor in libsecp256k1 (native, through ACINQ's JNI bindings) and Rust 
 gas runs at its own rate (on the reference machine, about 240 gas per µs on the JVM and 120 on Rust), and an operation
 is priced by how much slower than secp256k1 it is where it is slowest.
 
-**Calibration** (`benchmarks`: `GasCases`, `GasRatios`, `ratios.py`; `sdk/rust/jlvm/examples/gas_ratios.rs`). Both
+**Calibration** (`benchmarks`: `GasCases`, `GasRatios`, `ratios.py`; `lang/rust/jlvm/examples/gas_ratios.rs`). Both
 harnesses time the same cases (each a program, a baseline that evaluates the same argument reads, and data, exported
 by `GasRatios export`), through the evaluator on the direct driver:
 - **Rounds.** A case is timed in rounds in one thread: `probe, s1, s2, reference, s2, s1, probe`, where `(s1, s2)` is
@@ -609,7 +609,7 @@ by `GasRatios export`), through the evaluator on the direct driver:
   1 until the fastest of three batches at that size takes that long, so one interrupted batch cannot leave a case
   timed one evaluation at a time.
 - **Reference configuration.** The prices hold for a node that runs the JVM as calibrated: OpenJDK 21 pinned to one
-  CPU with `-Xms4g -Xmx4g -XX:+UseSerialGC -XX:+AlwaysPreTouch` (`GasRatios.Reference`; `benchmarks/calibrate.sh`
+  CPU with `-Xms4g -Xmx4g -XX:+UseSerialGC -XX:+AlwaysPreTouch` (`GasRatios.Reference`; `tools/gas/calibrate.sh`
   runs the calibration). Before it measures, `GasRatios measure` checks the settings in effect, whatever flags set
   them: Java 21, the HotSpot heap sizes, pre-touch and collector, no `ActiveProcessorCount`, and a CPU affinity of
   exactly one CPU. It refuses any other configuration and names this one in its output. The serial collector runs
@@ -861,7 +861,7 @@ A property test checks that all three agree on value, error, gas and warnings, a
 ## 8. Deliberate changes from metakit
 
 The parser reads only the surface of §1. Programs written for metakit are ported by rewriting their text into it
-(as the conformance vectors and the ottochain corpus in `jlvm/src/test/resources/programs/ottochain` were).
+(as the conformance vectors and the ottochain corpus in `lang/scala/jlvm/src/test/resources/programs/ottochain` were).
 
 | # | metakit | Change here | Why |
 |---|---|---|---|

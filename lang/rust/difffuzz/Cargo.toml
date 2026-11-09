@@ -1,0 +1,18 @@
+[package]
+workspace = "../native"
+name = "dilf4s-difffuzz"
+description = "The Rust runner of the JLVM differential fuzzing harness (tools/difffuzz/README.md), never part of a guest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# The JLVM, and the value crate it is built on: no crate is added to the graph, and lang/rust/Cargo.lock (the SP1 guest's
+# workspace, which does not include this one) never sees this crate.
+[dependencies]
+dilf4s-core = { path = "../core" }
+dilf4s-jlvm = { path = "../jlvm" }
+
+[lints]
+workspace = true

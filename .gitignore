@@ -82,8 +82,8 @@ tmp/
 *.temp
 
 # Scala and SBT Specific
-project/target/
-project/project/
+lang/scala/project/target/
+lang/scala/project/project/
 
 # NodeJS Specific
 .npm
@@ -186,10 +186,10 @@ db/
 ENV/
 env/
 # Metals-generated sbt files
-project/metals.sbt
-project/project/
+lang/scala/project/metals.sbt
+lang/scala/project/project/
 
 # SDKs: the npm lockfile is committed (npm ci needs it); node_modules, dist and target stay ignored above
-!sdk/ts/package-lock.json
+!/package-lock.json
 # `result*` above (test results) would otherwise hide the Result module
-!sdk/ts/packages/core/src/result.ts
+!lang/ts/packages/core/src/result.ts

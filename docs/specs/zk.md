@@ -83,7 +83,7 @@ every width, table for table. In the code:
 - `PoseidonDerivation` (core tests) derives them.
 - `PoseidonConstantsGen` writes the checked-in tables.
 - `PoseidonCircomlibCheck` compares a circomlibjs checkout with the derivation:
-  `sbt "core/Test/runMain xyz.kd5ujc.core.hash.PoseidonCircomlibCheck <circomlibjs>/src"`.
+  `tools/sbt "core/Test/runMain xyz.kd5ujc.core.hash.PoseidonCircomlibCheck <circomlibjs>/src"`.
   circomlibjs is GPL-3.0, so its files are not in this repository. `PoseidonSuite` pins a digest of each width's
   tables as the check prints them.
 

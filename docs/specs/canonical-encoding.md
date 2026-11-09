@@ -116,7 +116,7 @@ engine's refusal; they and signing's boundary around noble are the SDK's only ca
 verdicts are shared, frozen results.
 
 **Caller bytes.** Every caller byte argument of a public function in core's hash API, proofs and signing passes once
-through core's one boundary (`ownBytes` and its forms, in `core/src/bytes.ts`). It is measured by its internal length
+through core's one boundary (`ownBytes` and its forms, in `lang/scala/core/src/bytes.ts`). It is measured by its internal length
 through one fixed-length view (never its own `length`, so a subclass is not believed) against its bound: a fixed
 field's width, a key's bound, or none for a message or data to hash. Past the bound nothing is copied, and the boundary
 refuses nothing: the length flows on to the check that refused such bytes before (a digest's size, a key's mode, a
@@ -142,7 +142,7 @@ throw an error of its own, hang, do unbounded work, read caller data twice where
 wrong verdict or value. A revoked Proxy is data of the wrong shape (the engine refuses it at the first check, before
 any caller code runs), so it is refused as a `TypeMismatch`, as above.
 
-**Immutable models.** The TypeScript models generated from `shared/schemas` (`core/src/generated`) and every codec
+**Immutable models.** The TypeScript models generated from `shared/schemas` (`lang/scala/core/src/generated`) and every codec
 core's combinators build (`codec.ts`: `leaf`, `record`, `required`, `optional`, `alternative`, `union`, `vector`,
 `textMap`, `defer`, `intEnum`, the literals and the rest) are immutable at run time, as their `readonly` types say. Each
 combinator copies the arrays and objects it is given (field lists, alternatives, key names, texts, enumeration cases),

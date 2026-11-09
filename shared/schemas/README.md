@@ -1,15 +1,15 @@
 # Schemas
 
 These are CDDL (RFC 8610) definitions, written in the dilf4s canonical profile (see
-`models-gen/.../Profile.scala`). They are the single source of truth for shared byte and record formats. The build
+`lang/scala/models-gen/.../Profile.scala`). They are the single source of truth for shared byte and record formats. The build
 generates Scala types and codecs from them into `core` (`xyz.kd5ujc.models.<module>`). The same generator writes the SDK
 models, which are committed:
 
-- TypeScript: `sdk/ts/packages/core/src/generated/` (`TsEmitter`);
-- Rust: `sdk/rust/core/src/generated/` (`RustEmitter`).
+- TypeScript: `lang/ts/packages/core/src/generated/` (`TsEmitter`);
+- Rust: `lang/rust/core/src/generated/` (`RustEmitter`).
 
 After changing a schema, regenerate them with
-`sbt "modelsGen/runMain xyz.kd5ujc.modelsgen.SdkMain shared/schemas sdk/ts/packages/core/src/generated sdk/rust/core/src/generated"`.
+`sbt "modelsGen/runMain xyz.kd5ujc.modelsgen.SdkMain shared/schemas lang/ts/packages/core/src/generated lang/rust/core/src/generated"`.
 `SdkSourcesSuite` fails while the committed SDK models are stale.
 
 | Schema | Defines | Normative text |
