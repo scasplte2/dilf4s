@@ -277,4 +277,11 @@ def test_a_mnemonic_holding_a_surrogate_is_refused_never_repaired() -> None:
     spoiled = phrase.replace("�", "\ud800")
     assert kind_of(err(mnemonic_to_entropy(spoiled, words), "entropy of a spoiled phrase")) == "InvalidMnemonic"
     assert kind_of(err(mnemonic_to_seed(spoiled, "", words), "seed of a spoiled phrase")) == "InvalidMnemonic"
-    assert kind_of(err(mnemonic_to_seed(phrase, "\ud800", words), "a spoiled passphrase")) == "TypeMismatch"
+    assert kind_of(err(mnemonic_to_seed(phrase, "\ud800", words), "a spoiled passphrase")) == "InvalidPassphrase"
+    # the phrase is checked before the passphrase's text, as in every SDK
+    assert kind_of(err(mnemonic_to_seed(spoiled, "\ud800", words), "both spoiled")) == "InvalidMnemonic"
+    assert kind_of(err(mnemonic_to_seed(phrase, 7, words), "a passphrase that is not a str")) == "TypeMismatch"  # type: ignore[arg-type]
+    assert (
+        kind_of(err(WordList.of(["abandon\ud800", *[f"w{i}" for i in range(2047)]], " "), "a spoiled word"))
+        == "InvalidWordList"
+    )
