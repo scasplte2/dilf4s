@@ -120,7 +120,8 @@ public class JlvmVectorsTest {
   @Test
   void cases() {
     final List<Value.Map> rows = rows(vectors, "cases");
-    assertEquals(3339, rows.size());
+    // at least the rows this layer was written against: other PRs add rows, and every row runs below
+    assertTrue(rows.size() >= 3339, "the cases: " + rows.size());
     assertAll(rows.stream().map(c -> () -> {
       final String name = str(c, "name");
       final Jlvm.Outcome o = run(c);
@@ -152,9 +153,9 @@ public class JlvmVectorsTest {
     final long causes = rows.stream().filter(c -> map(get(c, "outcome")).get("cause").isPresent()).count();
     final long built = rows.stream().filter(c -> c.get("built").isPresent()).count();
     assertAll(
-      () -> assertEquals(1112L, values, "the cases with a value"),
-      () -> assertEquals(90L, causes, "the cases with a Crypto cause"),
-      () -> assertEquals(20L, built, "the cases with built bindings"),
+      () -> assertTrue(values >= 1112L, "the cases with a value: " + values),
+      () -> assertTrue(causes >= 90L, "the cases with a Crypto cause: " + causes),
+      () -> assertTrue(built >= 20L, "the cases with built bindings: " + built),
       () -> assertTrue(rows.stream().filter(c -> c.get("built").isPresent()).flatMap(c -> map(get(c, "built")).entries().values().stream().map(V::built))
         .anyMatch(v -> v.weight() > (1L << 20)), "a built binding is far heavier than its description")
     );

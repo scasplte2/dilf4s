@@ -72,8 +72,10 @@ const argsOf = (c: { readonly program: string; readonly data: string; readonly e
 
 describe("jlvm_v1.json through jlvm_evaluate", { timeout: 600_000 }, () => {
   it("the file holds the cases this test samples", () => {
-    expect(vectors.cases.length, "cases").toBe(3339);
-    expect(textual.length, "cases a text carries").toBe(3319);
+    // counted from the file, not pinned: rows other PRs add to jlvm_v1.json must not break this test (#139 added 7
+    // while this one was open); the sample is every STRIDE-th case a text carries, and those are all but the built ones
+    expect(vectors.cases.length, "cases").toBeGreaterThan(3000);
+    expect(textual.length + vectors.cases.filter((c) => c.built !== undefined).length, "every case is textual or built").toBe(vectors.cases.length);
     expect(sample.length, "the sample").toBe(Math.ceil(textual.length / STRIDE));
   });
 
@@ -97,7 +99,7 @@ describe("jlvm_v1.json through jlvm_evaluate", { timeout: 600_000 }, () => {
 
   it("each case whose bindings are built with shared parts has a binding no text within the cap can carry", () => {
     const heavy = vectors.cases.filter((c) => c.built !== undefined);
-    expect(heavy.length).toBe(20);
+    expect(heavy.length, "the built cases this test checks").toBeGreaterThanOrEqual(20);
     for (const c of heavy) {
       const renderings = [...(c.built ?? new Map<string, models.jlvmVectors.BuiltValue>()).values()].map((b) => json.renderWithin(built(b), MAX_TEXT_BYTES));
       expect(
