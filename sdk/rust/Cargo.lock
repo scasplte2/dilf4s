@@ -440,6 +440,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dilf4s-verify"
+version = "0.1.0"
+dependencies = [
+ "dilf4s-core",
+ "dilf4s-jlvm",
+]
+
+[[package]]
 name = "ecdsa"
 version = "0.16.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
