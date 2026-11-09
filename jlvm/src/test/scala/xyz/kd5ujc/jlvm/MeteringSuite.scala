@@ -696,4 +696,35 @@ object MeteringSuite extends IOSuite {
         .and(expect(worst.values.max >= levels, s"the bound is reached: ${worst.toList.sortBy(_._1.toString).mkString(", ")}"))
     )
   }
+
+  test("a limit of 2^53 - 1 is metered like any other; a larger or negative one is Limit with no gas used, before compiling") { jlvm =>
+    val sum = program("""{"+": [1, 2]}""")
+    val twice = program("""{"let": [[["x", 1], ["x", 2]], 1]}""")
+    def run(p: Program, limit: Long, d: Config.Driver) =
+      jlvm.evaluate(p, CNull, Map.empty, Config(limit = GasLimit.of(limit), driver = d))
+    val max = GasLimit.Max.amount.value
+    IO(
+      expect
+        .same(9007199254740991L, max)
+        .and(Config.Driver.values.toList.foldMap { d =>
+          val atDefault = run(sum, GasLimit.Default.amount.value, d)
+          val atMax = run(sum, max, d)
+          val over = List(max + 1, Long.MaxValue, -1L, Long.MinValue).map(l => (l, run(sum, l, d), run(twice, l, d)))
+          expect
+            .same(Right(CInt(3)), atMax.result)
+            .and(
+              expect(atDefault.gasUsed.value == atMax.gasUsed.value, s"$d: the gas used at the maximum is exact: ${atMax.gasUsed.value}")
+            )
+            .and(expect(isOutOfGas(run(sum, atMax.gasUsed.value - 1, d).result), s"$d: one gas short is out of gas"))
+            .and(over.foldMap {
+              case (l, o, t) =>
+                expect(isLimit(o.result), s"$d: a limit of $l is Limit, got ${o.result}")
+                  .and(expect(o.gasUsed.value == 0L, s"$d: a limit of $l uses no gas, used ${o.gasUsed.value}"))
+                  .and(expect(o.warnings.isEmpty, s"$d: a limit of $l warns nothing"))
+                  .and(expect(isLimit(t.result), s"$d: a limit of $l is Limit before the program is compiled, got ${t.result}"))
+                  .and(expect(t.gasUsed.value == 0L, s"$d: a program that does not compile, at a limit of $l, uses no gas"))
+            })
+        })
+    )
+  }
 }

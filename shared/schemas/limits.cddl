@@ -69,3 +69,4 @@ jlvm-max-pairs = 64                          ; bn254_pairing
 jlvm-max-exponent = 999                      ; pow
 jlvm-max-int-bytes = 1024                    ; int_to_bytes
 jlvm-max-warnings = 64                       ; distinct warnings kept per evaluation
+jlvm-max-gas-limit = 9007199254740991        ; 2^53 - 1, the largest gas limit (section 7): exact in every language

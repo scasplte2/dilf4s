@@ -215,7 +215,7 @@ An evaluation ends with a value or one of the following errors. **Either way it 
 | `Arithmetic` | Division by zero, a bad exponent, or a non-terminating rendering. |
 | `Domain` | The right kind but out of domain: malformed hex, an empty separator, a negative width. |
 | `Crypto` | Malformed cryptographic input. A well-formed but invalid proof is `false`, not an error. |
-| `Limit` | A bound of §2. |
+| `Limit` | A bound of §2, or a gas limit over the maximum (§7). |
 | `OutOfGas(required, available)` | The gas limit was reached. |
 
 **What conformance compares** (`conformance.md` §1-3). An error's kind, and for `Type`, `Arity`, `Arithmetic`,
@@ -637,6 +637,16 @@ by `GasRatios export`), through the evaluator on the direct driver:
 
 **The default limit** is 2^24 = 16,777,216 gas, Ethereum's per-transaction cap (EIP-7825): about 70 ms of work on the
 JVM and 140 ms on Rust on the reference machine. Hosts pass their own limit per evaluation.
+
+**The limit's range.** A gas limit is an integer from 0 to 2^53 − 1 (`jlvm-max-gas-limit`, exact in every language).
+- A limit at the maximum is metered like any other. Amounts saturate above every limit, so `OutOfGas` can occur at
+  any limit, and the gas used is exact.
+- A limit outside that range is `Limit`, with no gas used: a larger one, or a negative one where a host's types can
+  hold it (a host's arithmetic gone below zero is refused, never taken as 0). It is checked once the program, data
+  and bindings are read and before the program is compiled: text that does not read is refused as it would be under
+  any limit, and a program that reads but does not compile is `Limit`.
+- Hosts cap the limits they accept. "As much gas as possible" means the host's own cap, which the host resolves before
+  it evaluates.
 
 **Size units.** An operation's size charge is summed over its evaluated arguments, each at its position's rate (by
 default the operation's). For example, `sigma_verify` and `schnorr_verify` charge the message at the hashing rate,

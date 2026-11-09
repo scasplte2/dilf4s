@@ -53,7 +53,7 @@ object GasRatios extends IOApp {
   private val dedicated: Resource[IO, ExecutionContext] =
     Resource.make(IO(Executors.newSingleThreadExecutor()))(e => IO(e.shutdown())).map(ExecutionContext.fromExecutor)
 
-  private val unlimited = Config(limit = GasLimit(Gas(Long.MaxValue / 4)))
+  private val unlimited = Config(limit = GasLimit.Max)
 
   /** Each batch of a unit takes at least this long. */
   val Target: Double = 2.5e5

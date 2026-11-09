@@ -28,7 +28,7 @@ object GasCalibration extends IOApp {
   val Rate: Double = 150.0
 
   private val schedule = GasSchedule.V1
-  private val unlimited = Config(limit = GasLimit(Gas(Long.MaxValue / 4)))
+  private val unlimited = Config(limit = GasLimit.Max)
 
   private def get[A](e: Either[?, A]): A = e.fold(err => sys.error(err.toString), identity)
   private def t(s:      String): CanonicalValue = get(CanonicalValue.text(s))

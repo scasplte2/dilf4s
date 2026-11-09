@@ -612,6 +612,33 @@ object OpCoverageCases extends IOApp {
   }
 
   /**
+   * The gas limit's range (jlvm.md §7): 2^53 - 1, the largest, is metered like any other, and 2^53 is `Limit` with no
+   * gas used, checked before the program is compiled (a program that binds a name twice would be `Malformed`).
+   */
+  val gasLimits: List[Case] = {
+    val max = GasLimit.Max.amount.value
+    List(
+      Case("dilf4s gas limit: 2^53 - 1, the largest, is metered like any other", """{"+": [1, 2]}""", CNull, Some(max)),
+      Case("dilf4s gas limit: 2^53 is Limit, with no gas used", """{"+": [1, 2]}""", CNull, Some(max + 1)),
+      Case(
+        "dilf4s gas limit: 2^53 is Limit before the program is compiled",
+        """{"let": [[["x", 1], ["x", 2]], 1]}""",
+        CNull,
+        Some(max + 1)
+      ),
+      // the program and bindings are read before the limit is checked
+      Case("dilf4s gas limit: a program that is not JSON is Malformed, even at 2^53", "{", CNull, Some(max + 1)),
+      Case(
+        "dilf4s gas limit: a binding that is not JSON is Malformed, even at 2^53",
+        """{"var": "$x"}""",
+        CNull,
+        Some(max + 1),
+        env = Map("x" -> "{")
+      )
+    )
+  }
+
+  /**
    * Host bindings (jlvm.md §4.1): a name bound to null is bound, so it reads as null where an unbound name is
    * `Malformed`; a default replaces a null read either way, and a path into a null binding reads null. `let` shadows a
    * host binding, and binds null like any other value.
@@ -689,7 +716,7 @@ object OpCoverageCases extends IOApp {
     (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"), vector("sigma_v1.json"))
       .mapN((secp, mk, tr, sg) =>
         sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ proofWeight(mk) ++ tries(tr) ++ sigmaBounds ++
-        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes ++ errorSites ++ sortKeyCeiling ++ hostBindings ++ lookupBounds ++ resultBounds ++
+        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes ++ errorSites ++ gasLimits ++ sortKeyCeiling ++ hostBindings ++ lookupBounds ++ resultBounds ++
         verdicts(sg) ++ rootVerifiers(sg)
       )
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))

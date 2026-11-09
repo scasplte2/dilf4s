@@ -26,8 +26,7 @@ export const MAX_OUTPUT_BYTES = 2 ** 20;
 export const DEFAULT_GAS_CAP = DEFAULT_GAS_LIMIT;
 
 /**
- * The highest gas cap a server can be given: 2^32, the highest limit any conformance case is run at, far below the
- * library's `MAX_GAS_LIMIT` (2^53 - 1) and the reference's `Gas.Max` (2^63 - 1, which the Scala and Rust nodes treat
- * as unmetered).
+ * The highest gas cap a server can be given: 2^32, the highest limit any conformance case runs to completion at, far
+ * below `MAX_GAS_LIMIT` (2^53 - 1), the largest limit any implementation accepts.
  */
 export const GAS_CAP_CEILING = 2 ** 32;

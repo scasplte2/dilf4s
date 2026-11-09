@@ -120,7 +120,7 @@ def build_value(
 JLVM_VERSION: Final[int]
 JLVM_GAS_SCHEDULE: Final[int]
 JLVM_DEFAULT_GAS_LIMIT: Final[int]
-JLVM_MAX_GAS: Final[int]
+JLVM_MAX_GAS_LIMIT: Final[int]
 JLVM_MAX_WARNINGS: Final[int]
 JLVM_PROGRAM_TAG: Final[str]
 

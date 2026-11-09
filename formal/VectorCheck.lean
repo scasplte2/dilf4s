@@ -100,16 +100,22 @@ def runCase (case : Json) (fileLimit : Nat) : Option (String × Nat × Nat) := d
     | some (.obj fs) => fs.filterMap (fun (k, v) => match v with | .str s => some (k, s) | _ => none)
     | _ => []
   let limit := (nat? (field case "gasLimit")).getD fileLimit
-  let parsed : Except Err (Node × Value × List (String × Value)) := do
-    let root ← parseProgram program
+  let parsed : Except Err (Jlvm.Expr × Value × List (String × Value)) := do
+    let e ← readProgram program
     let d ← surface data
     let bs ← env.mapM (fun (k, v) => do pure (k, ← surface v))
-    pure (root, d, bs)
+    pure (e, d, bs)
+  -- as the reference does: the program, data and bindings are read, then the limit is checked, then the program is
+  -- compiled (JlvmVectors.run, Jlvm.evaluate)
   match parsed with
   | .error e => pure (render (.error (.err e)), 0, 0)
-  | .ok (root, d, bs) =>
-    let o := evaluate root d bs limit
-    pure (render o.result, o.gasUsed, o.warnings)
+  | .ok (e, d, bs) =>
+    if maxGasLimit < limit then pure (render (.error (.err .limit)), 0, 0)
+    else match compile e with
+      | .error err => pure (render (.error (.err err)), 0, 0)
+      | .ok root =>
+        let o := evaluate root d bs limit
+        pure (render o.result, o.gasUsed, o.warnings)
 
 def checkJlvm (path : String) : IO Bool := do
   let text ← IO.FS.readFile path

@@ -5,7 +5,7 @@
 import { cbor, models, Value } from "@kd5ujc/dilf4s-core";
 import { describe, expect, it } from "vitest";
 
-import { Bindings, compile, decode, evaluate, fromCanonical, parse, parseValue, SCHEDULE_V1, type Program } from "../src/index.js";
+import { Bindings, compile, decode, evaluate, fromCanonical, MAX_GAS_LIMIT, parse, parseValue, SCHEDULE_V1, type Program } from "../src/index.js";
 import { Spans, parseProgram } from "../src/surface.js";
 import { expectErr, expectOk, hex } from "./vectors.js";
 
@@ -32,9 +32,9 @@ describe("arguments of the wrong type are TypeMismatch", () => {
     }
   });
 
-  it("for evaluation options: a gas limit out of range or not whole, an unpublished schedule, options that are no object", () => {
+  it("for evaluation options: a gas limit not whole, an unpublished schedule, options that are no object", () => {
     const p = program("1");
-    for (const gasLimit of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 53, "5", 5n]) {
+    for (const gasLimit of [1.5, -1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, "5", 5n]) {
       expect(expectErr(evaluate(p, data, { gasLimit: gasLimit as never }), `gas limit ${String(gasLimit)}`)).toMatchObject(typeMismatch);
     }
     expect(expectErr(evaluate(p, data, { schedule: { ...SCHEDULE_V1 } }), "a copied schedule")).toMatchObject(typeMismatch);
@@ -58,6 +58,28 @@ describe("arguments of the wrong type are TypeMismatch", () => {
     expect(expectErr(evaluate(p, data, { env: Value.null as never }), "a non-map env")).toMatchObject(typeMismatch);
     expect(expectOk(evaluate(p, data, { gasLimit: Number.MAX_SAFE_INTEGER }), "the largest limit").gasUsed).toBe(10);
     expect(expectOk(evaluate(p, data, { gasLimit: 0 }), "no gas").result).toMatchObject({ ok: false, error: { kind: "OutOfGas", available: 0 } });
+  });
+
+  it("a gas limit of 2^53 - 1 is metered like any other; a larger one is Limit with no gas used, before compiling", () => {
+    expect(MAX_GAS_LIMIT).toBe(2 ** 53 - 1);
+    const sum = program('{"+": [1, 2]}');
+    // a negative limit is refused as Limit, with no gas used, as Scala refuses it (Rust's and Go's types cannot hold one)
+    for (const negative of [-1, Number.MIN_SAFE_INTEGER]) {
+      const refused = expectOk(evaluate(sum, data, { gasLimit: negative }), `a limit of ${negative.toString()}`);
+      expect(refused.gasUsed, "no gas used").toBe(0);
+      expect(refused.result.ok ? "value" : refused.result.error.kind, "Limit").toBe("Limit");
+    }
+    const atMax = expectOk(evaluate(sum, data, { gasLimit: MAX_GAS_LIMIT }), "the largest limit");
+    expect(atMax.gasUsed).toBe(expectOk(evaluate(sum, data), "the default limit").gasUsed);
+    expect(expectOk(evaluate(sum, data, { gasLimit: atMax.gasUsed - 1 }), "one gas short").result).toMatchObject({ ok: false, error: { kind: "OutOfGas" } });
+    const twice = program('{"let": [[["x", 1], ["x", 2]], 1]}');
+    const compiled = expectOk(compile(sum), "compiles");
+    for (const gasLimit of [2 ** 53, 2 ** 63, Number.MAX_VALUE]) {
+      for (const [what, p] of [["a program", sum], ["a compiled program", compiled], ["a program that does not compile", twice]] as const) {
+        const o = expectOk(evaluate(p, data, { gasLimit }), `${what} at ${String(gasLimit)}`);
+        expect(o, `${what} at ${String(gasLimit)}`).toMatchObject({ gasUsed: 0, result: { ok: false, error: { kind: "Limit" } }, warnings: [] });
+      }
+    }
   });
 
   it("a program's identity refuses an algorithm that is not core's", () => {

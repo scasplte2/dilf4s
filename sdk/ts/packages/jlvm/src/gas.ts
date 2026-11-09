@@ -3,12 +3,12 @@
  * constants are the spec's table: gas prices the work of a validating node, and this package sets no prices.
  *
  * An amount is a `number`, saturating at {@link GAS_CAP} (2^53) instead of overflowing, as the reference's saturates
- * at `Long.MaxValue`: a limit is at most `Number.MAX_SAFE_INTEGER`, below the cap, so a saturated charge still only
- * ever exceeds the limit, and every amount that can be paid is exact. A sum or a product of two whole numbers below
- * 2^53 whose true value is below 2^53 is exact in a double, and one whose true value is not rounds to at least 2^53,
- * so clamping after each operation saturates exactly.
+ * at `Long.MaxValue`: a limit is at most {@link MAX_GAS_LIMIT} (2^53 - 1), below the cap, so a saturated charge still
+ * only ever exceeds the limit, and every amount that can be paid is exact. A sum or a product of two whole numbers
+ * below 2^53 whose true value is below 2^53 is exact in a double, and one whose true value is not rounds to at least
+ * 2^53, so clamping after each operation saturates exactly.
  */
-import type { Value } from "@kd5ujc/dilf4s-core";
+import { models, type Value } from "@kd5ujc/dilf4s-core";
 
 import type { JlvmOp } from "./op.js";
 import { elements, renderedBits, SEARCH_BLOCK } from "./values.js";
@@ -16,8 +16,8 @@ import { elements, renderedBits, SEARCH_BLOCK } from "./values.js";
 /** The saturation point of every amount: 2^53, above every limit. */
 export const GAS_CAP = 2 ** 53;
 
-/** The largest gas limit: `Number.MAX_SAFE_INTEGER`, below {@link GAS_CAP}. */
-export const MAX_GAS_LIMIT = Number.MAX_SAFE_INTEGER;
+/** The largest gas limit, 2^53 - 1 (`jlvm-max-gas-limit`), below {@link GAS_CAP}: a larger one is `Limit`. */
+export const MAX_GAS_LIMIT: number = models.limits.JLVM_MAX_GAS_LIMIT;
 
 /** 2^24, Ethereum's per-transaction cap (EIP-7825): the default limit. */
 export const DEFAULT_GAS_LIMIT = 2 ** 24;

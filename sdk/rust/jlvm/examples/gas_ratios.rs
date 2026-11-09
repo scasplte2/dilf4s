@@ -24,7 +24,7 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use std::time::Instant;
 
-use dilf4s_jlvm::{Compiled, Config, Gas, GasLimit, GasSchedule, Jlvm, Native, Value, parse, parse_value};
+use dilf4s_jlvm::{Compiled, Config, GasLimit, GasSchedule, Jlvm, Native, Value, parse, parse_value};
 
 /// Each batch of a unit takes at least this many nanoseconds (`GasRatios.Target`).
 const TARGET: f64 = 2.5e5;
@@ -149,7 +149,7 @@ fn main() {
     let b = Bench {
         jlvm: Jlvm::new(Native::new().unwrap_or_else(|e| panic!("{e:?}"))),
         env: BTreeMap::new(),
-        config: Config { limit: GasLimit(Gas::new(u64::MAX / 4)), schedule: GasSchedule::V1 },
+        config: Config { limit: GasLimit::MAX, schedule: GasSchedule::V1 },
     };
     // what each case is charged, and what its program evaluates to: a case that fails early times no operation
     if check {

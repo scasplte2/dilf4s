@@ -57,6 +57,9 @@ final val JlvmMaxCanonicalWeight = 16777216
 /** `jlvm-max-exponent` (`shared/schemas/limits.cddl`). */
 final val JlvmMaxExponent = 999
 
+/** `jlvm-max-gas-limit` (`shared/schemas/limits.cddl`). */
+final val JlvmMaxGasLimit = 9007199254740991L
+
 /** `jlvm-max-int-bytes` (`shared/schemas/limits.cddl`). */
 final val JlvmMaxIntBytes = 1024
 

@@ -607,3 +607,28 @@ fn refusals_preview_a_huge_name_or_path() {
         assert!(rendered.len() <= 2048, "{what} renders {} bytes", rendered.len());
     }
 }
+
+/// A limit of 2^53 - 1 is metered like any other; a larger one is `Limit` with no gas used, before compiling, through
+/// both entry points.
+#[test]
+fn the_largest_gas_limit_is_metered_and_a_larger_one_is_limit() {
+    let max = GasLimit::MAX.0.value();
+    assert_eq!(max, 9_007_199_254_740_991);
+    let sum = r#"{"+": [1, 2]}"#;
+    let at_max = eval_limit(sum, &Value::Null, max);
+    assert_eq!(at_max.result, Ok(int(3)));
+    assert_eq!(gas(&at_max), gas(&eval(sum, &Value::Null)), "the gas used at the maximum is exact");
+    let short = eval_limit(sum, &Value::Null, gas(&at_max).saturating_sub(1));
+    assert!(matches!(short.result, Err(JlvmError::OutOfGas { .. })), "one gas short is out of gas");
+    let compiled = Compiled::new(parse(sum).unwrap_or_else(|e| panic!("{e}"))).unwrap_or_else(|e| panic!("{e}"));
+    for limit in [max.saturating_add(1), i64::MAX.unsigned_abs(), u64::MAX] {
+        let config = Config { limit: GasLimit(Gas::new(limit)), schedule: S };
+        let direct = jlvm().evaluate_compiled(&compiled, &Value::Null, &BTreeMap::new(), &config);
+        let twice = eval_limit(r#"{"let": [[["x", 1], ["x", 2]], 1]}"#, &Value::Null, limit);
+        for o in [eval_limit(sum, &Value::Null, limit), twice, direct] {
+            assert!(is_limit(&o), "a limit of {limit} is Limit, got {:?}", o.result);
+            assert_eq!(gas(&o), 0, "a limit of {limit} uses no gas");
+            assert!(o.warnings.is_empty(), "a limit of {limit} warns nothing");
+        }
+    }
+}

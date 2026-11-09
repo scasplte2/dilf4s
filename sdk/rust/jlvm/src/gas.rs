@@ -2,6 +2,7 @@
 
 use dilf4s_core::Value;
 
+use crate::error::{JlvmError, Raise as _};
 use crate::op::Op;
 use crate::values;
 
@@ -9,14 +10,15 @@ use crate::values;
 const MAX: u64 = 0x7fff_ffff_ffff_ffff;
 
 /// An amount of gas: non-negative, saturating at `2^63 - 1` instead of overflowing, so a pathological cost can only
-/// ever exceed the limit, never wrap around below it.
+/// ever exceed the limit, never wrap around below it. The saturation point lies above every limit
+/// ([`GasLimit::MAX`]), so a limit at the maximum is metered like any other.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Gas(u64);
 
 impl Gas {
     /// No gas.
     pub const ZERO: Self = Self(0);
-    /// The saturation point.
+    /// The saturation point, above every limit: never a limit itself.
     pub const MAX: Self = Self(MAX);
 
     /// `amount`, saturated.
@@ -277,6 +279,7 @@ impl GasSchedule {
     }
 
     /// The size charge of `op` on its evaluated arguments: each argument at its position's rate, plus any extra rate.
+    /// The whole sum: it is capped at the saturation point, which no sum exceeds.
     pub fn sized<'v>(&self, op: Op, args: impl IntoIterator<Item = &'v Value>) -> Gas {
         self.sized_within(op, args, Gas::MAX)
     }
@@ -454,13 +457,25 @@ const fn v1(op: Op) -> OpCost {
     }
 }
 
-/// A gas limit for one evaluation.
+/// A gas limit for one evaluation: an amount from 0 to [`GasLimit::MAX`]. Evaluation refuses a larger one as `Limit`,
+/// with no gas used, before it compiles the program (jlvm.md section 7).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GasLimit(pub Gas);
 
 impl GasLimit {
     /// 2^24, Ethereum's per-transaction cap (EIP-7825).
     pub const DEFAULT: Self = Self(Gas::new(1 << 24));
+
+    /// 2^53 - 1, the largest limit: exact in every language.
+    pub const MAX: Self = Self(Gas::new(dilf4s_core::generated::limits::JLVM_MAX_GAS_LIMIT));
+
+    /// The refusal of a limit over [`GasLimit::MAX`], which names the limit by its bit length.
+    pub(crate) fn refusal(self) -> Option<JlvmError> {
+        (self.0 > Self::MAX.0).then(|| {
+            let bits = u64::BITS.saturating_sub(self.0.value().leading_zeros());
+            JlvmError::limit(alloc::format!("a gas limit of {bits} bits is over 2^53 - 1"))
+        })
+    }
 }
 
 impl Default for GasLimit {

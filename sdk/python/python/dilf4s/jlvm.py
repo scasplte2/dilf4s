@@ -31,8 +31,8 @@ GAS_SCHEDULE: Final[int] = _native.JLVM_GAS_SCHEDULE
 """The gas schedule version every evaluation uses."""
 DEFAULT_GAS_LIMIT: Final[int] = _native.JLVM_DEFAULT_GAS_LIMIT
 """The gas limit when none is given: 2**24."""
-MAX_GAS: Final[int] = _native.JLVM_MAX_GAS
-"""Gas saturates here (2**63 - 1): a larger limit is this one."""
+MAX_GAS_LIMIT: Final[int] = _native.JLVM_MAX_GAS_LIMIT
+"""The largest gas limit, 2**53 - 1: a limit outside 0 to it is the `Limit` outcome, with no gas used."""
 MAX_WARNINGS: Final[int] = _native.JLVM_MAX_WARNINGS
 """At most this many distinct warnings are kept per evaluation."""
 PROGRAM_TAG: Final[str] = _native.JLVM_PROGRAM_TAG
@@ -41,7 +41,7 @@ PROGRAM_TAG: Final[str] = _native.JLVM_PROGRAM_TAG
 __all__ = [
     "DEFAULT_GAS_LIMIT",
     "GAS_SCHEDULE",
-    "MAX_GAS",
+    "MAX_GAS_LIMIT",
     "MAX_WARNINGS",
     "PROGRAM_TAG",
     "VERSION",

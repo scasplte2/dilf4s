@@ -31,7 +31,7 @@ if (program.ok && data.ok) {
   codec are iterative too.
 - **Gas before work.** Every charge is taken before the work it pays for, as section 7 of the spec says. The schedule
   is the spec's table (`gas.ts`); a test checks it row for row against `jlvm.md`. Amounts are `number`s, saturating at
-  2^53 above every limit, which is at most `Number.MAX_SAFE_INTEGER`.
+  2^53 above every limit, which is at most 2^53 - 1 (`MAX_GAS_LIMIT`, the spec's): a larger limit is `Limit`.
 - **Values.** The machine works on core's canonical values alone, as the Scala and Rust machines work on theirs: data,
   bindings, literals and every array and map it builds. A core map is a persistent AVL tree in canonical key order
   (core's `tree.ts`, the order Rust's `Map` keeps), so `set`, `unset` and `merge` cost O(log n) per entry, as gas

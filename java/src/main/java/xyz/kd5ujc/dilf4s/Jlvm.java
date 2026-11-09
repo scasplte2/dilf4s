@@ -164,6 +164,12 @@ public final class Jlvm {
   /** The default gas limit: 2^24. */
   public static final long DEFAULT_GAS_LIMIT = Programs.DefaultGasLimit();
 
+  /**
+   * The largest gas limit: 2^53 - 1, which every dilf4s language holds exactly. A limit above it, or below 0, is
+   * {@code Limit}, with no gas used.
+   */
+  public static final long MAX_GAS_LIMIT = Programs.MaxGasLimit();
+
   /** The most distinct warnings an evaluation keeps. */
   public static final int MAX_WARNINGS = Programs.MaxWarnings();
 
@@ -209,7 +215,8 @@ public final class Jlvm {
   /**
    * Compiles and evaluates {@code program} against {@code data}, with the host bindings {@code env} (read as {@code
    * $name}; {@code let} and callback bindings shadow them), under the published gas schedule. A program that does not
-   * compile uses no gas; a negative limit is no gas, as in the reference.
+   * compile uses no gas, and a limit outside 0 to {@link #MAX_GAS_LIMIT} is {@code Limit}, with no gas used, before the
+   * program is compiled.
    *
    * @param backends the loaded backends
    * @param program the program
@@ -225,7 +232,8 @@ public final class Jlvm {
   }
 
   /**
-   * {@link #evaluate(Backends, Program, Value, Map, long)} on a program already compiled.
+   * {@link #evaluate(Backends, Program, Value, Map, long)} on a program already compiled: a limit outside 0 to {@link
+   * #MAX_GAS_LIMIT} is {@code Limit} too.
    *
    * @param backends the loaded backends
    * @param compiled the compiled program
