@@ -8,6 +8,7 @@ on:
 jobs:
   # Runs on every change: SdkSourcesSuite and GoEmitterSuite (models-gen) fail if the generated SDK models are stale.
   scala:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,8 +18,21 @@ jobs:
           java-version: "21"
           cache: sbt
       - uses: sbt/setup-sbt@v1
-      # clean first: the sbt-scalafmt incremental cache can report false passes
-      - run: sbt clean checkPR test
+      # clean first: the sbt-scalafmt incremental cache can report false passes. The same run prints the JLVM's test
+      # classpath, which the difffuzz job runs on
+      - run: |
+          set -o pipefail
+          sbt clean checkPR test "export jlvm/Test/fullClasspath" | tee "$RUNNER_TEMP/sbt.log"
+      - if: needs.changes.outputs.jlvm == 'true'
+        run: |
+          set -o pipefail
+          grep -m 1 -E '^/.*/jlvm/target/scala-[^/]+/test-classes' "$RUNNER_TEMP/sbt.log" | tools/difffuzz/bundle.sh target/difffuzz-bundle
+      - if: needs.changes.outputs.jlvm == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: difffuzz-scala
+          path: target/difffuzz-bundle
+          retention-days: 1
 
   changes:
     runs-on: ubuntu-latest
@@ -31,6 +45,7 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
       sp1: ${{ steps.filter.outputs.sp1 }}
       go: ${{ steps.filter.outputs.go }}
+      jlvm: ${{ steps.filter.outputs.jlvm }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -58,6 +73,34 @@ jobs:
               - 'models-gen/**'
               - '.github/workflows/ci.yml'
 
+            # a JLVM in any language, what each is built on, the vectors and the harness: these run the difffuzz job,
+            # and with it the Rust and TypeScript jobs that build its runners
+            jlvm:
+              - 'jlvm/**'
+              - 'core/**'
+              - 'numerics/**'
+              - 'crypto/**'
+              - 'accumulators/**'
+              - 'circe-interop/**'
+              - 'shared-test/**'
+              - 'build.sbt'
+              - 'project/**'
+              - 'vendor/**'
+              - 'sdk/rust/Cargo.*'
+              - 'sdk/rust/rust-toolchain.toml'
+              - 'sdk/rust/core/**'
+              - 'sdk/rust/signing/**'
+              - 'sdk/rust/proofs/**'
+              - 'sdk/rust/jlvm/**'
+              - 'sdk/rust/difffuzz/**'
+              - 'sdk/ts/package*.json'
+              - 'sdk/ts/packages/core/**'
+              - 'sdk/ts/packages/signing/**'
+              - 'sdk/ts/packages/proofs/**'
+              - 'sdk/ts/packages/jlvm/**'
+              - 'shared/**'
+              - 'tools/difffuzz/**'
+              - '.github/workflows/ci.yml'
   go:
     needs: changes
     if: needs.changes.outputs.go == 'true'
@@ -96,7 +139,7 @@ jobs:
 
   typescript:
     needs: changes
-    if: needs.changes.outputs.ts == 'true'
+    if: needs.changes.outputs.ts == 'true' || needs.changes.outputs.jlvm == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -113,10 +156,17 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # the difffuzz job's TypeScript runner runs on these
+      - if: needs.changes.outputs.jlvm == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: difffuzz-ts
+          path: sdk/ts/packages/*/dist
+          retention-days: 1
 
   rust:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.jlvm == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -147,6 +197,58 @@ jobs:
       # the verifier-only build an SP1 guest uses, and the full one
       - run: cargo build -p dilf4s-signing --no-default-features --release --target riscv64imac-unknown-none-elf
       - run: cargo build -p dilf4s-signing --release --target riscv64imac-unknown-none-elf
+      # the difffuzz job's Rust runner
+      - if: needs.changes.outputs.jlvm == 'true'
+        run: cargo build -p dilf4s-difffuzz --release
+      - if: needs.changes.outputs.jlvm == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: difffuzz-rust
+          path: sdk/rust/target/release/dilf4s-difffuzz
+          retention-days: 1
+
+  # Differential fuzzing of the three JLVMs (tools/difffuzz/README.md), on what the three jobs above built: the Scala
+  # classpath, the Rust runner and the TypeScript packages, so nothing is compiled twice. First every jlvm_v1.json case,
+  # each record checked against its row; then a fixed seed and count, capped at five minutes
+  difffuzz:
+    needs: [changes, scala, rust, typescript]
+    if: ${{ !cancelled() && needs.changes.outputs.jlvm == 'true' && needs.scala.result == 'success' && needs.rust.result == 'success' && needs.typescript.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sdk/ts/package-lock.json
+      - run: npm ci
+        working-directory: sdk/ts
+      - uses: actions/download-artifact@v4
+        with:
+          name: difffuzz-scala
+          path: target/difffuzz-bundle
+      - uses: actions/download-artifact@v4
+        with:
+          name: difffuzz-rust
+          path: sdk/rust/target/release
+      - uses: actions/download-artifact@v4
+        with:
+          name: difffuzz-ts
+          path: sdk/ts/packages
+      # artifacts do not keep file modes
+      - run: chmod +x sdk/rust/target/release/dilf4s-difffuzz
+      - run: DIFFFUZZ_PREBUILT=1 tools/difffuzz/run.sh --vectors --out target/difffuzz/vectors
+      - run: DIFFFUZZ_PREBUILT=1 tools/difffuzz/run.sh --seed 1 --cases 60000 --minutes 5 --shrink-budget 1500 --out target/difffuzz/seeded
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: difffuzz-findings
+          path: target/difffuzz
 
   # Kani, the Rust model checker (sdk/rust/verify/src/proofs.rs): each harness proves its property on every input it
   # covers, with no panic, overflow or out-of-bounds access on the way. All of them, measured on euler one at a time
