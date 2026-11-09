@@ -226,6 +226,19 @@ fn every_jlvm_error_kind_has_a_row() {
     assert!(errors.iter().any(|(_, e)| e.op == Some(Site::Var)), "no row has op var");
 }
 
+/// The canonical-form rows (`decodings`, jlvm.md section 1, "Reading a canonical form") need a decoder of a program's
+/// canonical form, which this crate does not have yet: they are skipped here, and gated in Scala and TypeScript.
+#[test]
+#[allow(clippy::print_stdout, reason = "reports the skipped section")]
+fn canonical_form_rows_are_skipped_until_this_crate_decodes_canonical_forms() {
+    let vectors = load();
+    assert!(!vectors.decodings.is_empty(), "jlvm_v1.json has canonical-form rows");
+    println!(
+        "skipped {} canonical-form rows (decodings): the Rust JLVM has no canonical-form decoder yet, issue #127",
+        vectors.decodings.len()
+    );
+}
+
 #[test]
 fn compiled_programs_evaluate_alike() {
     let p = parse(r#"{"+": [1, {"var": "x"}]}"#).unwrap();

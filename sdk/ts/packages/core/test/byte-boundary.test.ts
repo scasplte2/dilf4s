@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 /**
  * The byte boundary's invariant (docs/specs/canonical-encoding.md section 1, "Caller bytes"), checked over the source:
- * the public-facing code of proofs and signing, and core's hash entry points, take a caller's bytes through core's
+ * the public-facing code of proofs, signing and jlvm, and core's hash entry points, take a caller's bytes through core's
  * `ownBytes` family alone. None of it may name the raw readers (`plainBytes`, `takeBytes`, `takeBytesWithin`) or read a
  * value's `.buffer` or `.byteOffset`: those belong to the boundary itself (`core/src/bytes.ts`). Every boundary call
  * states its field's bound, so none may use the unbounded forms (`ownAny`, `ownCopyAny`); a field with truly no bound
@@ -40,6 +40,8 @@ function sources(dir: string): string[] {
 const scanned = (): string[] => [
   ...sources(join(packages, "proofs", "src")),
   ...sources(join(packages, "signing", "src")),
+  // the JLVM takes no caller bytes of its own: a program's encoding goes to cbor.decode, and every value is core's
+  ...sources(join(packages, "jlvm", "src")),
   ...["hash.ts", "hex.ts", "commitment.ts", "utf8.ts"].map((f) => join(packages, "core", "src", f)),
 ];
 
@@ -68,9 +70,9 @@ describe("every caller byte argument passes through core's ownBytes boundary", (
     expect(unboundedUses('import { UNBOUNDED } from "x";\nconst a = ownBytes(x, UNBOUNDED); // UNBOUNDED\nconst b = ownCopy(y, UNBOUNDED);'), "a planted unbounded use").toBe(2);
   });
 
-  it("no public-facing source in proofs, signing or core's hash API reads caller bytes around it", () => {
+  it("no public-facing source in proofs, signing, jlvm or core's hash API reads caller bytes around it", () => {
     const files = scanned();
-    expect(files.length, "the sources were found").toBeGreaterThan(20);
+    expect(files.length, "the sources were found").toBeGreaterThan(30);
     const found = files.flatMap((f) => violations(readFileSync(f, "utf8")).map((v) => `${f.slice(packages.length)}: ${v}`));
     expect(found).toEqual([]);
   });

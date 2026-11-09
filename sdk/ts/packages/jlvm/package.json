@@ -1,0 +1,26 @@
+{
+  "name": "@kd5ujc/dilf4s-jlvm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "dilf4s JLVM: the strict, deterministic, gas-metered expression language for ledgers (docs/specs/jlvm.md)",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@kd5ujc/dilf4s-core": "0.1.0"
+  }
+}

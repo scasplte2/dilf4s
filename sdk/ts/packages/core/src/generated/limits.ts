@@ -50,6 +50,9 @@ export const CANONICAL_MAX_WEIGHT = 9223372036854775807n;
 /** `cardano-kes-max-depth` (`shared/schemas/limits.cddl`). */
 export const CARDANO_KES_MAX_DEPTH = 7;
 
+/** `jlvm-max-canonical-weight` (`shared/schemas/limits.cddl`). */
+export const JLVM_MAX_CANONICAL_WEIGHT = 16777216;
+
 /** `jlvm-max-exponent` (`shared/schemas/limits.cddl`). */
 export const JLVM_MAX_EXPONENT = 999;
 

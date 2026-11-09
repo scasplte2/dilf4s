@@ -17,6 +17,7 @@ jlvm-vectors = {
   "source": text,
   "cases": [* jlvm-case],
   "aliases": [* jlvm-alias],
+  "decodings": [* jlvm-decoding],
 }
 
 jlvm-case = {
@@ -72,6 +73,11 @@ jlvm-poseidon-merkle-cause = { "poseidonMerkle": proofs.poseidon-merkle-error-ki
 ; writes with the operation's own name, "op"; its canonical form ("cbor", canonical CBOR of jlvm.cddl's jlvm-program)
 ; names "op", never the alias; and "id" is that form's identity, taggedHash_SHA-256("dilf4s/jlvm/program/v1", cbor).
 jlvm-alias = { "alias": text, "op": jlvm.jlvm-op, "program": text, "own": text, "cbor": hex, "id": hex }
+
+; A canonical form read as a program (jlvm.md section 1, "Reading a canonical form"): "form", a value built with
+; shared parts so that a heavy one stays small here, read by fromCanonical. The outcome is the error it is refused with,
+; by kind (the order of the refusals is normative), or the program's canonical CBOR.
+jlvm-decoding = { "name": text, "form": built-value, "outcome": jlvm-outcome }
 
 ; A kind of JlvmError (jlvm-errors.cddl).
 jlvm-error-kind = errors.jlvm-error-kind

@@ -35,14 +35,15 @@ object OpCoverageCases extends IOApp {
 
   /**
    * `gasLimit` replaces the default limit, for a case whose work the default does not cover; `built` binds host names to
-   * values too heavy to write out (`BuiltValues` recipes).
+   * values too heavy to write out (`BuiltValues` recipes); `env` binds host names to values as JSON surface text.
    */
   final case class Case(
     name:     String,
     program:  String,
     data:     CanonicalValue,
     gasLimit: Option[Long] = scala.None,
-    built:    Map[String, BuiltValues.Built] = Map.empty
+    built:    Map[String, BuiltValues.Built] = Map.empty,
+    env:      Map[String, String] = Map.empty
   )
 
   /** `{"<op>": [{"var": "a0"}, ...]}` over the arguments as data, so a null argument stays null. */
@@ -540,6 +541,63 @@ object OpCoverageCases extends IOApp {
     )
   }
 
+  /**
+   * Host bindings (jlvm.md §4.1): a name bound to null is bound, so it reads as null where an unbound name is
+   * `Malformed`; a default replaces a null read either way, and a path into a null binding reads null. `let` shadows a
+   * host binding, and binds null like any other value.
+   */
+  val hostBindings: List[Case] = {
+    val x = Map("x" -> "null")
+    def bound(name: String, program: String, env: Map[String, String]): Case =
+      Case(s"dilf4s host bindings: $name", program, CNull, env = env)
+    List(
+      bound("a name bound to null reads as null", """{"var": "$x"}""", x),
+      bound("an unbound name is Malformed", """{"var": "$x"}""", Map.empty),
+      bound("a name bound to null with a default reads the default", """{"var": ["$x", 5]}""", x),
+      bound("an unbound name with a default reads the default", """{"var": ["$x", 5]}""", Map.empty),
+      bound("a path into a name bound to null reads as null", """{"var": "$x.a"}""", x),
+      bound("a path into a name bound to null with a default reads the default", """{"var": ["$x.a", 5]}""", x),
+      bound("a name bound to null is not missing to typeof", """{"typeof": {"var": "$x"}}""", x),
+      bound("let shadows a host binding of null", """{"let": [[["x", 1]], {"var": "$x"}]}""", x),
+      bound("let binds null, read as null", """{"let": [[["y", null]], {"var": "$y"}]}""", Map.empty),
+      bound("let binds null, and a default replaces the read", """{"let": [[["y", null]], {"var": ["$y", 5]}]}""", Map.empty)
+    )
+  }
+
+  /**
+   * The result bound applies to what a lookup returns, never to the keys it reads (jlvm.md §2, §4.4): 4,100 absent
+   * keys of 4,096 characters, one value shared, weigh past 2^24 together. `missing_some` whose minimum is met returns
+   * `[]`; one whose minimum is not, and `missing`, return the keys, and are `Limit`.
+   */
+  val lookupBounds: List[Case] = {
+    val keys = BuiltValues.of(text("k" * 4096)).copies(4100)
+    val limit = Option(1L << 27)
+    List(
+      ("missing_some: absent keys past the result bound, the minimum met, is []", """{"missing_some": [0, {"var": "$ks"}]}"""),
+      ("missing_some: absent keys past the result bound, the minimum not met, is Limit", """{"missing_some": [4100, {"var": "$ks"}]}"""),
+      ("missing: absent keys past the result bound is Limit", """{"missing": {"var": "$ks"}}""")
+    ).map { case (name, program) => Case(s"dilf4s lookups: $name", program, CNull, limit, Map("ks" -> keys)) }
+  }
+
+  /**
+   * The result bound applies to the maps `unset` and `set` build, never to host data passed through (jlvm.md section
+   * 2): a host map holding `[x, x]` nested 24 deep (weight 2^25 - 1, in 24 arrays) is read, asked its kind and its keys
+   * as it is, but removing a key from it, either way, builds a map past the bound, and is `Limit`.
+   */
+  val resultBounds: List[Case] = {
+    val heavy = BuiltValues
+      .of(int(0))
+      .wrap(surface("""["$", "$"]"""), 24)
+      .wrap(surface("""{"keep": "$", "drop": 1}"""))
+    List(
+      ("unset of a key, leaving a map past the result bound, is Limit", """{"unset": [{"var": "$m"}, "drop"]}"""),
+      ("set of a key to null, leaving a map past the result bound, is Limit", """{"set": [{"var": "$m"}, "drop", null]}"""),
+      ("a host map past the result bound passes through a read, typeof", """{"typeof": {"var": "$m"}}"""),
+      ("a host map past the result bound passes through get", """{"get": [{"var": "$m"}, "drop"]}"""),
+      ("a host map past the result bound is searched by has", """{"has": [{"var": "$m"}, "keep"]}""")
+    ).map { case (name, program) => Case(s"dilf4s result bound: $name", program, CNull, built = Map("m" -> heavy)) }
+  }
+
   private def render(cases: List[Case]): String =
     Json
       .obj(
@@ -550,6 +608,7 @@ object OpCoverageCases extends IOApp {
             Option.when(c.built.nonEmpty)("built" -> Json.fromFields(c.built.toList.sortBy(_._1).map {
               case (k, b) => k -> get(CanonicalCirce.toCirce(BuiltValues.value(b)))
             })) ++
+            Option.when(c.env.nonEmpty)("env" -> Json.fromFields(c.env.toList.sortBy(_._1).map { case (k, v) => k -> v.asJson })) ++
             c.gasLimit.map(l => "gasLimit" -> l.asJson)
           )
         }.asJson
@@ -560,7 +619,7 @@ object OpCoverageCases extends IOApp {
     (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"))
       .mapN((secp, mk, tr) =>
         sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ proofWeight(mk) ++ tries(tr) ++ sigmaBounds ++
-        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes ++ errorSites ++ sortKeyCeiling
+        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes ++ errorSites ++ sortKeyCeiling ++ hostBindings ++ lookupBounds ++ resultBounds
       )
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))
       .as(ExitCode.Success)

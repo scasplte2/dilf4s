@@ -398,8 +398,25 @@ object Parser {
     case other                           => JlvmError.Malformed(other.toString)
   }
 
+  /**
+   * The heaviest canonical form any program has (jlvm.md section 1, "Reading a canonical form"): 64 per unit of the
+   * largest program's size, where a form needs at most 40 (an operation's node writes 38 besides its arguments).
+   */
+  val MaxCanonicalWeight: Long = xyz.kd5ujc.models.limits.JlvmMaxCanonicalWeight.toLong
+
+  /**
+   * The program a canonical form denotes, its refusals in the normative order (jlvm.md section 1): a form heavier than
+   * [[MaxCanonicalWeight]] is a [[JlvmError.Limit]] from its cached weight, before anything reads it (decoding walks
+   * the value as the schema reads it, so a value built with shared parts would be expanded); then the decoder's shape
+   * errors, then `var` paths that do not parse ([[JlvmError.Malformed]]); then [[Program.from]]'s bounds and checks.
+   */
   def fromCanonical(v: CanonicalValue): Either[JlvmError, Program] =
-    W.JlvmProgram.codec.decoder.decode(v).leftMap(e => JlvmError.Malformed(e.message)).flatMap(w => fromWire(w.expr).flatMap(Program.from))
+    if (v.weight > MaxCanonicalWeight) Left(JlvmError.Limit(s"the form weighs more than any program's, $MaxCanonicalWeight"))
+    else
+      W.JlvmProgram.codec.decoder
+        .decode(v)
+        .leftMap(e => JlvmError.Malformed(e.message))
+        .flatMap(w => fromWire(w.expr).flatMap(Program.from))
 
   /** A program's canonical CBOR; one past `Cbor.MaxEncodedBytes` is a [[JlvmError.Limit]], never a throw. */
   def encode(p: Program): Either[JlvmError, ByteVector] =

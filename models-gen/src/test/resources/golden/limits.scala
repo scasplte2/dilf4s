@@ -51,6 +51,9 @@ final val CanonicalMaxWeight = 9223372036854775807L
 /** `cardano-kes-max-depth` (`shared/schemas/limits.cddl`). */
 final val CardanoKesMaxDepth = 7
 
+/** `jlvm-max-canonical-weight` (`shared/schemas/limits.cddl`). */
+final val JlvmMaxCanonicalWeight = 16777216
+
 /** `jlvm-max-exponent` (`shared/schemas/limits.cddl`). */
 final val JlvmMaxExponent = 999
 

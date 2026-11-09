@@ -138,6 +138,49 @@ object JlvmVectors {
         )
     }
 
+  def surfaceOf(json:       String): CanonicalValue = JsonSurface.parse(json).fold(e => sys.error(e.message), identity)
+  private def surface(json: String): CanonicalValue = surfaceOf(json)
+
+  /**
+   * Canonical forms read as programs (jlvm.md section 1, "Reading a canonical form"), each a value built with shared
+   * parts, and the refusal each gets in the normative order: the weight guard before the shape, the shape before the
+   * `var` paths, and the paths before the size bound.
+   */
+  val decodingForms: List[(String, BuiltValues.Built)] = {
+    val doubled = BuiltValues.of(surface("1")).wrap(surface("""["$", "$"]"""), 24)
+    val nulls = BuiltValues.of(surface("{}")).copies(140000)
+    List(
+      "an overweight form that is not a map is Limit, before its shape is read" -> doubled,
+      "an overweight map with a wrong version is Limit, before its version is read" -> doubled.wrap(
+        surface("""{"jlvm": 2, "expr": "$"}""")
+      ),
+      "a map with a wrong version is Malformed" -> BuiltValues.of(surface("""{"jlvm": 2, "expr": {}}""")),
+      "a program too large with a var path that does not parse is Malformed: paths come before the size bound" ->
+      nulls.wrap(surface("""{"jlvm": 1, "expr": {"arr": [{"var": "a..b"}, {"arr": "$"}]}}""")),
+      "a program too large by its size, 140,000 shared nulls, is Limit" -> nulls.wrap(surface("""{"jlvm": 1, "expr": {"arr": "$"}}""")),
+      "a program of shared parts reads as itself" ->
+      BuiltValues.of(surface("""{"op": "+", "args": []}""")).copies(3).wrap(surface("""{"jlvm": 1, "expr": {"arr": "$"}}"""))
+    )
+  }
+
+  /** Each decoding row: its form, and the program it reads as (its canonical CBOR) or the error kind it is refused with. */
+  def decodings: List[Json] =
+    decodingForms.map {
+      case (name, b) =>
+        val form = BuiltValues.build(b).fold(e => sys.error(s"$name: $e"), identity)
+        val outcome = Parser
+          .fromCanonical(form)
+          .fold(
+            e => Json.obj("error" -> (e.kind: String).asJson),
+            p => Json.obj("cbor" -> Parser.encode(p).fold(e => sys.error(e.message), _.toHex).asJson)
+          )
+        Json.obj(
+          "name"    -> name.asJson,
+          "form"    -> CanonicalCirce.toCirce(BuiltValues.value(b)).fold(e => sys.error(e.toString), identity),
+          "outcome" -> outcome
+        )
+    }
+
   def render(jlvm: Jlvm, in: Inputs): String =
     Json
       .obj(
@@ -156,7 +199,8 @@ object JlvmVectors {
             List("outcome" -> outcome(o), "gasUsed" -> o.gasUsed.value.asJson, "warnings" -> o.warnings.size.asJson)
           )
         }.asJson,
-        "aliases" -> aliases.asJson
+        "aliases"   -> aliases.asJson,
+        "decodings" -> decodings.asJson
       )
       .spaces2 + "\n"
 }
@@ -280,6 +324,30 @@ object JlvmVectorsSuite extends IOSuite {
         val seen = scanned.map(_._2._1).sum
         expect(seen >= 50, s"the outcomes hold $seen byte strings")
           .and(expect(rough.isEmpty, s"${rough.size} outcomes hold a rope: ${rough.take(5).mkString("; ")}"))
+      }
+  }
+
+  test("a canonical form is refused in the normative order: weight, shape, var paths, size (jlvm.md section 1)") {
+    case (_, _) =>
+      IO {
+        val kinds = JlvmVectors.decodingForms.map {
+          case (name, b) => name -> BuiltValues.build(b).toOption.map(Parser.fromCanonical).map(_.fold(e => e.kind: String, _ => "program"))
+        }
+        expect.same(
+          List(Some("Limit"), Some("Limit"), Some("Malformed"), Some("Malformed"), Some("Limit"), Some("program")),
+          kinds.map(_._2)
+        )
+      }
+  }
+
+  test("an overweight form built with shared parts is refused from its weight, without being expanded") {
+    case (_, _) =>
+      IO {
+        // [x, x] nested 60 deep: 2^60 leaves in 60 arrays, which no decoder could walk; inside a valid envelope
+        val deep = BuiltValues.of(CanonicalValue.CNull).wrap(JlvmVectors.surfaceOf("""["$", "$"]"""), 60)
+        val form = BuiltValues.build(deep.wrap(JlvmVectors.surfaceOf("""{"jlvm": 1, "expr": {"arr": "$"}}""")))
+        expect(form.map(_.weight > Parser.MaxCanonicalWeight) == Right(true), "the form is overweight")
+          .and(expect(form.map(Parser.fromCanonical).exists(_.left.exists(e => (e.kind: String) == "Limit")), "and Limit at once"))
       }
   }
 

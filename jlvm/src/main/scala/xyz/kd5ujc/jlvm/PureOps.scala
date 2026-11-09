@@ -493,7 +493,8 @@ object PureOps {
     }
 
   private def unset(op: Op, args: Vector[CanonicalValue]): Result =
-    binary(op, args)((m, k) => (record(op, m), key(op, k)).mapN(CanonicalValue.removed))
+    // the map it builds is a result, bounded as set's is (jlvm.md section 2)
+    binary(op, args)((m, k) => (record(op, m), key(op, k)).mapN(CanonicalValue.removed).flatMap(bounded(op, _)))
 
   // ---- bytes
 
