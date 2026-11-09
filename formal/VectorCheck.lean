@@ -100,6 +100,8 @@ def runCase (case : Json) (fileLimit : Nat) : Option (String × Nat × Nat) := d
     | some (.obj fs) => fs.filterMap (fun (k, v) => match v with | .str s => some (k, s) | _ => none)
     | _ => []
   let limit := (nat? (field case "gasLimit")).getD fileLimit
+  -- the limit is checked before the program is read, as the reference does
+  if maxGasLimit < limit then return (render (.error (.err .limit)), 0, 0)
   let parsed : Except Err (Node × Value × List (String × Value)) := do
     let root ← parseProgram program
     let d ← surface data

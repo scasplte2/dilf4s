@@ -621,10 +621,16 @@ structure Outcome where
 
 def initial (limit : Nat) : Meter := ⟨0, limit, [], 0⟩
 
-/-- Evaluates a compiled program against the data and the host bindings, with a gas limit. -/
+/-- The largest gas limit, `2^53 - 1` (`jlvm-max-gas-limit`): every language holds it exactly. -/
+def maxGasLimit : Nat := 2 ^ 53 - 1
+
+/-- Evaluates a compiled program against the data and the host bindings, with a gas limit. A limit over
+`maxGasLimit` is `Limit`, with no gas used (jlvm.md section 7). -/
 def evaluate (root : Node) (data : Value) (env : List (String × Value)) (limit : Nat) : Outcome :=
-  match (eval root ⟨data, env, []⟩).run (initial limit) with
-  | .ok v m => ⟨m.used, .ok v, m.warnings.length, m.steps⟩
-  | .fail f m => ⟨m.used, .error f, m.warnings.length, m.steps⟩
+  if limit ≤ maxGasLimit then
+    match (eval root ⟨data, env, []⟩).run (initial limit) with
+    | .ok v m => ⟨m.used, .ok v, m.warnings.length, m.steps⟩
+    | .fail f m => ⟨m.used, .error f, m.warnings.length, m.steps⟩
+  else ⟨0, .error (.err .limit), 0, 0⟩
 
 end Jlvm

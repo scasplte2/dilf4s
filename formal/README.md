@@ -34,9 +34,9 @@ prints each theorem's axioms, and CI checks both.
   The measure is the size of the node, then the elements a callback has left: a callback runs its body, a subterm,
   once per element of a finite list. Lean's kernel accepts the definition only with that proof, so every evaluation
   terminates. The JSON parser alone takes fuel, twice its input's length.
-- **Theorem 1, gas within the limit** (`gas_within_limit`). Take any program, data, bindings and gas limit below
-  `2^63 - 1`. The gas an evaluation uses never exceeds the limit, and an evaluation that runs out of gas reports the
-  whole limit as used (jlvm.md section 7, zk-jlvm.md section 2).
+- **Theorem 1, gas within the limit** (`gas_within_limit`). Take any program, data, bindings and gas limit. The gas
+  an evaluation uses never exceeds the limit, and an evaluation that runs out of gas reports the whole limit as used
+  (jlvm.md section 7, zk-jlvm.md section 2).
 - **Theorem 2, gas bounds paid work** (`steps_bounded_by_gas`). `steps` counts the node evaluations that paid their
   charge, each at least 10 gas, so there are at most `gasUsed / 10` of them, and so at most `limit / 10`, whatever
   the program and its data. Every node pays before it evaluates any part, except a computed path (`{"var": e}`),
@@ -50,9 +50,10 @@ sound (`Sound`). Only `pure`, `bind`, `charge`, `chargeStep`, `fail` and `warn` 
 once. The evaluator is written only with these, so the compiler checks that every evaluation is sound. `chargeStep`
 takes a proof that its charge is at least 10, and every node starts with one.
 
-The limit must be below `2^63 - 1` because gas saturates there. At a limit of exactly `2^63 - 1`, a charge that
-saturates still fits the limit, so once saturated, further charges are free. That is true of the reference
-(`Gas.scala`) too.
+Gas saturates at `2^63 - 1`, and at a limit of exactly `2^63 - 1` a saturated charge would still fit the limit, making
+further charges free. No evaluation reaches that point: a limit over `2^53 - 1` (`maxGasLimit`, `jlvm-max-gas-limit`)
+is refused as `Limit` with no gas used, as in every implementation, and `maxGasLimit_lt_satMax` proves the largest
+accepted limit lies below the saturation point. So both theorems hold for every limit.
 
 ## How it is checked against the vectors
 
