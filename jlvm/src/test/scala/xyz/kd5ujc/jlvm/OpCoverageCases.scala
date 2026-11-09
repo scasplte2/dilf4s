@@ -620,10 +620,21 @@ object OpCoverageCases extends IOApp {
     List(
       Case("dilf4s gas limit: 2^53 - 1, the largest, is metered like any other", """{"+": [1, 2]}""", CNull, Some(max)),
       Case("dilf4s gas limit: 2^53 is Limit, with no gas used", """{"+": [1, 2]}""", CNull, Some(max + 1)),
-      Case("dilf4s gas limit: 2^53 is Limit before the program is compiled", """{"let": [[["x", 1], ["x", 2]], 1]}""", CNull, Some(max + 1)),
+      Case(
+        "dilf4s gas limit: 2^53 is Limit before the program is compiled",
+        """{"let": [[["x", 1], ["x", 2]], 1]}""",
+        CNull,
+        Some(max + 1)
+      ),
       // the program and bindings are read before the limit is checked
       Case("dilf4s gas limit: a program that is not JSON is Malformed, even at 2^53", "{", CNull, Some(max + 1)),
-      Case("dilf4s gas limit: a binding that is not JSON is Malformed, even at 2^53", """{"var": "$x"}""", CNull, Some(max + 1), env = Map("x" -> "{"))
+      Case(
+        "dilf4s gas limit: a binding that is not JSON is Malformed, even at 2^53",
+        """{"var": "$x"}""",
+        CNull,
+        Some(max + 1),
+        env = Map("x" -> "{")
+      )
     )
   }
 
