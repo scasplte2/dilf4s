@@ -31,4 +31,6 @@ pub mod trie_vectors;
 pub mod versioned_trie;
 pub mod versioned_trie_vectors;
 pub mod vrf_vectors;
+pub mod zk_jlvm;
+pub mod zk_jlvm_vectors;
 pub mod zk_vectors;

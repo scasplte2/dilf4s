@@ -1,4 +1,4 @@
-//! The guest's `Cargo.lock` (which `build.rs` builds `--locked`) resolves every patched crate to its SP1 patch and to
+//! The guest's `Cargo.lock`, `sdk/Cargo.lock` at its workspace root (which `build.rs` builds `--locked`), resolves every patched crate to its SP1 patch and to
 //! nothing else: cargo only warns about a `[patch]` entry that does not apply.
 
 #![allow(clippy::panic, clippy::indexing_slicing, reason = "tests fail by panicking")]
@@ -15,7 +15,7 @@ fn field(block: &str, key: &str) -> Option<String> {
 }
 
 fn locked() -> Vec<Locked> {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../guest/Cargo.lock");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../Cargo.lock");
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
     text.split("[[package]]")
         .skip(1)

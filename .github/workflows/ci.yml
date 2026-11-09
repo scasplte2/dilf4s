@@ -47,6 +47,7 @@ jobs:
             # the guest links core, proofs, signing and jlvm, so any of them (or the vectors) reruns it
             sp1:
               - 'sdk/rust/**'
+              - 'sdk/Cargo.*'
               - 'shared/vectors/**'
               - '.github/workflows/ci.yml'
 
@@ -133,20 +134,25 @@ jobs:
       - run: ./check-toolchain.sh
       - uses: Swatinem/rust-cache@v2
         with:
+          # the guest's workspace root is sdk/ (sdk/Cargo.toml), so its target directory is sdk/target
           workspaces: |
             sdk/rust/zk/cases
             sdk/rust/zk/host
-            sdk/rust/zk/guest
+            sdk
       - run: cargo fmt --check --manifest-path cases/Cargo.toml
       - run: cargo fmt --check --manifest-path guest/Cargo.toml
       - run: cargo fmt --check --manifest-path host/Cargo.toml
       - run: cargo clippy --locked --manifest-path cases/Cargo.toml --all-targets --all-features -- -D warnings
-      # host/build.rs refuses a stale guest/Cargo.lock, then builds the guest with the succinct toolchain, --locked
+      # host/build.rs refuses a stale sdk/Cargo.lock, then builds the guest with the succinct toolchain, --locked
       # one family at a time: each test runs SP1's native executor in a child process backed by /dev/shm,
       # which parallel tests can fill: SP1 reports that as a SIGBUS crash ("CrashDetails { signal: 7 }")
       - run: df -h /dev/shm
       - run: cargo test --locked --release --manifest-path host/Cargo.toml -- --nocapture --test-threads=1
-      # after the tests: under clippy, sp1-build skips the guest build, and the host includes the guest's ELF
+      # after the tests: under clippy, sp1-build skips the guest build, and the host includes the guest's ELF. The
+      # tests include tests/jlvm_call.rs: the JLVM call guest against native code, and shared/vectors/zk_jlvm_v1.json
+      # current with the guest's verifying key (a changed guest fails until the file is regenerated)
       - run: cargo clippy --locked --manifest-path host/Cargo.toml --all-targets -- -D warnings
+      # the prove path's CUDA prover compiles (sp1-cuda needs no CUDA toolkit to build); nothing is proved here
+      - run: cargo clippy --locked --manifest-path host/Cargo.toml --all-targets --features cuda -- -D warnings
       # no lockfile may change while checking
       - run: git diff --exit-code -- '*.lock'

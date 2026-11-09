@@ -1,0 +1,176 @@
+{
+  "calls": [
+    {
+      "data": "{\"call\":{\"data\":\"0x\",\"method\":\"execute\",\"signatures\":[\"0xc892075424b748fd2ac2d745fb6e29556647a18c78a3dc3fa0165a09df2a2dc6260008e7676c449f1d40a0b79148a51890db38b8f2ebae7b6b40fe0259a207e91c\",\"0x818d58c8222e12d1b739d7336f750d0816197b465c5da88bbcc4b104d14fa0e509064090ffc91a6a789429d278beed5dcab8c6a449d11b5253d78752312323451c\"],\"to\":\"0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b\",\"value\":5},\"state\":{\"nonce\":0,\"owners\":[\"0xe6b3367318c5e11a6eed3cd0d850ec06a02e9b90\",\"0xa9f161a2badd44f3fe45b91a044a9484b72f1dc4\",\"0x6b7f55f60b4c55ea1e8ec52a07f17b3c4ca648dd\"],\"threshold\":2,\"wallet\":\"0x7777777777777777777777777777777777777777\"}}",
+      "gasLimit": 16777216,
+      "name": "contract multisig_wallet: 2 of 3 owners sign",
+      "program": "{\"let\":[[[\"s\",{\"var\":\"state\"}],[\"c\",{\"var\":\"call\"}],[\"payload\",{\"keccak256\":{\"cat\":[{\"var\":\"$s.wallet\"},{\"int_to_bytes\":[{\"var\":\"$s.nonce\"},32]},{\"var\":\"$c.to\"},{\"int_to_bytes\":[{\"var\":\"$c.value\"},32]},{\"var\":\"$c.data\"}]}}],[\"digest\",{\"keccak256\":{\"cat\":[\"0x19457468657265756d205369676e6564204d6573736167653a0a3332\",{\"var\":\"$payload\"}]}}]],{\"if\":[{\"!=\":[{\"var\":\"$c.method\"},\"execute\"]},{\"object\":{\"reject\":\"unknown method\"}},{\"let\":[[[\"signers\",{\"unique\":{\"filter\":[{\"map\":[{\"var\":\"$c.signatures\"},{\"ecrecover\":[{\"var\":\"$digest\"},{\"var\":\"$current\"}]}]},{\"in\":[{\"var\":\"$current\"},{\"var\":\"$s.owners\"}]}]}}]],{\"if\":[{\">=\":[{\"count\":{\"var\":\"$signers\"}},{\"var\":\"$s.threshold\"}]},{\"state\":{\"set\":[{\"var\":\"$s\"},\"nonce\",{\"+\":[{\"var\":\"$s.nonce\"},1]}]},\"effects\":[{\"kind\":\"call\",\"to\":{\"var\":\"$c.to\"},\"value\":{\"var\":\"$c.value\"},\"data\":{\"var\":\"$c.data\"}}]},{\"object\":{\"reject\":\"too few distinct owners signed this transaction at this nonce\"}}]}]}]}]}",
+      "proofBytes": "4388a21c0000000000000000000000000000000000000000000000000000000000000000002f850ee998974d6cc00e50cd0814b098c05bfade466d28573240d057f2535200000000000000000000000000000000000000000000000000000000000000000759f952bc2a571ed79fd765267cc8a12dbb569901a12ea71b88242b5641dae125d327c4195300fcf2adcfec3605f6df55dd3491096ccfcea87689e20e5f4e1e2f207a9f73cbdf53b1f9dc50bb2e1f44569bd01070bf1a5163d1fdeb4c83f2f9032d0073ac64af7b79fdeeb11ac446a556f3179c52154bfbbf0fcf50997608ff2d9671c6ef53fce47888f19eb85dd27ab042ce0d89c85c9a5ccb2e51dfbd23f211a1522223374f302079f9dad3cfb9fd234dc17c66da47a3d85713633ff983a4278fe2771f55014fb2c6ca0d48bf73605b980b609736d8291d3756c400dd497f2889f9fb7c009b3eb6d305187c62855e70e635b4718026343e47c00850b87da1",
+      "publicValues": "a965696e7075745820fd487ed5f4b6b2263c1054e9c27fd6b302ebd0589025e01c8d1dc8b91a39ebc367676173557365641a000112b2676f7574636f6d65a166726573756c745820bd3fa270960aaeb44a7c661e8866595dacbd7ef3b497f5af4687cead48404b086770726f6772616d582004291687bf285eaa3852c43b23f245106a308b7780fbaae44b7d22fc04652ddb6776657273696f6e016862696e64696e67735820e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575686761734c696d69741a01000000686c616e677561676501687363686564756c6501",
+      "statement": {
+        "bindings": "e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575",
+        "gasLimit": 16777216,
+        "gasUsed": 70322,
+        "input": "fd487ed5f4b6b2263c1054e9c27fd6b302ebd0589025e01c8d1dc8b91a39ebc3",
+        "language": 1,
+        "outcome": {
+          "result": "bd3fa270960aaeb44a7c661e8866595dacbd7ef3b497f5af4687cead48404b08"
+        },
+        "program": "04291687bf285eaa3852c43b23f245106a308b7780fbaae44b7d22fc04652ddb",
+        "schedule": 1
+      }
+    },
+    {
+      "data": "{\"call\":{\"data\":\"0x\",\"method\":\"execute\",\"signatures\":[\"0x000000000000000000000000000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111111b\"],\"to\":\"0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b\",\"value\":5},\"state\":{\"nonce\":0,\"owners\":[\"0xe6b3367318c5e11a6eed3cd0d850ec06a02e9b90\",\"0xa9f161a2badd44f3fe45b91a044a9484b72f1dc4\",\"0x6b7f55f60b4c55ea1e8ec52a07f17b3c4ca648dd\"],\"threshold\":2,\"wallet\":\"0x7777777777777777777777777777777777777777\"}}",
+      "gasLimit": 16777216,
+      "name": "contract multisig_wallet: an unrecoverable signature is an error",
+      "program": "{\"let\":[[[\"s\",{\"var\":\"state\"}],[\"c\",{\"var\":\"call\"}],[\"payload\",{\"keccak256\":{\"cat\":[{\"var\":\"$s.wallet\"},{\"int_to_bytes\":[{\"var\":\"$s.nonce\"},32]},{\"var\":\"$c.to\"},{\"int_to_bytes\":[{\"var\":\"$c.value\"},32]},{\"var\":\"$c.data\"}]}}],[\"digest\",{\"keccak256\":{\"cat\":[\"0x19457468657265756d205369676e6564204d6573736167653a0a3332\",{\"var\":\"$payload\"}]}}]],{\"if\":[{\"!=\":[{\"var\":\"$c.method\"},\"execute\"]},{\"object\":{\"reject\":\"unknown method\"}},{\"let\":[[[\"signers\",{\"unique\":{\"filter\":[{\"map\":[{\"var\":\"$c.signatures\"},{\"ecrecover\":[{\"var\":\"$digest\"},{\"var\":\"$current\"}]}]},{\"in\":[{\"var\":\"$current\"},{\"var\":\"$s.owners\"}]}]}}]],{\"if\":[{\">=\":[{\"count\":{\"var\":\"$signers\"}},{\"var\":\"$s.threshold\"}]},{\"state\":{\"set\":[{\"var\":\"$s\"},\"nonce\",{\"+\":[{\"var\":\"$s.nonce\"},1]}]},\"effects\":[{\"kind\":\"call\",\"to\":{\"var\":\"$c.to\"},\"value\":{\"var\":\"$c.value\"},\"data\":{\"var\":\"$c.data\"}}]},{\"object\":{\"reject\":\"too few distinct owners signed this transaction at this nonce\"}}]}]}]}]}",
+      "publicValues": "a965696e7075745820a6495f3b1c86a04cd6647e6f680695fee7ce1bc7193557ad15795aaeb0cfe3986767617355736564198842676f7574636f6d65a2626f706965637265636f766572656572726f726643727970746f6770726f6772616d582004291687bf285eaa3852c43b23f245106a308b7780fbaae44b7d22fc04652ddb6776657273696f6e016862696e64696e67735820e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575686761734c696d69741a01000000686c616e677561676501687363686564756c6501",
+      "statement": {
+        "bindings": "e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575",
+        "gasLimit": 16777216,
+        "gasUsed": 34882,
+        "input": "a6495f3b1c86a04cd6647e6f680695fee7ce1bc7193557ad15795aaeb0cfe398",
+        "language": 1,
+        "outcome": {
+          "error": "Crypto",
+          "op": "ecrecover"
+        },
+        "program": "04291687bf285eaa3852c43b23f245106a308b7780fbaae44b7d22fc04652ddb",
+        "schedule": 1
+      }
+    },
+    {
+      "data": "{\"call\":{\"method\":\"mint\",\"to\":\"alice\",\"tokenId\":\"7\"},\"state\":{\"approvals\":{},\"balances\":{},\"minter\":\"mint\",\"operators\":{},\"owners\":{}}}",
+      "env": {
+        "sender": "\"mint\""
+      },
+      "gasLimit": 500,
+      "name": "contract erc721: mint with too little gas",
+      "program": "{\"let\":[[[\"s\",{\"var\":\"state\"}],[\"c\",{\"var\":\"call\"}],[\"me\",{\"var\":\"$sender\"}],[\"owner\",{\"if\":[{\"var\":\"call.tokenId\"},{\"get\":[{\"var\":\"$s.owners\"},{\"var\":\"call.tokenId\"}]},null]}],[\"mayOperate\",{\"and\":[{\"var\":\"$owner\"},{\"or\":[{\"==\":[{\"var\":\"$me\"},{\"var\":\"$owner\"}]},{\"get\":[{\"get\":[{\"var\":\"$s.operators\"},{\"var\":\"$owner\"},{\"literal\":{}}]},{\"var\":\"$me\"},false]}]}]}]],{\"if\":[{\"==\":[{\"var\":\"$c.method\"},\"mint\"]},{\"if\":[{\"and\":[{\"==\":[{\"var\":\"$me\"},{\"var\":\"$s.minter\"}]},{\"!\":{\"var\":\"$owner\"}},{\"!!\":{\"var\":\"$c.to\"}}]},{\"state\":{\"merge\":[{\"var\":\"$s\"},{\"owners\":{\"set\":[{\"var\":\"$s.owners\"},{\"var\":\"$c.tokenId\"},{\"var\":\"$c.to\"}]},\"balances\":{\"set\":[{\"var\":\"$s.balances\"},{\"var\":\"$c.to\"},{\"+\":[{\"get\":[{\"var\":\"$s.balances\"},{\"var\":\"$c.to\"},0]},1]}]}}]},\"effects\":[]},{\"object\":{\"reject\":\"only the minter mints, a token once, to someone\"}}]},{\"==\":[{\"var\":\"$c.method\"},\"approve\"]},{\"if\":[{\"and\":[{\"var\":\"$owner\"},{\"var\":\"$mayOperate\"}]},{\"state\":{\"set\":[{\"var\":\"$s\"},\"approvals\",{\"set\":[{\"var\":\"$s.approvals\"},{\"var\":\"$c.tokenId\"},{\"var\":\"$c.to\"}]}]},\"effects\":[]},{\"object\":{\"reject\":\"only the owner or an operator approves\"}}]},{\"==\":[{\"var\":\"$c.method\"},\"setApprovalForAll\"]},{\"state\":{\"set\":[{\"var\":\"$s\"},\"operators\",{\"set\":[{\"var\":\"$s.operators\"},{\"var\":\"$me\"},{\"set\":[{\"get\":[{\"var\":\"$s.operators\"},{\"var\":\"$me\"},{\"literal\":{}}]},{\"var\":\"$c.operator\"},{\"if\":[{\"var\":\"$c.approved\"},true,null]}]}]}]},\"effects\":[]},{\"==\":[{\"var\":\"$c.method\"},\"transferFrom\"]},{\"if\":[{\"and\":[{\"var\":\"$owner\"},{\"==\":[{\"var\":\"$owner\"},{\"var\":\"$c.from\"}]},{\"!!\":{\"var\":\"$c.to\"}},{\"or\":[{\"var\":\"$mayOperate\"},{\"==\":[{\"get\":[{\"var\":\"$s.approvals\"},{\"var\":\"$c.tokenId\"}]},{\"var\":\"$me\"}]}]}]},{\"state\":{\"merge\":[{\"var\":\"$s\"},{\"owners\":{\"set\":[{\"var\":\"$s.owners\"},{\"var\":\"$c.tokenId\"},{\"var\":\"$c.to\"}]},\"approvals\":{\"unset\":[{\"var\":\"$s.approvals\"},{\"var\":\"$c.tokenId\"}]},\"balances\":{\"let\":[[[\"less\",{\"set\":[{\"var\":\"$s.balances\"},{\"var\":\"$c.from\"},{\"-\":[{\"get\":[{\"var\":\"$s.balances\"},{\"var\":\"$c.from\"}]},1]}]}]],{\"set\":[{\"var\":\"$less\"},{\"var\":\"$c.to\"},{\"+\":[{\"get\":[{\"var\":\"$less\"},{\"var\":\"$c.to\"},0]},1]}]}]}}]},\"effects\":[]},{\"object\":{\"reject\":\"not the owner, an operator or the approved address\"}}]},{\"object\":{\"reject\":\"unknown method\"}}]}]}",
+      "publicValues": "a965696e70757458209d94ba7c8849368d29860cb8039339df7c383f07bc658dd355c262b48fb562a167676173557365641901f4676f7574636f6d65a1656572726f72684f75744f664761736770726f6772616d582016825a0ab40c3fd8d8b7df4357a4a1475775996a09fc03faa6d0636d96d1a06c6776657273696f6e016862696e64696e67735820a0d6142184fb2c53ede821af62d64d12145eabfa98b60a1b68519347cbf9d3bb686761734c696d69741901f4686c616e677561676501687363686564756c6501",
+      "statement": {
+        "bindings": "a0d6142184fb2c53ede821af62d64d12145eabfa98b60a1b68519347cbf9d3bb",
+        "gasLimit": 500,
+        "gasUsed": 500,
+        "input": "9d94ba7c8849368d29860cb8039339df7c383f07bc658dd355c262b48fb562a1",
+        "language": 1,
+        "outcome": {
+          "error": "OutOfGas"
+        },
+        "program": "16825a0ab40c3fd8d8b7df4357a4a1475775996a09fc03faa6d0636d96d1a06c",
+        "schedule": 1
+      }
+    },
+    {
+      "data": "{\"call\":{\"amount\":40,\"method\":\"spend\",\"proof\":\"0x9c5e04d0d54b9177c5c4554080b300342c411e45f7b556718effec5a74e6cdac7cea149a1403ee454f3a085085067cc0973f3a52c9426d0543cf714988e2d3f72aa4613029d391207914b73ae019b158c8997df1482a5fdd8ef3cd15d464cef40c1ce3fdf2e28a0fa7570b9d4af87746619ca0887ea890901b76b7bb6db369c0c4e61b2f148b109366d82f691ff76c0e\",\"to\":\"0x0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c\"},\"state\":{\"k\":2,\"nonce\":0,\"signers\":[\"0x02463b3d9f662621fb1b4be8fbbe2520125a216cdfc9dae3debcba4850c690d45b\",\"0x032b22efda32491a9e0294339ca3da761f7d36cfc8814c1b29ca731921025ff695\",\"0x02f16f804244e46e2a09232d4aff3b59976b98fac14328a2d1a32496b49998f247\"],\"treasury\":\"0x7e7e7e7e7e7e7e7e\"}}",
+      "gasLimit": 16777216,
+      "name": "contract threshold_treasury: 2 of 3 sign",
+      "program": "{\"let\":[[[\"s\",{\"var\":\"state\"}],[\"c\",{\"var\":\"call\"}],[\"message\",{\"blake2b256\":{\"cat\":[{\"var\":\"state.treasury\"},{\"int_to_bytes\":[{\"var\":\"state.nonce\"},8]},{\"var\":\"call.to\"},{\"int_to_bytes\":[{\"var\":\"call.amount\"},32]}]}}],[\"committee\",{\"type\":\"threshold\",\"k\":{\"var\":\"state.k\"},\"children\":{\"map\":[{\"var\":\"state.signers\"},{\"type\":\"dlog\",\"pk\":{\"var\":\"$current\"}}]}}]],{\"if\":[{\"and\":[{\"==\":[{\"var\":\"$c.method\"},\"spend\"]},{\"sigma_verify\":[{\"var\":\"$committee\"},{\"var\":\"$c.proof\"},{\"var\":\"$message\"}]}]},{\"state\":{\"set\":[{\"var\":\"$s\"},\"nonce\",{\"+\":[{\"var\":\"$s.nonce\"},1]}]},\"effects\":[{\"kind\":\"transfer\",\"to\":{\"var\":\"$c.to\"},\"amount\":{\"var\":\"$c.amount\"}}]},{\"object\":{\"reject\":\"k of the committee must sign this spend at this nonce\"}}]}]}",
+      "publicValues": "a965696e7075745820cb4f2cfb84d1928a4ea84de096fc4fa3703d1a693d7b4ee752ad1bbe2facc62167676173557365641a00024e00676f7574636f6d65a166726573756c74582037e1594aa6da5bec16ad89928ab1dc180c5729fe1ec406130906fa567dece0676770726f6772616d58204a23b5ad0a10e871075288a5b8f5909208dd8e90cbaa8646ee01d69eea61fd526776657273696f6e016862696e64696e67735820e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575686761734c696d69741a01000000686c616e677561676501687363686564756c6501",
+      "statement": {
+        "bindings": "e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575",
+        "gasLimit": 16777216,
+        "gasUsed": 151040,
+        "input": "cb4f2cfb84d1928a4ea84de096fc4fa3703d1a693d7b4ee752ad1bbe2facc621",
+        "language": 1,
+        "outcome": {
+          "result": "37e1594aa6da5bec16ad89928ab1dc180c5729fe1ec406130906fa567dece067"
+        },
+        "program": "4a23b5ad0a10e871075288a5b8f5909208dd8e90cbaa8646ee01d69eea61fd52",
+        "schedule": 1
+      }
+    },
+    {
+      "data": "{\"call\":{\"method\":\"release\"},\"state\":{\"beneficiary\":\"ann\",\"cliff\":1250,\"duration\":1000,\"released\":0,\"start\":1000,\"total\":3000}}",
+      "env": {
+        "ordinal": "1333"
+      },
+      "gasLimit": 16777216,
+      "name": "contract vesting: release at 1333",
+      "program": "{\"let\":[[[\"s\",{\"var\":\"state\"}],[\"height\",{\"var\":\"$ordinal\"}],[\"vested\",{\"if\":[{\"<\":[{\"var\":\"$height\"},{\"var\":\"state.cliff\"}]},0,{\">=\":[{\"var\":\"$height\"},{\"+\":[{\"var\":\"state.start\"},{\"var\":\"state.duration\"}]}]},{\"var\":\"state.total\"},{\"floor\":{\"/\":[{\"*\":[{\"var\":\"state.total\"},{\"-\":[{\"var\":\"$height\"},{\"var\":\"state.start\"}]}]},{\"var\":\"state.duration\"}]}}]}],[\"releasable\",{\"-\":[{\"var\":\"$vested\"},{\"var\":\"state.released\"}]}]],{\"if\":[{\"!=\":[{\"var\":\"call.method\"},\"release\"]},{\"object\":{\"reject\":\"unknown method\"}},{\">\":[{\"var\":\"$releasable\"},0]},{\"state\":{\"set\":[{\"var\":\"$s\"},\"released\",{\"var\":\"$vested\"}]},\"effects\":[{\"kind\":\"transfer\",\"to\":{\"var\":\"$s.beneficiary\"},\"amount\":{\"var\":\"$releasable\"}}]},{\"object\":{\"reject\":\"nothing to release yet\"}}]}]}",
+      "publicValues": "a965696e70757458201e6c4665c735613ac4ebbffd9a834997a7ac4c438e3773336ff0b3add8c512266767617355736564190c4b676f7574636f6d65a166726573756c7458204e22f3e06a90d88cae64d9ba5af0109f8b3d7cf94c219c1811534c8e57ab17c56770726f6772616d58201be43adc9599c31a985e277a9f53ab0edff82f1788106ad5c7298fdba24347f26776657273696f6e016862696e64696e67735820a7095e6fec3aeb4e0311a65be10dd9ce31b6fcbff5d48826fcfb0e21a2a60346686761734c696d69741a01000000686c616e677561676501687363686564756c6501",
+      "statement": {
+        "bindings": "a7095e6fec3aeb4e0311a65be10dd9ce31b6fcbff5d48826fcfb0e21a2a60346",
+        "gasLimit": 16777216,
+        "gasUsed": 3147,
+        "input": "1e6c4665c735613ac4ebbffd9a834997a7ac4c438e3773336ff0b3add8c51226",
+        "language": 1,
+        "outcome": {
+          "result": "4e22f3e06a90d88cae64d9ba5af0109f8b3d7cf94c219c1811534c8e57ab17c5"
+        },
+        "program": "1be43adc9599c31a985e277a9f53ab0edff82f1788106ad5c7298fdba24347f2",
+        "schedule": 1
+      }
+    },
+    {
+      "data": "null",
+      "gasLimit": 16777216,
+      "name": "metakit HexOpsSuite: hex_to_int rejects a non-string argument (integer 5)",
+      "program": "{\"hex_to_int\":[5]}",
+      "publicValues": "a965696e707574582029b11896e5a76b4284cefdc59e80e8fea8f0b571eaab42792575cf210554b6776767617355736564185e676f7574636f6d65a2626f706a6865785f746f5f696e74656572726f7264547970656770726f6772616d5820963a06970aa55069663ea27b80ceece162a0418aec12ab1b7aec4666323a09ba6776657273696f6e016862696e64696e67735820e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575686761734c696d69741a01000000686c616e677561676501687363686564756c6501",
+      "statement": {
+        "bindings": "e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575",
+        "gasLimit": 16777216,
+        "gasUsed": 94,
+        "input": "29b11896e5a76b4284cefdc59e80e8fea8f0b571eaab42792575cf210554b677",
+        "language": 1,
+        "outcome": {
+          "error": "Type",
+          "op": "hex_to_int"
+        },
+        "program": "963a06970aa55069663ea27b80ceece162a0418aec12ab1b7aec4666323a09ba",
+        "schedule": 1
+      }
+    },
+    {
+      "data": "null",
+      "gasLimit": 16777216,
+      "name": "metakit JsonLogicSpec: division by zero should throw error for integer division",
+      "program": "{\"/\":[10,0]}",
+      "publicValues": "a965696e707574582029b11896e5a76b4284cefdc59e80e8fea8f0b571eaab42792575cf210554b677676761735573656419016c676f7574636f6d65a2626f70612f656572726f726a41726974686d657469636770726f6772616d5820f18842d5a5eba58e586078cb8509c79a805f97794966934d84d6e84f302db4196776657273696f6e016862696e64696e67735820e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575686761734c696d69741a01000000686c616e677561676501687363686564756c6501",
+      "statement": {
+        "bindings": "e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575",
+        "gasLimit": 16777216,
+        "gasUsed": 364,
+        "input": "29b11896e5a76b4284cefdc59e80e8fea8f0b571eaab42792575cf210554b677",
+        "language": 1,
+        "outcome": {
+          "error": "Arithmetic",
+          "op": "/"
+        },
+        "program": "f18842d5a5eba58e586078cb8509c79a805f97794966934d84d6e84f302db419",
+        "schedule": 1
+      }
+    },
+    {
+      "data": "{}",
+      "gasLimit": 16777216,
+      "name": "metakit gas vector 203",
+      "program": "{\"sigma_verify\":[{\"type\":\"dlog\",\"pk\":\"0x14e2946f9ea29efcd6c8d3bc8ebce97aff2267495f19207d83a5a278b3d1b6750d6d60e75a6a4aef02b7c664972665bbdfa16ef85493ca2cc449eea611b9ed31\"},{\"type\":\"dlog\",\"e\":\"0xc96165908da06f904b1a9daac294f7da4130bf3ed75e21a94b6baaf90a6d9e\",\"z\":\"0x00f5311178e486968e899fc065809d9d77c44b1377ec18be8bd25be121546888\"},\"0x617574686f72697a65207369676d61\"]}",
+      "publicValues": "a965696e7075745820e98f7ddd87d54dfc6921d5396319e84f1a8c43042149a911bb72bd74b87cdfe867676173557365641a00012b9d676f7574636f6d65a3626f706c7369676d615f766572696679656361757365a1657369676d616c496e76616c6964506f696e74656572726f726643727970746f6770726f6772616d58204a2b85fd1d8b0800192df6357b360522b239e78836f01e00d46add450f38ccf76776657273696f6e016862696e64696e67735820e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575686761734c696d69741a01000000686c616e677561676501687363686564756c6501",
+      "statement": {
+        "bindings": "e132f1bef5b9b0a0a5960ae256063cbf8bb2246ded70e4a8ac42a8efe733f575",
+        "gasLimit": 16777216,
+        "gasUsed": 76701,
+        "input": "e98f7ddd87d54dfc6921d5396319e84f1a8c43042149a911bb72bd74b87cdfe8",
+        "language": 1,
+        "outcome": {
+          "cause": {
+            "sigma": "InvalidPoint"
+          },
+          "error": "Crypto",
+          "op": "sigma_verify"
+        },
+        "program": "4a2b85fd1d8b0800192df6357b360522b239e78836f01e00d46add450f38ccf7",
+        "schedule": 1
+      }
+    }
+  ],
+  "circuit": "v6.1.0",
+  "elfSha256": "2778a5d8280de0581ae3d7a070ba3e53f505d85fa7503df8f2aeb08199a748d9",
+  "programVKey": "00648a8f144b8ec371cd9846461c43d262432438fb4b1e39beafa810be3e850b",
+  "sp1": "v6.10.0",
+  "spec": "docs/specs/zk-jlvm.md",
+  "version": 1
+}

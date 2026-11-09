@@ -40,6 +40,8 @@ A verifying key is `(α ∈ G1, β, γ, δ ∈ G2, IC ∈ G1^(n+1))`.
 - **Required values.** `exitCode = 0` and `vkRoot = 0x002f850e…5352`.
 - **Public inputs.** `[programVKey, sha256(publicValues) & (2^253 − 1), exitCode, vkRoot, nonce]`.
 - **Verifying key.** The verifying key of the Solidity contract. Its negated `β`, `γ` and `δ` are negated back.
+- **A proved JLVM call** is such a proof of the guest `dilf4s-zk-jlvm-call`, whose public values are a call's statement:
+  `zk-jlvm.md`.
 
 ## 3. Poseidon
 
