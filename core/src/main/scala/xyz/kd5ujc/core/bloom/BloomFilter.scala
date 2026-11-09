@@ -3,6 +3,10 @@
  * the Ethereum logs bloom. Changes: parameterised size and hash count; Kirsch–Mitzenmacher double hashing from one
  * tagged digest (k different bits per item, one hash call instead of four); immutable bits with consistent equality;
  * typed errors instead of `require`; union, intersection and a canonical encoding.
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not
+ * distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/. The rest of dilf4s is Apache-2.0
+ * (NOTICE).
  */
 package xyz.kd5ujc.core.bloom
 

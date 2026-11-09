@@ -1,18 +1,29 @@
 dilf4s
 Copyright (c) James Aman and contributors.
-Licensed under the Mozilla Public License 2.0 (see LICENSE).
+Licensed under the Apache License, Version 2.0 (see LICENSE), except the files listed under the Mozilla Public
+License below.
 
 This product includes or adapts material from the following projects.
 Adapted files keep their original notices; entries are added as material is ported.
 
-- Topl Bifrost (https://github.com/Topl/Bifrost), MPL-2.0:
-  LevelDB store; KES Sum/Product composition design.
-- Topl Bifrost BloomFilter (co.topl.modifier.block.BloomFilter, 2020, by James Aman), MPL-2.0:
-  core/.../bloom/BloomFilter.scala.
-- Topl BramblSc (https://github.com/Topl/BramblSc), MPL-2.0:
-  Ed25519 / ExtendedEd25519 / VRF compatibility test vectors (docs/test-vectors).
+Mozilla Public License 2.0 (see LICENSES/MPL-2.0.txt). The MPL applies file by file: these files, and changes to
+them, stay under it, while the rest of dilf4s is Apache-2.0.
+
+- Topl Bifrost BloomFilter (co.topl.modifier.block.BloomFilter, 2020, by James Aman):
+  core/src/main/scala/xyz/kd5ujc/core/bloom/BloomFilter.scala.
+- Topl Bifrost (https://github.com/Topl/Bifrost) co.topl.models.utility.Ratio, by way of Constellation tessellation
+  and metakit: numerics/src/main/scala/xyz/kd5ujc/numerics/Ratio.scala.
+- Topl BramblSc (https://github.com/Topl/BramblSc): Ed25519, Extended Ed25519, BIP32-Ed25519 and BIP-39 test
+  vectors: docs/test-vectors/Ed25519.json, ExtendedEd25519.json, Bip32Ed25519Ckd.json, Bip32Ed25519Icarus.json and
+  Bip39MnemonicToEntropy.json.
+
+Other licences:
+
+- Topl Bifrost (https://github.com/Topl/Bifrost), MPL-2.0: the KES sum and product composition design, which
+  crypto/src/main/scala/xyz/kd5ujc/crypto/kes/MerkleKes.scala implements.
 - BIP-39 word lists (https://github.com/bitcoin/bips/tree/master/bip-0039), MIT:
-  signing/src/main/resources/bip-0039.
+  crypto/src/main/resources/bip-0039, sdk/rust/signing/src/keys/bip39-english.txt and
+  sdk/ts/packages/signing/src/wordlists/english.ts.
 - metakit (https://github.com/Constellation-Labs/metakit), Apache-2.0:
   JLVM conformance programs adapted from its json_logic tests and shared vectors
   (jlvm/src/test/resources/vectors/jlvm_cases.json, shared/vectors/jlvm_v1.json,

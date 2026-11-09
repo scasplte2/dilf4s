@@ -11,7 +11,7 @@ ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 
 // POM metadata of every published module
 ThisBuild / homepage := Some(url("https://github.com/scasplte2/dilf4s"))
-ThisBuild / licenses := List("MPL-2.0" -> url("https://www.mozilla.org/en-US/MPL/2.0/"))
+ThisBuild / licenses := List("Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0.txt"))
 ThisBuild / scmInfo := Some(ScmInfo(url("https://github.com/scasplte2/dilf4s"), "scm:git:git@github.com:scasplte2/dilf4s.git"))
 ThisBuild / developers := List(Developer("scasplte2", "scasplte2", "", url("https://github.com/scasplte2")))
 ThisBuild / versionScheme := Some("early-semver")
@@ -33,8 +33,16 @@ lazy val commonScalacOptions = Seq(
   "-Wunused:all"
 )
 
+// Apache-2.0 section 4: every published jar carries the licence and NOTICE, and the MPL for the files NOTICE lists
+lazy val licenceFiles = Def.setting {
+  val root = (ThisBuild / baseDirectory).value
+  Seq(root / "LICENSE" -> "META-INF/LICENSE", root / "NOTICE" -> "META-INF/NOTICE", root / "LICENSES" / "MPL-2.0.txt" -> "META-INF/LICENSES/MPL-2.0.txt")
+}
+
 lazy val commonSettings = Seq(
   scalacOptions ++= commonScalacOptions,
+  Compile / packageBin / mappings ++= licenceFiles.value,
+  Compile / packageSrc / mappings ++= licenceFiles.value,
   resolvers += Resolver.mavenLocal,
   // Hyperledger Besu's native libraries are not on Maven Central; the pinned copies are vendored here (vendor/README.md)
   resolvers += MavenRepository("dilf4s-vendor", ((ThisBuild / baseDirectory).value / "vendor" / "maven").toURI.toString),
