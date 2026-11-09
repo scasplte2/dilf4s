@@ -1,8 +1,9 @@
 /**
  * `@kd5ujc/dilf4s-core/internal`: the helpers this SDK's other packages share with core, for checking caller input once
- * at their own public boundaries and then working on plain, owned data. Not part of the public API: it may change
- * with any release, and nothing here checks its arguments (the `...Of` forms are the unchecked counterparts of the
- * public functions of the same name).
+ * at their own public boundaries and then working on plain, owned data. This entry point exists for the sibling
+ * `@kd5ujc/dilf4s-*` packages alone: it is not a supported API for any other caller, it may change or go away in any
+ * release without notice, and nothing here checks its arguments (the `...Of` forms are the unchecked counterparts of
+ * the public functions of the same name).
  */
 // the boundary for caller byte arguments: proofs and signing take their bytes through these alone (a test scans for it)
 export { bytesLength, copyBytes, isBytes, isLocalBuffer, isStableBuffer, ownAny, ownBytes, ownCopy, ownCopyAny, ownCopyPrefix, UNBOUNDED } from "./bytes.js";

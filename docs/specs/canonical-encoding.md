@@ -132,7 +132,7 @@ nonce and challenge, a try-and-increment hash's tries, a trie walk's branch bit 
 reads. A test scans the sources, and fails on a planted violation, so no public-facing code reads caller bytes around
 the boundary.
 
-**Caller code.** An exception raised by the caller's own code propagates unchanged, in all three packages: a getter,
+<a id="caller-code"></a>**Caller code.** An exception raised by the caller's own code propagates unchanged, in all three packages: a getter,
 a Proxy's trap, a Proxy whose handler is itself revoked or otherwise unusable (the engine throws while running the
 caller's handler), an iterator's methods, a version key's functions, a source of randomness. The SDK does not catch
 it, so no verdict or value comes back, and an iterator the SDK opened is closed first, as leaving `for...of` early
@@ -185,7 +185,10 @@ TypeScript `private` ones, which JavaScript reads as any other property, and wha
 history, a reader's trusted head and finished snapshot) is a copy. A byte version (`VersionKey.bytes`) is copied as it
 is read in, from its internal slots, as roots are (one longer than its key's width is kept as that length alone, never
 copied, and refused by it), and again as it is handed out; a caller's own version key's versions are the caller's own
-values, which the key checks as it encodes them. Every export of a shipped module, entry point or not, is reachable by
+values, which the key checks as it encodes them. The SDK's guarantees hold through each package's `exports` map alone
+(`.`, and core's `./internal`, which is for the sibling packages alone): importing a package's file by its path or
+`file:` URL, outside that map, is caller code ([Caller code](#caller-code)) and outside the SDK's guarantee, and the
+hardening that follows only limits what such code can reach. Every export of a shipped module, entry point or not, is reachable by
 a caller importing the file by its URL, so none gives out an instance's own memory: proofs' constructor tokens are
 each module's own, and signing's key, signature and secret readers give copies. Signing's keys are built by each
 scheme's module, through a token and factories its keys module exports; they copy what they are given, so a key built
