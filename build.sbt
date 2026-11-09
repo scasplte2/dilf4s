@@ -9,6 +9,13 @@ ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / semanticdbEnabled := true
 ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 
+// POM metadata of every published module
+ThisBuild / homepage := Some(url("https://github.com/scasplte2/dilf4s"))
+ThisBuild / licenses := List("MPL-2.0" -> url("https://www.mozilla.org/en-US/MPL/2.0/"))
+ThisBuild / scmInfo := Some(ScmInfo(url("https://github.com/scasplte2/dilf4s"), "scm:git:git@github.com:scasplte2/dilf4s.git"))
+ThisBuild / developers := List(Developer("scasplte2", "scasplte2", "", url("https://github.com/scasplte2")))
+ThisBuild / versionScheme := Some("early-semver")
+
 ThisBuild / assemblyMergeStrategy := {
   case "logback.xml"                                       => MergeStrategy.first
   case x if x.contains("io.netty.versions.properties")     => MergeStrategy.discard
@@ -64,7 +71,7 @@ lazy val root = project.in(file("."))
     commonSettings,
     publish / skip := true
   )
-  .aggregate(sharedTest, numerics, core, circeInterop, accumulators, storage, storageRocksDb, crypto, modelsGen, jlvm, benchmarks)
+  .aggregate(sharedTest, numerics, core, circeInterop, accumulators, storage, storageRocksDb, crypto, modelsGen, jlvm, javaApi, benchmarks)
 
 // ─── Shared Test Utilities ───
 lazy val sharedTest = project.in(file("shared-test"))
@@ -245,6 +252,46 @@ lazy val jlvm = project.in(file("jlvm"))
     )
   )
   .dependsOn(core % "compile->compile;test->test", crypto, accumulators, circeInterop % Test, sharedTest % Test)
+
+// ─── Java API: records, sealed families and Result over core, crypto, accumulators and jlvm (java/README.md) ───
+// Its public API is Java (src/main/java). The conversions from the reference's types are Scala (src/main/scala,
+// package xyz.kd5ujc.dilf4s.internal), so every match over a reference family is checked exhaustive.
+lazy val javaApi = project.in(file("java"))
+  .settings(
+    name := "dilf4s-java",
+    description := "A Java API over dilf4s: canonical values, signing, proofs and the JLVM, with no Scala type in its signatures",
+    commonSettings,
+    // a Java artifact: its name carries no Scala version (its Scala dependencies carry theirs)
+    crossPaths := false,
+    javacOptions ++= Seq("--release", "21", "-encoding", "UTF-8"),
+    // compiling only: publishLocal's javadoc reuses javacOptions and rejects these
+    Compile / compile / javacOptions ++= Seq("-Xlint:all", "-Werror"),
+    Test / compile / javacOptions ++= Seq("-Xlint:all", "-Werror"),
+    // the docs jar is the Java API's javadoc: its Java sources but internal (scaladoc of a mixed project documents only
+    // the Scala bridge), against the compiled classes the sources import
+    Compile / doc / sources := (Compile / doc / sources).value
+      .filter(f => f.getName.endsWith(".java") && !f.getPath.contains(s"${java.io.File.separator}internal${java.io.File.separator}")),
+    Compile / doc / dependencyClasspath += Attributed.blank((Compile / classDirectory).value),
+    Compile / doc := (Compile / doc).dependsOn(Compile / compile).value,
+    Compile / doc / javacOptions += "-Xdoclint:all,-missing",
+    libraryDependencies ++= Seq(Libraries.jupiterInterface % Test, Libraries.junitJupiterApi % Test),
+    testFrameworks += new TestFramework("com.github.sbt.junit.jupiter.api.JupiterFramework"),
+    // each suite in a fresh JVM (so its first calls run cold, unwarmed by the others) at the JVM's default 1 MB thread
+    // stack, the stack java/README.md's guarantee names: .jvmopts gives sbt 32 MB stacks, which hide recursion as deep
+    // as its input (the reference's PBKDF2 and JLVM parser; see java/README.md, "Thread stacks")
+    Test / fork := true,
+    Test / javaOptions ++= Seq(
+      "-Xss1m",
+      s"-Ddilf4s.vectors=${((LocalRootProject / baseDirectory).value / "shared" / "vectors").getAbsolutePath}",
+      // the sources EffectScanTest reads: the one effect the API runs is in one Java method
+      s"-Ddilf4s.sources=${(baseDirectory.value / "src").getAbsolutePath}"
+    ),
+    Test / testGrouping := {
+      val options = (Test / javaOptions).value.toVector
+      (Test / definedTests).value.map(t => Tests.Group(t.name, Seq(t), Tests.SubProcess(ForkOptions().withRunJVMOptions(options))))
+    }
+  )
+  .dependsOn(core, crypto, accumulators, jlvm)
 
 addCommandAlias("checkPR", s"; scalafixAll --check; scalafmtCheckAll; scalafmtSbtCheck")
 addCommandAlias("preparePR", s"; scalafixAll; scalafmtAll; scalafmtSbt")

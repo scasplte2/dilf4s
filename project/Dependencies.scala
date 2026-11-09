@@ -23,6 +23,9 @@ object Dependencies {
     val curve25519Elisabeth = "0.1.0"
     // pinned (project/Pinned.scala) and vendored (vendor/maven): 2.0.0 has had months in Besu releases; 2.1.0 is days old
     val besuNative = "2.0.0"
+    // the Java API's tests: sbt's JUnit Jupiter runner, and the JUnit it is built against
+    val jupiterInterface = "0.19.0"
+    val junitJupiter = "6.0.3"
   }
 
   object Libraries {
@@ -56,5 +59,7 @@ object Dependencies {
     val curve25519Elisabeth = "cafe.cryptography" % "curve25519-elisabeth"     % V.curve25519Elisabeth
     val jmhCore = "org.openjdk.jmh"               % "jmh-core"                 % "1.37"
     val jmhGen = "org.openjdk.jmh"                % "jmh-generator-annprocess" % "1.37"
+    val jupiterInterface = "com.github.sbt.junit" % "jupiter-interface"        % V.jupiterInterface
+    val junitJupiterApi = "org.junit.jupiter"     % "junit-jupiter-api"        % V.junitJupiter
   }
 }

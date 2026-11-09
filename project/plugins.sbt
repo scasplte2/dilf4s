@@ -13,3 +13,5 @@ addSbtPlugin("org.wartremover" % "sbt-wartremover" % "3.6.3")
 
 addDependencyTreePlugin
 addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.3.1")
+// JUnit Jupiter under sbt (the Java API's tests): discovery and the runner, at the version of Dependencies.V.jupiterInterface
+addSbtPlugin("com.github.sbt.junit" % "sbt-jupiter-interface" % "0.19.0")
