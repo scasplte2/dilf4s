@@ -69,7 +69,7 @@ CI runs the same commands in the `sp1-guest` job of `.github/workflows/ci.yml`.
 
 ## What the tests check
 
-`host/tests/guest_matches_native.rs` covers thirteen families:
+`host/tests/guest_matches_native.rs` covers these families:
 
 | Family | Cases |
 |---|---|
@@ -83,7 +83,7 @@ CI runs the same commands in the `sp1-guest` job of `.github/workflows/ci.yml`.
 | BN254 and SP1 Groth16 | Every add, mul, pairing and `sp1Groth16` case |
 | Poseidon | Hashes and Merkle roots |
 | VRF (TAI, ELL2, draft-03) | Every committed proof and rejection row of `vrf_v1.json`, one family per suite; also prints the guest's cycles and gas per verification |
-| JLVM | 264 cases: every case that calls a cryptographic operation on real inputs, and every 50th other case |
+| JLVM | 717 of the 3346 rows of `jlvm_v1.json`, picked by operation so every operation runs ("The JLVM rows" below); one family per operation that reaches an SP1 patch (21), and one of the rest |
 
 For each family the test asserts four things:
 
@@ -94,6 +94,58 @@ For each family the test asserts four things:
 2. **Guest and native outcomes are identical.** They are compared byte for byte, with errors compared through `Debug`, on every case: there are no exceptions.
 3. **The native outcome is the one the vector records.** So the comparison cannot pass on a bug that guest and native share.
 4. **ecrecover recovers the signer exactly once.** For each committed secp256k1 signature, exactly one parity recovers the signer.
+
+### The JLVM rows
+
+`vectors::jlvm` (in `cases/`) picks the `jlvm_v1.json` rows the guest runs. It picks them by operation, from the
+closed list `JlvmOp` (generated from `jlvm-op`), and never by matching names in a program's text.
+
+Each row shows something of at most one operation, and the pick reads it from typed data:
+
+- **An error** shows a refusal by the operation at its site (`op`), with its kind and cause.
+- **A value** shows the operation at the root of the program's canonical form, so an alias counts as the operation
+  it names. The value is either a negative verdict (`false`, or `ecvrf_verify`'s `{"valid": false}`) or any other
+  value.
+
+An operation called deeper in a program shows nothing, since it may not run (a branch not taken).
+
+The guest runs:
+
+- for each operation and each outcome a row shows of it, the first two rows: those with real inputs, then those with
+  host-built values (tests of the JLVM's bounds, the heaviest rows: one builds 508,399 digests), then the sweeps;
+- for an operation that reaches an SP1 patch, also up to eight rows with real inputs of each outcome, since each gives
+  the guest-only code other inputs;
+- every 50th row;
+- the first row of each error kind, of the `var` site, and of each cause.
+
+Each operation that reaches an SP1 patch runs as its own family. It must call each of its patch's precompiles more
+often than a run of one case that calls no cryptographic operation does, since every JLVM run builds the cryptographic
+backend, which calls the BN254 precompiles. So `sha3_256` is shown to call `KECCAK_PERMUTE`, and `bls_aggregate_verify`
+to call `BLS12381_FP2_MUL`. The other rows run as one family.
+
+The exception is sha2. `sha256`, `merkle_verify`, `merkle_consistency_verify` and the three `trie_*` operations reach
+only that patch, and its precompiles cannot be credited to them. SP1 hashes the guest's public values with the same
+precompiles, as often as the output's length needs, so every family calls them, more as it has more cases. For
+example, 8 `keccak256` rows, which hash nothing with SHA-256, make 25 `SHA_COMPRESS` calls. These operations still run
+as their own families, with up to eight rows of each outcome, and their outcomes are compared with native ones.
+
+Two tests check the pick without executing the guest:
+
+- `every_operation_runs_in_the_guest` fails, naming the operation, unless every operation runs:
+  - with a value;
+  - with a negative verdict, where it gives one;
+  - with a refusal, where it refuses;
+  - with every outcome the file has of it.
+
+  It also fails if an operation said never to refuse has a refusal in the file. What each operation gives is an
+  exhaustive `match` on `JlvmOp`, so a new operation must be classified before the test compiles.
+- `the_selector_reads_operations_not_names` takes every operation whose name is inside another's (`in` in `min`, `!`
+  in `!=`, `hex` in `unhex`). A row calling the outer one counts for it alone, even when the inner name is a `var`
+  path, a literal, an object key or data. An alias counts for the operation it names, and an error for its typed site.
+
+Measured on a loaded 16-core x86-64 (load average about 50), the JLVM families execute 325 million instructions in
+about 90 s. The earlier pick, by op-name substrings, ran 284 rows in 1,461 million instructions and about 138 s, most
+of it one bounds test that builds 508,399 digests.
 
 `host/tests/guest_lock.rs` checks the patches themselves:
 
@@ -435,7 +487,7 @@ diverged:
 
 The guest now equals native code on every row. The challenge still hashes `R` and `A` as given.
 
-`jlvm_v1.json` pins the same encodings through `ed25519_verify` ("non-canonical" cases), which the JLVM family runs.
+`jlvm_v1.json` pins the same encodings through `ed25519_verify` ("non-canonical" cases), which the `jlvm ed25519_verify` family runs, every one.
 
 ## Issue #33: one linear combination or two multiplications per sigma leaf
 

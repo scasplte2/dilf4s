@@ -38062,6 +38062,83 @@
       },
       "gasUsed" : 133,
       "warnings" : 0
+    },
+    {
+      "name" : "dilf4s ecrecover: recovers the signer",
+      "program" : "{\"ecrecover\":[{\"var\":\"a0\"},{\"var\":\"a1\"}]}",
+      "data" : "{\"a0\":\"0x9886bdd8026028cbe4261019f7a7c4d07bc068acd988b0627ab09a1435d891ff\",\"a1\":\"0xe006ea4985a19cbe9aa1ae26c150e233e347854e6392c74c8f2715ac0c5df4265b0f4863199f1269e03a5f0f19264254cbd0fc001101adc16571d71b1c9721431b\"}",
+      "outcome" : {
+        "json" : "\"0xd41c057fd1c78805aac12b0a94a405c0461a6fbb\"",
+        "cbor" : "54d41c057fd1c78805aac12b0a94a405c0461a6fbb"
+      },
+      "gasUsed" : 32648,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s schnorr_verify: verifies",
+      "program" : "{\"schnorr_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":\"0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1\",\"a1\":\"0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00\",\"a2\":\"0x46f54186f5a5fdc65b0f085a6fb46437d4fa2b7f7c60044c0a04f60211cc8ee916e06ed37943b9bac1e51f05e49e25200fcadb84f4bddef0\"}",
+      "outcome" : {
+        "json" : "true",
+        "cbor" : "f5"
+      },
+      "gasUsed" : 46205,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s schnorr_verify: another message",
+      "program" : "{\"schnorr_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":\"0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1\",\"a1\":\"0x7472616e7366657220393920746f20657665\",\"a2\":\"0x46f54186f5a5fdc65b0f085a6fb46437d4fa2b7f7c60044c0a04f60211cc8ee916e06ed37943b9bac1e51f05e49e25200fcadb84f4bddef0\"}",
+      "outcome" : {
+        "json" : "false",
+        "cbor" : "f4"
+      },
+      "gasUsed" : 46191,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s sigma_verify: a dlog verifies",
+      "program" : "{\"sigma_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":{\"pk\":\"0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1\",\"type\":\"dlog\"},\"a1\":\"0x46f54186f5a5fdc65b0f085a6fb46437d4fa2b7f7c60044c0a04f60211cc8ee916e06ed37943b9bac1e51f05e49e25200fcadb84f4bddef0\",\"a2\":\"0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00\"}",
+      "outcome" : {
+        "json" : "true",
+        "cbor" : "f5"
+      },
+      "gasUsed" : 52505,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s sigma_verify: a threshold verifies",
+      "program" : "{\"sigma_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":{\"children\":[{\"pk\":\"0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1\",\"type\":\"dlog\"},{\"pk\":\"0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b\",\"type\":\"dlog\"},{\"pk\":\"0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461\",\"type\":\"dlog\"}],\"k\":2,\"type\":\"threshold\"},\"a1\":\"0x184933b4c935cc929ea743d536510c36777aaa1c762780fbee5313d3283de9fb3f78462ba0df377821d03ad8315bb8a5d20c9a54b5b698f80e3cbc5c9d4fcad228093700ed16dfdcb9f9c6acdb30c1a4bd192b90cc9a88c60c738abb952a7595969a3d33a2b4e6c4da561e7b387e5cd55814a0221399267dfeda2c438cfe4275a851f077f87bcc615425bc13c6f9273d\",\"a2\":\"0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00\"}",
+      "outcome" : {
+        "json" : "true",
+        "cbor" : "f5"
+      },
+      "gasUsed" : 148355,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s sigma_verify: a dlog, another message",
+      "program" : "{\"sigma_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":{\"pk\":\"0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1\",\"type\":\"dlog\"},\"a1\":\"0x46f54186f5a5fdc65b0f085a6fb46437d4fa2b7f7c60044c0a04f60211cc8ee916e06ed37943b9bac1e51f05e49e25200fcadb84f4bddef0\",\"a2\":\"0x7472616e7366657220393920746f20657665\"}",
+      "outcome" : {
+        "json" : "false",
+        "cbor" : "f4"
+      },
+      "gasUsed" : 52491,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s >=: less",
+      "program" : "{\">=\":[{\"var\":\"a0\"},{\"var\":\"a1\"}]}",
+      "data" : "{\"a0\":1,\"a1\":2}",
+      "outcome" : {
+        "json" : "false",
+        "cbor" : "f4"
+      },
+      "gasUsed" : 215,
+      "warnings" : 0
     }
   ],
   "aliases" : [

@@ -3,6 +3,10 @@
 //!   called);
 //! - every guest outcome equals the native one, byte for byte, errors included;
 //! - every native outcome is what the vector says, so a bug the guest and native code share cannot pass.
+//!
+//! The JLVM rows are picked by operation, from the closed list (`vectors::jlvm`); two tests that execute nothing check
+//! that pick: every operation runs with each outcome it gives, and an operation is read from the program, never from
+//! its name's text.
 
 #![allow(
     clippy::unwrap_used,
@@ -13,13 +17,25 @@
     reason = "tests fail by panicking and report by printing"
 )]
 
-use dilf4s_zk_cases::vectors::{self, Expect, Named};
-use dilf4s_zk_cases::{Body, Request, run};
+use std::collections::BTreeMap;
+
+use dilf4s_core::generated::jlvm::JlvmOp;
+use dilf4s_core::generated::jlvm_errors::JlvmSite;
+use dilf4s_core::generated::jlvm_vectors::{JlvmCase, JlvmError, JlvmErrorKind, JlvmOutcome, JlvmValue};
+use dilf4s_zk_cases::vectors::{self, Expect, Named, Shows};
+use dilf4s_zk_cases::{Body, Case, Request, run};
 use dilf4s_zk_host::execute;
 use sp1_core_executor::SyscallCode;
+use sp1_sdk::ExecutionReport;
 
 /// Executes a family's cases in the guest and checks them; `syscalls` must each have been called.
 async fn check(family: &str, named: Vec<Named>, syscalls: &[SyscallCode]) {
+    check_beyond(family, named, syscalls, None).await;
+}
+
+/// [`check`], each of `syscalls` called more often than in `base`: a run that does what every run of the family does
+/// besides its own work, so the family is not credited with calls it did not make.
+async fn check_beyond(family: &str, named: Vec<Named>, syscalls: &[SyscallCode], base: Option<&ExecutionReport>) {
     assert!(!named.is_empty(), "{family}: no cases");
     let cases: Vec<_> = named.iter().map(|n| n.case.clone()).collect();
     let native = run(&cases);
@@ -39,8 +55,12 @@ async fn check(family: &str, named: Vec<Named>, syscalls: &[SyscallCode]) {
     }
     failures.extend(Expect::signer_pairs_hold(&named, &native));
     for code in syscalls {
-        if report.syscall_counts[*code] == 0 {
-            failures.push(format!("{family}: no {code:?} syscall: the patch's zkVM path did not run"));
+        let (count, floor) = (report.syscall_counts[*code], base.map_or(0, |b| b.syscall_counts[*code]));
+        if count <= floor {
+            failures.push(format!(
+                "{family}: {count} {code:?} syscalls, no more than the {floor} of a run without its cases: the patch's \
+                 zkVM path did not run"
+            ));
         }
     }
     let precompiles: Vec<String> = report
@@ -138,7 +158,7 @@ async fn poseidon() {
 }
 
 /// A run's cycles: instructions plus syscalls.
-fn cycles(report: &sp1_sdk::ExecutionReport) -> u64 {
+fn cycles(report: &ExecutionReport) -> u64 {
     report.total_instruction_count().saturating_add(report.total_syscall_count())
 }
 
@@ -172,48 +192,370 @@ async fn vrf_draft03() {
     vrf("ECVRF-ED25519-SHA512-Elligator2 (draft-03)").await;
 }
 
-/// The cryptographic operations' names, as JLVM programs call them.
-const CRYPTO_OPS: [&str; 16] = [
-    "ecrecover",
-    "secp256k1_verify",
-    "ed25519_verify",
-    "bls_verify",
-    "sigma",
-    "groth16",
-    "bn254",
-    "poseidon",
-    "keccak",
-    "sha256",
-    "p256",
-    "schnorr",
-    "vrf",
-    "pmt_",
-    "merkle",
-    "trie",
-];
+/// What an operation gives besides a value, which every operation returns.
+struct Gives {
+    /// A negative verdict ([`Shows::False`]): `false`, or `ecvrf_verify`'s `{"valid": false}`.
+    verdict: bool,
+    /// A refusal: an error at its own site.
+    refuses: bool,
+}
 
-/// Every JLVM case that calls a cryptographic operation on real inputs (not the argument-kind sweeps), every 50th
-/// other case, and the first case of each error kind and of the `var` site (`vectors::jlvm`).
+/// What each operation of the closed list gives besides a value. An exhaustive match: a new operation does not compile
+/// until it is classified here.
+const fn gives(op: JlvmOp) -> Gives {
+    let (verdict, refuses) = match op {
+        // lazy and binding forms, and merge, which takes any values
+        JlvmOp::If | JlvmOp::And | JlvmOp::Or | JlvmOp::Default | JlvmOp::Let | JlvmOp::Merge => (false, false),
+        JlvmOp::Exists => (true, false),
+        JlvmOp::Not
+        | JlvmOp::Truthy
+        | JlvmOp::Eq
+        | JlvmOp::Ne
+        | JlvmOp::StrictEq
+        | JlvmOp::StrictNe
+        | JlvmOp::Lt
+        | JlvmOp::Le
+        | JlvmOp::Gt
+        | JlvmOp::Ge
+        | JlvmOp::All
+        | JlvmOp::Some
+        | JlvmOp::None
+        | JlvmOp::In
+        | JlvmOp::Intersect
+        | JlvmOp::StartsWith
+        | JlvmOp::EndsWith
+        | JlvmOp::Has
+        | JlvmOp::Ed25519Verify
+        | JlvmOp::Secp256k1Verify
+        | JlvmOp::Bip340Verify
+        | JlvmOp::BlsVerify
+        | JlvmOp::BlsAggregateVerify
+        | JlvmOp::PmtVerify
+        | JlvmOp::Groth16Verify
+        | JlvmOp::EcvrfVerify
+        | JlvmOp::Bn254Pairing
+        | JlvmOp::SchnorrVerify
+        | JlvmOp::SigmaVerify
+        | JlvmOp::MerkleVerify
+        | JlvmOp::MerkleConsistencyVerify
+        | JlvmOp::TrieVerify
+        | JlvmOp::TriePrefixVerify
+        | JlvmOp::TrieRangeVerify => (true, true),
+        JlvmOp::Add
+        | JlvmOp::Sub
+        | JlvmOp::Mul
+        | JlvmOp::Div
+        | JlvmOp::Mod
+        | JlvmOp::Min
+        | JlvmOp::Max
+        | JlvmOp::Abs
+        | JlvmOp::Round
+        | JlvmOp::RoundHalfUp
+        | JlvmOp::Floor
+        | JlvmOp::Ceil
+        | JlvmOp::Pow
+        | JlvmOp::Map
+        | JlvmOp::Filter
+        | JlvmOp::Reduce
+        | JlvmOp::Find
+        | JlvmOp::Count
+        | JlvmOp::Unique
+        | JlvmOp::Slice
+        | JlvmOp::Reverse
+        | JlvmOp::Flatten
+        | JlvmOp::Length
+        | JlvmOp::Cat
+        | JlvmOp::Substr
+        | JlvmOp::Lower
+        | JlvmOp::Upper
+        | JlvmOp::Join
+        | JlvmOp::Split
+        | JlvmOp::Trim
+        | JlvmOp::Keys
+        | JlvmOp::Values
+        | JlvmOp::Entries
+        | JlvmOp::Get
+        | JlvmOp::Set
+        | JlvmOp::Unset
+        | JlvmOp::Missing
+        | JlvmOp::MissingSome
+        | JlvmOp::TypeOf
+        | JlvmOp::Hex
+        | JlvmOp::Unhex
+        | JlvmOp::HexToInt
+        | JlvmOp::BytesToInt
+        | JlvmOp::IntToBytes
+        | JlvmOp::Sha256
+        | JlvmOp::Sha3_256
+        | JlvmOp::Keccak256
+        | JlvmOp::Blake2b256
+        | JlvmOp::Ecrecover
+        | JlvmOp::Poseidon
+        | JlvmOp::Bn254Add
+        | JlvmOp::Bn254Mul => (false, true),
+    };
+    Gives { verdict, refuses }
+}
+
+/// What an operation reaches of the SP1 patches (README.md, "The patches").
+#[derive(Clone, Copy)]
+enum Patched {
+    /// None: the guest runs the same code as native builds.
+    No,
+    /// sha2 alone. Its precompiles cannot be credited to the operation's rows: SP1 hashes the guest's public values
+    /// with them, as often as the output's length needs, so every family calls them, more as it has more cases (8
+    /// `keccak256` rows, which hash nothing with SHA-256, make 25 `SHA_COMPRESS` calls; 10 `bn254_add` rows, 34).
+    Sha2,
+    /// Patches whose precompiles the operation's rows must call more often than a run without them.
+    Calls(&'static [SyscallCode]),
+}
+
+impl Patched {
+    /// The precompiles the operation's rows must be shown to call.
+    const fn calls(self) -> &'static [SyscallCode] {
+        match self {
+            Self::No | Self::Sha2 => &[],
+            Self::Calls(codes) => codes,
+        }
+    }
+}
+
+/// What each operation of the closed list reaches of the SP1 patches. An exhaustive match.
+const fn patched(op: JlvmOp) -> Patched {
+    match op {
+        JlvmOp::Sha256
+        | JlvmOp::MerkleVerify
+        | JlvmOp::MerkleConsistencyVerify
+        | JlvmOp::TrieVerify
+        | JlvmOp::TriePrefixVerify
+        | JlvmOp::TrieRangeVerify => Patched::Sha2,
+        JlvmOp::Sha3_256 | JlvmOp::Keccak256 => Patched::Calls(&[SyscallCode::KECCAK_PERMUTE]),
+        JlvmOp::Secp256k1Verify | JlvmOp::Bip340Verify | JlvmOp::SchnorrVerify | JlvmOp::SigmaVerify => {
+            Patched::Calls(&[SyscallCode::SECP256K1_ADD, SyscallCode::SECP256K1_DOUBLE])
+        }
+        JlvmOp::Ecrecover => {
+            Patched::Calls(&[SyscallCode::SECP256K1_ADD, SyscallCode::SECP256K1_DOUBLE, SyscallCode::KECCAK_PERMUTE])
+        }
+        JlvmOp::Ed25519Verify | JlvmOp::EcvrfVerify => Patched::Calls(&[SyscallCode::ED_ADD, SyscallCode::ED_DECOMPRESS]),
+        JlvmOp::BlsVerify | JlvmOp::BlsAggregateVerify => {
+            Patched::Calls(&[SyscallCode::BLS12381_FP_MUL, SyscallCode::BLS12381_FP2_MUL])
+        }
+        JlvmOp::Bn254Add | JlvmOp::Bn254Mul => Patched::Calls(&[SyscallCode::BN254_FP_ADD, SyscallCode::BN254_FP_MUL]),
+        JlvmOp::Bn254Pairing | JlvmOp::Groth16Verify => {
+            Patched::Calls(&[SyscallCode::BN254_FP_MUL, SyscallCode::BN254_FP2_MUL])
+        }
+        JlvmOp::If
+        | JlvmOp::And
+        | JlvmOp::Or
+        | JlvmOp::Not
+        | JlvmOp::Truthy
+        | JlvmOp::Default
+        | JlvmOp::Let
+        | JlvmOp::Eq
+        | JlvmOp::Ne
+        | JlvmOp::StrictEq
+        | JlvmOp::StrictNe
+        | JlvmOp::Lt
+        | JlvmOp::Le
+        | JlvmOp::Gt
+        | JlvmOp::Ge
+        | JlvmOp::Add
+        | JlvmOp::Sub
+        | JlvmOp::Mul
+        | JlvmOp::Div
+        | JlvmOp::Mod
+        | JlvmOp::Min
+        | JlvmOp::Max
+        | JlvmOp::Abs
+        | JlvmOp::Round
+        | JlvmOp::RoundHalfUp
+        | JlvmOp::Floor
+        | JlvmOp::Ceil
+        | JlvmOp::Pow
+        | JlvmOp::Map
+        | JlvmOp::Filter
+        | JlvmOp::Reduce
+        | JlvmOp::All
+        | JlvmOp::Some
+        | JlvmOp::None
+        | JlvmOp::Find
+        | JlvmOp::Count
+        | JlvmOp::Merge
+        | JlvmOp::In
+        | JlvmOp::Intersect
+        | JlvmOp::Unique
+        | JlvmOp::Slice
+        | JlvmOp::Reverse
+        | JlvmOp::Flatten
+        | JlvmOp::Length
+        | JlvmOp::Cat
+        | JlvmOp::Substr
+        | JlvmOp::Lower
+        | JlvmOp::Upper
+        | JlvmOp::Join
+        | JlvmOp::Split
+        | JlvmOp::Trim
+        | JlvmOp::StartsWith
+        | JlvmOp::EndsWith
+        | JlvmOp::Keys
+        | JlvmOp::Values
+        | JlvmOp::Entries
+        | JlvmOp::Get
+        | JlvmOp::Has
+        | JlvmOp::Set
+        | JlvmOp::Unset
+        | JlvmOp::Exists
+        | JlvmOp::Missing
+        | JlvmOp::MissingSome
+        | JlvmOp::TypeOf
+        | JlvmOp::Hex
+        | JlvmOp::Unhex
+        | JlvmOp::HexToInt
+        | JlvmOp::BytesToInt
+        | JlvmOp::IntToBytes
+        // BLAKE2b and Poseidon are not patched
+        | JlvmOp::Blake2b256
+        | JlvmOp::Poseidon
+        | JlvmOp::PmtVerify => Patched::No,
+    }
+}
+
+/// Rows with real inputs the guest runs of each operation and each outcome a row shows of it ([`Shows`]), besides the
+/// first [`vectors::PER_SHOWN`]: up to 8 of an operation that reaches an SP1 patch, since each gives that guest-only
+/// code other inputs; none more of one that runs the same code in the guest as natively.
+const fn real_inputs(op: JlvmOp) -> usize {
+    if matches!(patched(op), Patched::No) { 0 } else { 8 }
+}
+
+/// The JLVM rows `vectors::jlvm` picks by operation, executed as one family per operation that reaches an SP1 patch (so
+/// each operation's own rows are shown to call its patches' precompiles, sha2's aside: `Patched::Sha2`), then one
+/// family of the rest.
 #[tokio::test]
 async fn jlvm() {
-    let cases = vectors::jlvm(|i, c| {
-        let crypto = CRYPTO_OPS.iter().any(|op| c.program.contains(op))
-            && !c.name.contains(" × ")
-            && !c.name.contains("no arguments");
-        crypto || i % 50 == 0
-    })
-    .unwrap();
-    check(
-        "jlvm",
-        cases,
-        &[
-            SyscallCode::SHA_COMPRESS,
-            SyscallCode::KECCAK_PERMUTE,
-            SyscallCode::SECP256K1_ADD,
-            SyscallCode::ED_ADD,
-            SyscallCode::BN254_FP_MUL,
-            SyscallCode::BLS12381_FP_MUL,
-        ],
-    )
-    .await;
+    let sample = vectors::jlvm(real_inputs).unwrap();
+    // every JLVM run builds the cryptographic backend, which calls the BN254 precompiles: a run of one case that calls
+    // no cryptographic operation is the floor each family's own calls must exceed
+    let plain = Case::Jlvm {
+        program: String::from(r#"{"+": [1, 2]}"#),
+        data: String::from("null"),
+        env: Vec::new(),
+        built: Vec::new(),
+        gas_limit: 1_000_000,
+    };
+    let (_, base) = execute(&Request::Run(vec![plain])).await.unwrap();
+    let mut families: BTreeMap<JlvmOp, Vec<Named>> = BTreeMap::new();
+    let mut rest: Vec<Named> = Vec::new();
+    for row in sample.rows {
+        match row.shows.map(|(op, _)| op).filter(|op| !matches!(patched(*op), Patched::No)) {
+            Some(op) => families.entry(op).or_default().push(row.named),
+            None => rest.push(row.named),
+        }
+    }
+    for (op, named) in families {
+        check_beyond(&format!("jlvm {}", op.wire()), named, patched(op).calls(), Some(&base)).await;
+    }
+    check("jlvm", rest, &[]).await;
+}
+
+/// Every operation of the closed list runs in the guest: with a value, with a negative verdict where it gives one, and
+/// with a refusal where it refuses (`gives`); with every outcome `jlvm_v1.json` has of it; and an operation said never
+/// to refuse has no refusal in the file.
+#[test]
+fn every_operation_runs_in_the_guest() {
+    let sample = vectors::jlvm(real_inputs).unwrap();
+    let empty = BTreeMap::new();
+    let mut failures: Vec<String> = Vec::new();
+    for op in JlvmOp::ALL {
+        let name = op.wire();
+        let run = sample.run.get(&op).unwrap_or(&empty);
+        let file = sample.file.get(&op).unwrap_or(&empty);
+        let refusal = |s: &Shows| matches!(s, Shows::Refusal(..));
+        let Gives { verdict, refuses } = gives(op);
+        if !run.contains_key(&Shows::Value) {
+            failures.push(format!("{name}: no row run in the guest returns a value"));
+        }
+        if verdict && !run.contains_key(&Shows::False) {
+            failures.push(format!("{name}: no row run in the guest returns a negative verdict"));
+        }
+        if refuses && !run.keys().any(refusal) {
+            failures.push(format!("{name}: no row run in the guest refuses"));
+        }
+        if !refuses && file.keys().any(refusal) {
+            failures.push(format!("{name}: said never to refuse, yet jlvm_v1.json has a refusal at its site"));
+        }
+        for shown in file.keys().filter(|s| !run.contains_key(*s)) {
+            failures.push(format!("{name}: jlvm_v1.json shows {shown:?}, which no row run in the guest does"));
+        }
+        let per =
+            |m: &BTreeMap<Shows, usize>| m.iter().map(|(s, n)| format!("{s:?} {n}")).collect::<Vec<_>>().join(", ");
+        println!("{name}: {}", per(run));
+    }
+    assert!(failures.is_empty(), "{} failures:\n{}", failures.len(), failures.join("\n"));
+}
+
+/// A row as `jlvm_v1.json` has it, of the given program and data texts.
+fn row(program: &str, data: &str, outcome: JlvmOutcome) -> JlvmCase {
+    JlvmCase {
+        name: String::from("a row"),
+        program: program.into(),
+        data: data.into(),
+        env: None,
+        built: None,
+        gas_limit: None,
+        outcome,
+        gas_used: 0,
+        warnings: 0,
+    }
+}
+
+/// The selector reads which operation a row shows from the program's canonical form and the error's typed site, never
+/// from text: an operation whose name is inside another's (`in` in `min`, `!` in `!=`, `hex` in `unhex`), or that is
+/// named by a `var` path, a literal, an object key or the data, is not the one the row shows; an alias is the
+/// operation it names.
+#[test]
+fn the_selector_reads_operations_not_names() {
+    let value = || JlvmOutcome::JlvmValue(JlvmValue { cbor: String::from("f5"), json: None });
+    let mut failures: Vec<String> = Vec::new();
+    let mut pairs = 0usize;
+    for outer in JlvmOp::ALL {
+        for inner in JlvmOp::ALL.into_iter().filter(|o| *o != outer && outer.wire().contains(o.wire())) {
+            pairs = pairs.saturating_add(1);
+            let (a, b) = (inner.wire(), outer.wire());
+            let program = format!(
+                r#"{{"{b}": [{{"var": "{a}"}}, "{a}", {{"object": {{"{a}": "{a}"}}}}, {{"literal": {{"{a}": ["{a}"]}}}}]}}"#
+            );
+            let data = format!(r#"{{"{a}": "{a}"}}"#);
+            let shown = vectors::shows(&row(&program, &data, value())).map(|(op, _)| op);
+            if shown != Some(outer) {
+                failures.push(format!("{program}: shows {shown:?}, not {b}"));
+            }
+        }
+    }
+    assert!(pairs >= 10, "only {pairs} operations' names are inside another's");
+    for (alias, op) in
+        [("getKey", JlvmOp::Get), ("setKey", JlvmOp::Set), ("deleteKey", JlvmOp::Unset), ("size", JlvmOp::Length)]
+    {
+        let program = format!(r#"{{"{alias}": [{{"var": "m"}}, "k"]}}"#);
+        let shown = vectors::shows(&row(&program, "null", value())).map(|(o, _)| o);
+        if shown != Some(op) {
+            failures.push(format!("{program}: shows {shown:?}, not {}", op.wire()));
+        }
+    }
+    // an error's site is typed: it is the operation that refused, whatever the root and whatever the text names
+    let refused = JlvmOutcome::JlvmError(JlvmError {
+        error: JlvmErrorKind::Type,
+        op: Some(JlvmSite::JlvmOp(JlvmOp::Sha3_256)),
+        cause: None,
+    });
+    let program = r#"{"cat": ["sha256", {"sha3_256": [{"var": "bls_aggregate_verify"}]}]}"#;
+    let shown = vectors::shows(&row(program, "null", refused));
+    if shown != Some((JlvmOp::Sha3_256, Shows::Refusal(String::from("Type"), None))) {
+        failures.push(format!("{program}: shows {shown:?}, not a sha3_256 refusal"));
+    }
+    // a program that calls nothing shows nothing, whatever its path and its data name
+    let shown = vectors::shows(&row(r#"{"var": "bip340_verify"}"#, r#"{"bip340_verify": "sha3_256"}"#, value()));
+    if shown.is_some() {
+        failures.push(format!("a var read naming bip340_verify shows {shown:?}"));
+    }
+    assert!(failures.is_empty(), "{} failures:\n{}", failures.len(), failures.join("\n"));
 }
