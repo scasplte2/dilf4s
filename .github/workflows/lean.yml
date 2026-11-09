@@ -1,0 +1,47 @@
+name: lean
+
+# The Lean 4 model of a JLVM slice (formal/): its proofs, and its run against the pinned vectors. A workflow of its
+# own, so that changing it triggers none of ci.yml's jobs, whose path filters include ci.yml.
+on:
+  pull_request:
+    paths:
+      - 'formal/**'
+      - 'shared/vectors/**'
+      - '.github/workflows/lean.yml'
+  push:
+    branches: [main, unify/base]
+    paths:
+      - 'formal/**'
+      - 'shared/vectors/**'
+      - '.github/workflows/lean.yml'
+
+jobs:
+  lean:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: formal
+    steps:
+      - uses: actions/checkout@v4
+      # elan and the toolchain formal/lean-toolchain pins
+      - uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: elan-4.2.4-${{ hashFiles('formal/lean-toolchain') }}
+      # elan v4.2.4, pinned by its release rather than the installer's "latest"
+      - name: Install elan
+        run: |
+          if [ ! -x "$HOME/.elan/bin/elan" ]; then
+            curl -sSfL https://github.com/leanprover/elan/releases/download/v4.2.4/elan-x86_64-unknown-linux-gnu.tar.gz -o "$RUNNER_TEMP/elan.tar.gz"
+            tar -xzf "$RUNNER_TEMP/elan.tar.gz" -C "$RUNNER_TEMP"
+            "$RUNNER_TEMP/elan-init" -y --no-modify-path --default-toolchain none
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      # checks every proof
+      - run: lake build 2>&1 | tee "$RUNNER_TEMP/build.log"
+      # no sorry anywhere, and the theorems rest on Lean's standard axioms alone
+      - name: Check axioms
+        run: |
+          ! grep -q "declaration uses 'sorry'" "$RUNNER_TEMP/build.log"
+          test "$(grep -c "depends on axioms: \[propext, Classical.choice, Quot.sound\]" "$RUNNER_TEMP/build.log")" -eq 2
+      - run: lake exe vectorcheck ../shared/vectors
