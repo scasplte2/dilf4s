@@ -70,8 +70,8 @@ object Programs {
   private def bindings(env: java.util.List[java.util.Map.Entry[String, CanonicalValue]]): Map[String, CanonicalValue] =
     env.asScala.iterator.map(e => e.getKey -> e.getValue).toMap
 
-  /** `schedule` 1, the only one published (`GasSchedule.Latest`). A negative limit is the reference's: no gas. */
-  private def config(gasLimit: Long): Config = Config(limit = GasLimit(xyz.kd5ujc.jlvm.Gas(gasLimit)), schedule = GasSchedule.V1)
+  /** `schedule` 1, the only one published (`GasSchedule.Latest`). The limit as given, so one outside 0 to `MaxGasLimit` is `Limit`. */
+  private def config(gasLimit: Long): Config = Config(limit = GasLimit.of(gasLimit), schedule = GasSchedule.V1)
 
   /** Compiles and evaluates: a program that does not compile uses no gas. */
   def evaluate(
@@ -93,5 +93,6 @@ object Programs {
     evaluated(j.evaluate(c, data, bindings(env), config(gasLimit)))
 
   val DefaultGasLimit: Long = GasLimit.Default.amount.value
+  val MaxGasLimit: Long = GasLimit.Max.amount.value
   val MaxWarnings: Int = Warning.Max
 }

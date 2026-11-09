@@ -50,6 +50,9 @@ const JlvmMaxCanonicalWeight = 16777216
 // JlvmMaxExponent is `jlvm-max-exponent` (shared/schemas/limits.cddl).
 const JlvmMaxExponent = 999
 
+// JlvmMaxGasLimit is `jlvm-max-gas-limit` (shared/schemas/limits.cddl).
+const JlvmMaxGasLimit = 9007199254740991
+
 // JlvmMaxIntBytes is `jlvm-max-int-bytes` (shared/schemas/limits.cddl).
 const JlvmMaxIntBytes = 1024
 
