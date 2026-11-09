@@ -85,7 +85,6 @@ describe("zk_jlvm_v1.json", { timeout: 120_000 }, () => {
   it("each pinned proof verifies under the guest's key, by the verifier and through groth16_verify, and only for its public values", () => {
     const proved = file.calls.flatMap((c) => (c.proofBytes === undefined ? [] : [[c, c.proofBytes] as const]));
     expect(proved.length, 'zk_jlvm_v1.json pins no Groth16 proof: prove one on euler (sdk/rust/zk/README.md, "On euler")').toBeGreaterThan(0);
-    expect(file.programVKey).toBe("00648a8f144b8ec371cd9846461c43d262432438fb4b1e39beafa810be3e850b");
     for (const [c, proof] of proved) {
       expect(zk.groth16.sp1.verify(bytes(file.programVKey), bytes(c.publicValues), bytes(proof)), `${c.name}: the verifier`).toEqual({ ok: true, value: undefined });
       expect(run(file.programVKey, c.publicValues, proof), `${c.name}: groth16_verify`).toBe(TRUE);

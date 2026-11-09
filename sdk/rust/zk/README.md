@@ -108,18 +108,23 @@ For each family the test asserts four things:
   row (outcome and gas). The calls are a success that calls `ecrecover` twice (the one proved), a `Crypto` error from
   `ecrecover`, `OutOfGas` with a host binding, a sigma threshold, a binding read, a `Type` and an `Arithmetic` error,
   and a `Crypto` error with a cause. The proved call must reach the secp256k1 and Keccak precompiles.
-- **No statement.** A call whose program or binding does not parse, or that names a binding twice, halts with exit
-  code 1 and commits nothing.
+- **No statement.** A call whose program's bytes are not a program's canonical form (not CBOR, no program, trailing
+  bytes), whose data or binding is not canonical CBOR, or that names a binding twice, halts with exit code 1 and
+  commits nothing.
 - **Injectivity.** A binding to null and an unbound name, two names, the bytes `0x6161` and the text `"a"`, and two
   gas limits all give different statements; a program written with other whitespace gives the same one.
 - **The vector file is current, strictly** (the policy, user decision 2026-11-08):
   - the guest's verifying key (SP1 `setup` on the light prover, about 20 s) must be the key `zk_jlvm_v1.json` pins.
     Any change to the code the guest links (`sdk/rust/{core,proofs,signing,jlvm}`, `cases/`, `guest/`,
-    `sdk/Cargo.lock`) changes it, and the gate fails with both keys and the command that proves the call again;
+    `sdk/Cargo.lock`) changes it, and the gate fails with both keys and the command that proves the call again. Give
+    each checkout its own `CARGO_TARGET_DIR`: the host's build script watches the guest's sources by absolute path,
+    so a target dir shared with another checkout can hand back that checkout's guest, and its key;
   - the pinned proof of the proved call must verify under the pinned key, with `dilf4s-proofs`' SP1 Groth16 verifier.
     It is never dropped: `vector` refuses to write a file without it, or with one that no longer verifies;
   - the rest of the file must be what the native statements give: a changed call is fixed with `vector`, which keeps
-    the proof while it verifies.
+    the proof while it verifies. This is also checked on its own under the pinned key
+    (`the_committed_calls_are_current_under_the_pinned_key`), so a stale statement shows even while a change to the
+    guest has moved its key and the strict check fails first.
 - **A proof fixture** (ignored by default): `DILF4S_ZK_PROOF=<dir>/proof-groth16.bin cargo test --release
   --manifest-path host/Cargo.toml --test jlvm_call -- --ignored` checks a fresh proof before it goes into the file.
 
@@ -145,7 +150,8 @@ cargo run --release --manifest-path host/Cargo.toml --bin dilf4s-zk-jlvm -- vect
 ```
 
 - **A call** is a `zk_jlvm_v1.json` call by name, or a JSON file `{"program": text, "data": text, "env": {name: text},
-  "gasLimit": n}` of JLVM surface texts.
+  "gasLimit": n}` of JLVM surface texts. The host parses the texts and writes the guest's stdin in canonical form
+  (`Call::of_surface`, `docs/specs/zk-jlvm.md` §1): the guest reads no surface text.
 - **`prove`** writes `proof-<mode>.bin` (`SP1ProofWithPublicValues::save`), `public-values.hex`, `vkey.txt`,
   `elf-sha256.txt` and, for Groth16, `proof-bytes.hex` (`SP1ProofWithPublicValues::bytes`, what `groth16_verify`
   takes). It executes the call first, and checks the proof with SP1's own verifier and its public values against the
@@ -191,11 +197,13 @@ at a time. Wrap each remote command in `timeout` (`nvidia-smi` can hang right af
 says rather than working around it.
 
 ```sh
-# 0. on cavendish: ship the branch (no remote is needed on euler)
-git bundle create /tmp/dilf4s.bundle rebuild/sp1-e2e
+# 0. on cavendish: ship the branch to prove (no remote is needed on euler). BRANCH names it, here and on euler
+BRANCH=${BRANCH:?set BRANCH to the branch to prove}
+git bundle create /tmp/dilf4s.bundle "$BRANCH"
 scp /tmp/dilf4s.bundle euler:/tmp/dilf4s.bundle
 
-# 1. on euler, in every shell: the PATH (non-interactive shells lack ~/.cargo/bin) and one target dir
+# 1. on euler, in every shell: the branch, the PATH (non-interactive shells lack ~/.cargo/bin) and one target dir
+BRANCH=${BRANCH:?set BRANCH to the branch to prove, as in step 0}
 mkdir -p /tmp/dilf4s-logs /tmp/dilf4s-out
 export PATH="$HOME/.sp1/bin:$HOME/.cargo/bin:/usr/lib/wsl/lib:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export PROTOC=/home/linuxbrew/.linuxbrew/bin/protoc CARGO_TARGET_DIR="$HOME/repos/dilf4s/target"
@@ -216,7 +224,7 @@ timeout 1800 bash /tmp/sp1up --version v6.10.0 && rm /tmp/sp1up
 cd ~/repos/dilf4s || { echo "no ~/repos/dilf4s: stop"; exit 1; }
 [ -z "$(git status --porcelain | grep -v '^??')" ] && [ ! -d .git/rebase-merge ] && [ ! -d .git/rebase-apply ] \
   && [ ! -f .git/MERGE_HEAD ] || { echo "~/repos/dilf4s has work in progress: stop"; exit 1; }
-git fetch /tmp/dilf4s.bundle rebuild/sp1-e2e && git checkout --detach FETCH_HEAD \
+git fetch /tmp/dilf4s.bundle "$BRANCH" && git checkout --detach FETCH_HEAD \
   || { echo "the bundle did not check out: stop"; exit 1; }
 git log --oneline -1   # must be the head the bundle was made from
 rm /tmp/dilf4s.bundle

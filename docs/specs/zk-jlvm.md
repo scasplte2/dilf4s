@@ -19,19 +19,38 @@ A call is exactly the five things a JLVM result is a function of (`jlvm.md`):
 - the gas limit;
 - the language version and the gas schedule, which are the guest's: language 1, the latest schedule (1).
 
-The guest `dilf4s-zk-jlvm-call` (`sdk/rust/zk/guest/src/bin/jlvm_call.rs`) reads the program, the data and each
-binding as JSON surface text (`jlvm.md` §1, as `jlvm_v1.json` holds them) and the gas limit. It parses them as the
-conformance vectors are run, evaluates with the Rust JLVM (`dilf4s-jlvm`, its `Native` backend on the SP1-patched
-cryptography) and commits the statement.
+The guest `dilf4s-zk-jlvm-call` (`sdk/rust/zk/guest/src/bin/jlvm_call.rs`) reads the call in canonical form:
 
-- **A call with no statement.** The guest halts with exit code 1 when the program, the data or a binding does not
-  parse, or a binding is named twice; with 2 when the JLVM does not start. Neither commits anything. SP1's Groth16
-  wrapper carries the exit code as a public input, and `groth16_verify` refuses any exit code but 0 (`zk.md` §2), so
-  no such run has a proof that verifies.
-- **Every evaluation has one.** A program that parses but does not compile, an error, and running out of gas are
+- the program's canonical CBOR, the encoding of its canonical form (`jlvm.md` §1);
+- the input data's canonical CBOR (`canonical-encoding.md` §2);
+- the host bindings as a list, never a map, each a name and its value's canonical CBOR;
+- the gas limit.
+
+It decodes each strictly: the program as `jlvm.md` §1, "Reading a canonical form", gives it, and the data and each
+value with the canonical CBOR decoder, a value as it is (a byte string is bytes, with no `0x` text to convert). It
+then evaluates with the Rust JLVM (`dilf4s-jlvm`, its `Native` backend on the SP1-patched cryptography) and commits
+the statement. The guest links no JSON parser. Whoever runs the guest writes the call: the host (`dilf4s-zk-jlvm`)
+writes it from surface texts (`jlvm.md` §1, as `jlvm_v1.json` holds them), each parsed as the conformance vectors
+are run and then encoded.
+
+- **A call with no statement.** The guest halts with exit code 1 when the program's bytes are not a program's
+  canonical form (any refusal of `jlvm.md` §1, "Reading a canonical form"), the data's or a binding's bytes are not
+  canonical CBOR, or a binding is named twice; with 2 when the JLVM does not start. Neither commits anything. SP1's
+  Groth16 wrapper carries the exit code as a public input, and `groth16_verify` refuses any exit code but 0 (`zk.md`
+  §2), so no such run has a proof that verifies.
+- **Every evaluation has one.** A program that decodes but does not compile, an error, and running out of gas are
   outcomes like a value (§2), committed with exit code 0.
-- **The surface text is transport.** The statement holds the program's identity, the tagged hash of its canonical
-  form (`jlvm.md` §1), never the text. Texts that parse to one program give one identity and one evaluation.
+- **The input is transport.** The statement holds the program's identity, the tagged hash of its canonical form
+  (`jlvm.md` §1), and digests of the data and the bindings (§2), never the bytes the guest read. A program has one
+  canonical form and a value one canonical encoding, so any texts that parse to one program and one input give one
+  call, one identity and one evaluation, and no other bytes decode to them.
+- **Why canonical form.** The guest does less work, and links less code, than when it read surface text and parsed it
+  (measured in execute mode, SP1 v6.10.0, 2026-11-08, on the calls of `zk_jlvm_v1.json`):
+  - the proved call `contract multisig_wallet: 2 of 3 owners sign` runs in 4,087,928 cycles, not 4,357,118 (6.2%
+    fewer); the other contracts' calls, 5.0% to 6.0% fewer; `metakit gas vector 203`, 2.2% fewer; the two calls of
+    one operation on a literal, 0.4% more (about 6,500 cycles over 1.77 million);
+  - the ELF is 2,210,192 bytes, not 2,233,880, without the JSON parser;
+  - the statements, and so the public values, are the same.
 
 ## 2. The statement
 

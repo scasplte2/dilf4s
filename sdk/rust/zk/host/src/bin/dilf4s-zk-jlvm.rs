@@ -8,7 +8,8 @@
 //! ```
 //!
 //! A call is a row of `zk_jlvm_v1.json` by name (`--case`), or a JSON file `{"program": text, "data": text, "env":
-//! {name: text}, "gasLimit": n}`, each text JLVM surface as `jlvm_v1.json` holds it. `prove` uses the CUDA prover when
+//! {name: text}, "gasLimit": n}`, each text JLVM surface as `jlvm_v1.json` holds it; the host parses the texts and
+//! writes the guest's stdin in canonical form (`Call::of_surface`). `prove` uses the CUDA prover when
 //! built with the `cuda` feature, unless `--cpu`; `vector` rewrites `shared/vectors/zk_jlvm_v1.json`, taking each
 //! `--proof` file (`proof-groth16.bin` from `prove`) for the call it names, or with `--check` only compares.
 
@@ -45,7 +46,8 @@ fn call_file(path: &str) -> Result<Call, String> {
         .and_then(Value::as_int)
         .and_then(|n| u64::try_from(n).ok())
         .ok_or_else(|| format!("{path}: no gasLimit"))?;
-    Ok(Call { program: text(&m, "program")?, data: text(&m, "data")?, env, gas_limit })
+    Call::of_surface(&text(&m, "program")?, &text(&m, "data")?, &env, gas_limit)
+        .map_err(|e| format!("{path}: not a call: {e:?}"))
 }
 
 /// The value following `flag`, if `flag` is present.

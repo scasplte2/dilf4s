@@ -16,7 +16,7 @@ use dilf4s_core::hash::{DomainTag, HashAlgorithm, Sha256, TaggedHash};
 use dilf4s_core::{CanonicalError, cbor};
 use dilf4s_jlvm::{
     Config, CryptoCause, ErrorSite as _, GasLimit, GasSchedule, Jlvm, JlvmError, Native, Program, VERSION, Value,
-    parse, parse_value,
+    decode, parse, parse_value,
 };
 use serde::{Deserialize, Serialize};
 
@@ -29,54 +29,133 @@ pub const BINDINGS_TAG: &str = "dilf4s/zk/jlvm/bindings/v1";
 /// The tag of a result value's digest.
 pub const RESULT_TAG: &str = "dilf4s/zk/jlvm/result/v1";
 
-/// One JLVM call, as the guest reads it: the program, the input data and each host binding as JSON surface text (as
-/// `jlvm_v1.json` holds them), and the gas limit. It runs under the latest gas schedule.
+/// One JLVM call, as the guest reads it (`docs/specs/zk-jlvm.md` section 1): the program's canonical form and the
+/// input data and each host binding's value, each as its canonical CBOR, and the gas limit. It runs under the latest
+/// gas schedule. [`Call::of_surface`] makes one from JSON surface texts, as `jlvm_v1.json` holds them.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Call {
-    /// The program's surface text.
-    pub program: String,
-    /// The input data's surface text.
-    pub data: String,
-    /// The host bindings: each name and its value's surface text.
-    pub env: Vec<(String, String)>,
+    /// The program's canonical CBOR (jlvm.md section 1).
+    #[serde(with = "bytes")]
+    pub program: Vec<u8>,
+    /// The input data's canonical CBOR.
+    #[serde(with = "bytes")]
+    pub data: Vec<u8>,
+    /// The host bindings, in order and never merged.
+    pub env: Vec<Binding>,
     /// The gas limit.
     pub gas_limit: u64,
 }
 
-/// Why a call has no statement: an input that does not parse, or a binding named twice. The guest then exits with a
-/// non-zero code, so no proof of it verifies.
+/// One host binding of a [`Call`]: its name and its value's canonical CBOR.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Binding {
+    /// The name.
+    pub name: String,
+    /// The value's canonical CBOR.
+    #[serde(with = "bytes")]
+    pub value: Vec<u8>,
+}
+
+/// A byte string as serde's bytes, not a sequence of `u8`: SP1's stdin (bincode) writes a length and the bytes either
+/// way, and reads bytes in one copy rather than one element at a time.
+mod bytes {
+    use alloc::vec::Vec;
+    use core::fmt;
+
+    use serde::de::{Error, Visitor};
+    use serde::{Deserializer, Serializer};
+
+    pub(super) fn serialize<S: Serializer>(b: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_bytes(b)
+    }
+
+    struct Bytes;
+
+    impl Visitor<'_> for Bytes {
+        type Value = Vec<u8>;
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("bytes")
+        }
+
+        fn visit_bytes<E: Error>(self, b: &[u8]) -> Result<Vec<u8>, E> {
+            Ok(b.to_vec())
+        }
+
+        fn visit_byte_buf<E: Error>(self, b: Vec<u8>) -> Result<Vec<u8>, E> {
+            Ok(b)
+        }
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        d.deserialize_byte_buf(Bytes)
+    }
+}
+
+/// Why surface texts are not a call: the program, the input data or a binding's value does not parse.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Rejected {
+pub enum Unparsed {
     /// The program does not parse.
     Program(JlvmError),
     /// The input data does not parse.
     Data(JlvmError),
     /// A binding's value does not parse.
     Binding(String, JlvmError),
+}
+
+impl Call {
+    /// The call surface texts write (the program, the input data and each binding's value, as `jlvm_v1.json` holds
+    /// them), parsed as the conformance vectors are run and written in canonical form. The bindings keep their order,
+    /// a name given twice included: the guest refuses that call.
+    pub fn of_surface(program: &str, data: &str, env: &[(String, String)], gas_limit: u64) -> Result<Self, Unparsed> {
+        let program = parse(program).and_then(|p| p.encode()).map_err(Unparsed::Program)?;
+        let data = parse_value(data).map(|v| cbor::encode(&v)).map_err(Unparsed::Data)?;
+        let env = env
+            .iter()
+            .map(|(name, text)| {
+                parse_value(text)
+                    .map(|v| Binding { name: name.clone(), value: cbor::encode(&v) })
+                    .map_err(|e| Unparsed::Binding(name.clone(), e))
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self { program, data, env, gas_limit })
+    }
+}
+
+/// Why a call has no statement: an input that does not decode, or a binding named twice. The guest then exits with a
+/// non-zero code, so no proof of it verifies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Rejected {
+    /// The program's bytes are not a program's canonical form (`dilf4s_jlvm::decode`).
+    Program(JlvmError),
+    /// The input data's bytes are not canonical CBOR.
+    Data(CanonicalError),
+    /// A binding's bytes are not canonical CBOR.
+    Binding(String, CanonicalError),
     /// A binding is named twice.
     Duplicate(String),
     /// A digest or the statement could not be built.
     Encoding(String),
 }
 
-/// The parsed call: the program, the data and the bindings by name.
-struct Parsed {
+/// The decoded call: the program, the data and the bindings by name.
+struct Decoded {
     program: Program,
     data: Value,
     env: BTreeMap<String, Value>,
 }
 
-fn parse_call(call: &Call) -> Result<Parsed, Rejected> {
-    let program = parse(&call.program).map_err(Rejected::Program)?;
-    let data = parse_value(&call.data).map_err(Rejected::Data)?;
+fn decode_call(call: &Call) -> Result<Decoded, Rejected> {
+    let program = decode(&call.program).map_err(Rejected::Program)?;
+    let data = cbor::decode(&call.data).map_err(Rejected::Data)?;
     let mut env = BTreeMap::new();
-    for (name, text) in &call.env {
-        let value = parse_value(text).map_err(|e| Rejected::Binding(name.clone(), e))?;
+    for Binding { name, value } in &call.env {
+        let value = cbor::decode(value).map_err(|e| Rejected::Binding(name.clone(), e))?;
         if env.insert(name.clone(), value).is_some() {
             return Err(Rejected::Duplicate(name.clone()));
         }
     }
-    Ok(Parsed { program, data, env })
+    Ok(Decoded { program, data, env })
 }
 
 fn tagged(tag: &str) -> Result<TaggedHash<Sha256>, Rejected> {
@@ -139,7 +218,7 @@ pub fn error_record(e: &JlvmError) -> ErrorRecord {
 /// Evaluates `call` and builds its statement. `Err` only for a call that has none ([`Rejected`]); an evaluation that
 /// fails is a statement of that failure.
 pub fn statement(jlvm: &Jlvm<Native>, call: &Call) -> Result<ZkJlvmStatement, Rejected> {
-    let Parsed { program, data, env } = parse_call(call)?;
+    let Decoded { program, data, env } = decode_call(call)?;
     let id = program.id(HashAlgorithm::Sha256).map_err(|e| Rejected::Encoding(alloc::format!("{e}")))?;
     let schedule = GasSchedule::LATEST;
     let config = Config { limit: GasLimit(dilf4s_jlvm::Gas::new(call.gas_limit)), schedule };

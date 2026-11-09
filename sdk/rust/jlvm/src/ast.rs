@@ -1,5 +1,6 @@
 //! The syntax tree and programs (`Ast.scala`): `var` references, expressions, and [`Program::from`], which bounds a
 //! tree's size and depth before anything else reads it, and checks that it has exactly one surface and canonical form.
+//! A tree comes from a program's surface text ([`crate::parse`]) or from its canonical form ([`crate::from_canonical`]).
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -72,7 +73,8 @@ impl VarRef {
 }
 
 /// The syntax tree of a program (language version 1). Built only by the parser, which bounds its depth by the strict
-/// JSON parser's (256), so its derived `Drop` and the walks that follow [`Program::from`]'s bound may recurse.
+/// JSON parser's (256), and by the canonical-form reader, which bounds it by the canonical value's (256), so its derived
+/// `Drop` and the walks that follow [`Program::from`]'s bound may recurse.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Expr {
     Lit(Value),
@@ -104,7 +106,7 @@ impl Expr {
 }
 
 /// A program: language version 1 and its expression, bounded in size and depth, with exactly one surface form and one
-/// canonical form. Built only by [`crate::parse`].
+/// canonical form. Built only by [`crate::parse`], [`crate::from_canonical`] and [`crate::decode`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Program {
     pub(crate) expr: Expr,
@@ -123,6 +125,10 @@ pub const MAX_SURFACE_DEPTH: u64 = dilf4s_core::generated::limits::CANONICAL_MAX
 /// length of each object key, binding name and path segment, plus one per segment.
 pub const MAX_SIZE: u64 = dilf4s_core::generated::limits::JLVM_MAX_PROGRAM_SIZE;
 
+/// The heaviest canonical form a program has (jlvm.md section 1, "Reading a canonical form"): 64 per unit of the
+/// largest program's size, where a form needs at most 40 (an operation's node writes 38 besides its arguments).
+pub const MAX_CANONICAL_WEIGHT: u64 = dilf4s_core::generated::limits::JLVM_MAX_CANONICAL_WEIGHT;
+
 /// The tag of a program's identity.
 pub const PROGRAM_TAG: &str = "dilf4s/jlvm/program/v1";
 
@@ -135,7 +141,7 @@ fn default_weight(d: Option<&Value>) -> u64 {
 }
 
 /// One node's contribution to the size (`Program.size`); saturating.
-fn size(e: &Expr) -> u64 {
+pub(crate) fn size(e: &Expr) -> u64 {
     match e {
         Expr::Lit(v) => v.weight().saturating_add(1),
         Expr::Var(VarRef::Data(p), d) => path_size(p).saturating_add(1).saturating_add(default_weight(d.as_ref())),

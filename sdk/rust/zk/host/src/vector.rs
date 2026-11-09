@@ -74,17 +74,15 @@ pub fn committed() -> Result<Option<ZkJlvmVectors>, String> {
     if p.exists() { load(&p).map(Some) } else { Ok(None) }
 }
 
-/// A row as a call: its texts, its bindings in name order, and its gas limit (the file's when it has none).
+/// A row as a call: its texts in canonical form ([`Call::of_surface`]), its bindings in name order, and its gas limit
+/// (the file's when it has none).
 pub fn call_of(row: &JlvmCase, default_limit: u64) -> Result<Call, String> {
     if row.built.is_some() {
         return Err(format!("{}: a call has no built bindings", row.name));
     }
-    Ok(Call {
-        program: row.program.clone(),
-        data: row.data.clone(),
-        env: row.env.iter().flatten().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        gas_limit: row.gas_limit.unwrap_or(default_limit),
-    })
+    let env: Vec<(String, String)> = row.env.iter().flatten().map(|(k, v)| (k.clone(), v.clone())).collect();
+    Call::of_surface(&row.program, &row.data, &env, row.gas_limit.unwrap_or(default_limit))
+        .map_err(|e| format!("{}: not a call: {e:?}", row.name))
 }
 
 /// Each of [`CALLS`] as a call, with its row.
@@ -193,8 +191,8 @@ pub fn expected(
             };
             Ok(ZkJlvmCall {
                 name: row.name.clone(),
-                program: call.program.clone(),
-                data: call.data.clone(),
+                program: row.program.clone(),
+                data: row.data.clone(),
                 env: row.env.clone(),
                 gas_limit: call.gas_limit,
                 statement: statement_hex(&s),
