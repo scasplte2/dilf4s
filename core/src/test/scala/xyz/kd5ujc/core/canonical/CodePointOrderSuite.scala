@@ -4,6 +4,8 @@ import java.nio.charset.StandardCharsets.UTF_8
 
 import cats.effect.IO
 
+import scala.annotation.tailrec
+
 import org.scalacheck.Gen
 import weaver.SimpleIOSuite
 import weaver.scalacheck.{CheckConfig, Checkers}
@@ -26,16 +28,30 @@ object CodePointOrderSuite extends SimpleIOSuite with Checkers {
   /** Code-point order, independently: the keys' UTF-8 bytes, unsigned. */
   private val Utf8Order: Ordering[String] = (a, b) => java.util.Arrays.compareUnsigned(a.getBytes(UTF_8), b.getBytes(UTF_8))
 
-  /** The listing before: a comparison sort, counting the pairs of units each comparison reads, as `counted` counts them. */
+  /** A comparison merge sort that rereads each common prefix, counting unit pairs without mutable counters. */
   private def oldSort(entries: Vector[(String, CanonicalValue)]): (Vector[String], Long) = {
-    val reads = new java.util.concurrent.atomic.AtomicLong
-    val sorted = entries.map(_._1).sortWith { (a, b) =>
-      val n = math.min(a.length, b.length)
-      val l = (0 until n).find(i => a.charAt(i) != b.charAt(i)).getOrElse(n)
-      reads.addAndGet(l.toLong + (if (l < n) 1L else 0L))
-      CodePointOrder.compare(a, b) < 0
-    }
-    (sorted, reads.get)
+    @tailrec
+    def merge(left: List[String], right: List[String], reversed: List[String], reads: Long): (List[String], Long) =
+      (left, right) match {
+        case (Nil, _) => (reversed.reverse ::: right, reads)
+        case (_, Nil) => (reversed.reverse ::: left, reads)
+        case (a :: as, b :: bs) =>
+          val n = math.min(a.length, b.length)
+          val l = (0 until n).find(i => a.charAt(i) != b.charAt(i)).getOrElse(n)
+          val total = reads + l.toLong + (if (l < n) 1L else 0L)
+          if (CodePointOrder.compare(a, b) < 0) merge(as, right, a :: reversed, total)
+          else merge(left, bs, b :: reversed, total)
+      }
+    def sort(keys: List[String]): (List[String], Long) =
+      if (keys.sizeIs <= 1) (keys, 0L)
+      else {
+        val (left, right) = keys.splitAt(keys.size / 2)
+        val (a, ar) = sort(left)
+        val (b, br) = sort(right)
+        merge(a, b, Nil, ar + br)
+      }
+    val (sorted, reads) = sort(entries.map(_._1).toList)
+    (sorted.toVector, reads)
   }
 
   /**
@@ -113,10 +129,9 @@ object CodePointOrderSuite extends SimpleIOSuite with Checkers {
   }
 
   test("any keys, in any order, are put in code-point order: the merge needs no particular input order") {
-    forall(Gen.zip(keys, Gen.long)) {
-      case (ks, seed) =>
-        val entries = new scala.util.Random(seed).shuffle(ks.distinct).toVector.map(k => k -> (CanonicalValue.CNull: CanonicalValue))
-        expect.same(entries.sortBy(_._1)(using Utf8Order), CodePointOrder.sorted(entries))
+    forall(keys) { ks =>
+      val entries = ks.distinct.toVector.map(k => k -> (CanonicalValue.CNull: CanonicalValue))
+      expect.same(entries.sortBy(_._1)(using Utf8Order), CodePointOrder.sorted(entries))
     }
   }
 

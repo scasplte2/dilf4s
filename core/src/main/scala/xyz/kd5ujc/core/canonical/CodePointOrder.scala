@@ -58,101 +58,88 @@ private[kd5ujc] object CodePointOrder extends Ordering[String] {
    * (`W > S + 2 n`), so the pairs read are at most `2 S + n (ceil(log2 k) + 1) <= 2 S + n (log2 n + 2) < 10 W`, and so
    * are the entries moved. One run is the answer as it is, after the one pass.
    *
-   * The positions and prefixes being merged are held in arrays local to this call, which never escape it: a round
-   * writes each entry's position once, and only the finished order leaves, as a vector.
+   * Runs retain entries and their common prefixes in immutable lists. Each merge prepends its output and reverses it
+   * once, so list construction adds only constant work per entry moved.
    */
   def counted[A](entries: Vector[(String, A)]): (Vector[(String, A)], Long) =
-    if (entries.sizeIs <= 1) (entries, 0L) else runs(entries)
-
-  /** [[counted]] of two entries or more. */
-  private def runs[A](entries: Vector[(String, A)]): (Vector[(String, A)], Long) = {
-    val n = entries.size
-    val keys = entries.iterator.map(_._1).toArray
-    // lcp(i): key i's common prefix with key i - 1 in its run; 0 where a run starts
-    val lcp = new Array[Int](n)
-    @tailrec
-    def scan(i: Int, starts: List[Int], reads: Long): (List[Int], Long) =
-      if (i >= n) (starts, reads)
-      else {
-        val (a, b) = (keys(i - 1), keys(i))
-        val l = common(a, b, 0)
-        val ascending = before(a, b, l)
-        lcp(i) = if (ascending) l else 0
-        scan(i + 1, if (ascending) starts else i :: starts, reads + read(a, b, 0, l))
-      }
-    val (starts, scanned) = scan(1, List(0), 0L)
-    if (starts.sizeIs <= 1) (entries, scanned)
-    else {
-      val (order, reads) =
-        rounds(keys, Array.range(0, n), lcp, new Array[Int](n), new Array[Int](n), (n :: starts).reverse.toVector, scanned)
-      (order.iterator.map(entries).toVector, reads)
+    entries.toList match {
+      case Nil => (entries, 0L)
+      case first :: tail =>
+        val (runs, reads) = scan(tail, first, List(Item(first, 0)), Nil, 0L)
+        if (runs.sizeIs <= 1) (entries, reads)
+        else {
+          val (ordered, total) = rounds(runs, reads)
+          (ordered.map(_.entry).toVector, total)
+        }
     }
+
+  private final case class Item[A](entry: (String, A), lcp: Int)
+
+  @tailrec
+  private def scan[A](
+    remaining: List[(String, A)],
+    previous:  (String, A),
+    reversed:  List[Item[A]],
+    runs:      List[List[Item[A]]],
+    reads:     Long
+  ): (List[List[Item[A]]], Long) = remaining match {
+    case Nil => ((reversed.reverse :: runs).reverse, reads)
+    case next :: tail =>
+      val (a, b) = (previous._1, next._1)
+      val l = common(a, b, 0)
+      val total = reads + read(a, b, 0, l)
+      if (before(a, b, l)) scan(tail, next, Item(next, l) :: reversed, runs, total)
+      else scan(tail, next, List(Item(next, 0)), reversed.reverse :: runs, total)
+  }
+
+  @tailrec
+  private def rounds[A](runs: List[List[Item[A]]], reads: Long): (List[Item[A]], Long) = runs match {
+    case Nil         => (Nil, reads)
+    case only :: Nil => (only, reads)
+    case _ =>
+      val (next, total) = pairs(runs, Nil, reads)
+      rounds(next, total)
+  }
+
+  @tailrec
+  private def pairs[A](
+    runs:     List[List[Item[A]]],
+    reversed: List[List[Item[A]]],
+    reads:    Long
+  ): (List[List[Item[A]]], Long) = runs match {
+    case left :: right :: tail =>
+      val (merged, total) = merge(left, right, 0, 0, Nil, reads)
+      pairs(tail, merged :: reversed, total)
+    case last :: Nil => ((last :: reversed).reverse, reads)
+    case Nil         => (reversed.reverse, reads)
   }
 
   /**
-   * The runs of `order` starting at `bounds` (then `n`), merged pairwise into `to` until one is left; the buffers
-   * change places each round. The order, and the pairs read.
+   * LCP merge (Ng and Kakehi, "Merging String Sequences by Longest Common Prefixes", 2008). Each head shares
+   * `ha` or `hb` units with the last output. The greater prefix comes first without rereading it. Equal prefixes
+   * compare from that offset; the other head retains the extended prefix for its next comparison.
    */
   @tailrec
-  private def rounds(
-    keys:   Array[String],
-    order:  Array[Int],
-    lcp:    Array[Int],
-    to:     Array[Int],
-    toLcp:  Array[Int],
-    bounds: Vector[Int],
-    reads:  Long
-  ): (Array[Int], Long) =
-    if (bounds.sizeIs <= 2) (order, reads)
-    else {
-      @tailrec
-      def pairs(r: Int, starts: List[Int], reads: Long): (List[Int], Long) =
-        if (r + 2 < bounds.size)
-          pairs(r + 2, bounds(r) :: starts, reads + merge(keys, order, lcp, to, toLcp, bounds(r), bounds(r + 1), bounds(r + 2)))
-        else if (r + 1 < bounds.size) {
-          // a run left over: carried into the next round as it is
-          val (from, until) = (bounds(r), bounds(r + 1))
-          System.arraycopy(order, from, to, from, until - from)
-          System.arraycopy(lcp, from, toLcp, from, until - from)
-          (from :: starts, reads)
-        } else (starts, reads)
-      val (starts, merged) = pairs(0, Nil, reads)
-      rounds(keys, to, toLcp, order, lcp, (order.length :: starts).reverse.toVector, merged)
-    }
-
-  /**
-   * The runs `[a0, a1)` and `[a1, b1)` of `order` merged into `to` from `a0`, by their common prefixes (Ng and Kakehi's
-   * LCP merge, "Merging String Sequences by Longest Common Prefixes", IPSJ Digital Courier 4, 2008); the pairs read.
-   * With `o` the last entry output, `ha` and `hb` are each head's common prefix with `o`. The head sharing more with
-   * `o` comes first, read without a unit: both follow `o`, and the other differs from `o` earlier, upward. Only when
-   * they share as much is a unit read, from that common length on, and the one not taken then shares exactly the units
-   * read with the new `o`. So a unit that matches raises an entry's common prefix with the entry before it, which never
-   * falls from one merge to the next, and is read once per entry over every merge; a unit that differs is read once
-   * per entry output.
-   */
-  private def merge(keys: Array[String], order: Array[Int], lcp: Array[Int], to: Array[Int], toLcp: Array[Int], a0: Int, a1: Int, b1: Int)
-    : Long = {
-    def put(o:     Int, at:  Int, h: Int): Unit = { to(o) = order(at); toLcp(o) = h }
-    def prefix(at: Int, end: Int): Int = if (at < end) lcp(at) else 0
-    // the rest of one run follows: its head shares h with the last entry output, each after it its own prefix
-    def rest(at: Int, end: Int, o: Int, h: Int): Unit = {
-      System.arraycopy(order, at, to, o, end - at)
-      System.arraycopy(lcp, at, toLcp, o, end - at)
-      if (at < end) toLcp(o) = h
-    }
-    @tailrec
-    def go(i: Int, j: Int, ha: Int, hb: Int, o: Int, reads: Long): Long =
-      if (i >= a1) { rest(j, b1, o, hb); reads }
-      else if (j >= b1) { rest(i, a1, o, ha); reads }
-      else if (ha > hb) { put(o, i, ha); go(i + 1, j, prefix(i + 1, a1), hb, o + 1, reads) }
-      else if (hb > ha) { put(o, j, hb); go(i, j + 1, ha, prefix(j + 1, b1), o + 1, reads) }
+  private def merge[A](
+    left:     List[Item[A]],
+    right:    List[Item[A]],
+    ha:       Int,
+    hb:       Int,
+    reversed: List[Item[A]],
+    reads:    Long
+  ): (List[Item[A]], Long) = (left, right) match {
+    case (Nil, head :: tail) => (reversed.reverse ::: head.copy(lcp = hb) :: tail, reads)
+    case (head :: tail, Nil) => (reversed.reverse ::: head.copy(lcp = ha) :: tail, reads)
+    case (Nil, Nil)          => (reversed.reverse, reads)
+    case (a :: as, b :: bs) =>
+      if (ha > hb) merge(as, right, as.headOption.fold(0)(_.lcp), hb, a.copy(lcp = ha) :: reversed, reads)
+      else if (hb > ha) merge(left, bs, ha, bs.headOption.fold(0)(_.lcp), b.copy(lcp = hb) :: reversed, reads)
       else {
-        val (x, y) = (keys(order(i)), keys(order(j)))
+        val (x, y) = (a.entry._1, b.entry._1)
         val l = common(x, y, ha)
-        val r = reads + read(x, y, ha, l)
-        if (before(x, y, l)) { put(o, i, ha); go(i + 1, j, prefix(i + 1, a1), l, o + 1, r) }
-        else { put(o, j, ha); go(i, j + 1, l, prefix(j + 1, b1), o + 1, r) }
+        val total = reads + read(x, y, ha, l)
+        if (before(x, y, l)) merge(as, right, as.headOption.fold(0)(_.lcp), l, a.copy(lcp = ha) :: reversed, total)
+        else merge(left, bs, l, bs.headOption.fold(0)(_.lcp), b.copy(lcp = hb) :: reversed, total)
       }
-    go(a0, a1, 0, 0, a0, 0L)
   }
 }
