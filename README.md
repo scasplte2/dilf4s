@@ -14,6 +14,7 @@ This repository contains cryptographic functionalities designed to support the d
 | `storage`, `storageRocksDb` | Stores and versioned stores, in memory and on RocksDB. |
 | `accumulators` | Merkle trees, the binary trie and the versioned trie. |
 | `jlvm` | The JLVM (`docs/specs/jlvm.md`). |
+| `javaApi` (`java/`) | `dilf4s-java`: a Java API over `core`, `crypto`, `accumulators` and `jlvm`, with no Scala type in its signatures (`java/README.md`). |
 | `modelsGen`, `benchmarks`, `sharedTest` | The CDDL model generator, JMH benchmarks and test helpers. |
 
 **JSON and circe.** Only `circeInterop` depends on circe in its main sources. `core` has no circe dependency, main or
