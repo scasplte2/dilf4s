@@ -4,9 +4,7 @@
  * not a canonical map, which holds no null.
  */
 import { isValue, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { close, isArrayGuarded, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, openWith, readGuarded, readStep, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
-
-import { compareCodePoints } from "./jvalue.js";
+import { close, compareCodePoints, isArrayGuarded, isArrayLength, isResult, NOT_A_RESULT, NOT_ITERABLE, openWith, readGuarded, readStep, walksAsArray } from "@kd5ujc/dilf4s-core/internal";
 
 /** The key the constructor takes, private to this module: without it, what it builds is no bindings. */
 const KEY: unique symbol = Symbol("bindings");

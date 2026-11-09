@@ -3,9 +3,10 @@
  * ordering, text, substring search and deduplication.
  */
 import { BoolValue, BytesValue, cbor, equals, IntValue, models, NullValue, TextValue, type RationalValue } from "@kd5ujc/dilf4s-core";
+import { compareBytes, compareCodePoints } from "@kd5ujc/dilf4s-core/internal";
 
 import { limit, typeError, type JlvmError } from "./error.js";
-import { compareCodePoints, JArray, type AnyArray, type Heap, type JMap, type JValue } from "./jvalue.js";
+import { JArray, type AnyArray, type Heap, type JMap, type JValue } from "./jvalue.js";
 import type { JlvmOp } from "./op.js";
 
 /** The largest number, in bits of the numerator and of the denominator (jlvm.md section 2). */
@@ -40,14 +41,6 @@ export const bool = (b: boolean): BoolValue => (b ? TRUE : FALSE);
 export function count(n: number | bigint): Out<IntValue> {
   const r = IntValue.of(BigInt(n));
   return r.ok ? good(r.value) : bad(limit("a count past the integer bound"));
-}
-
-/** Java's `BigInteger.bitLength`: the bits of the minimal two's-complement form, without the sign bit. */
-export function bitLengthOf(n: bigint): number {
-  const m = n < 0n ? -n - 1n : n;
-  if (m < 0x100000000n) return 32 - Math.clz32(Number(m));
-  const hex = m.toString(16);
-  return (hex.length - 1) * 4 + 32 - Math.clz32(Number.parseInt(hex.charAt(0), 16));
 }
 
 /** JsonLogic truthiness: null, false, 0, "", empty bytes, [] and {} are falsy. */
@@ -340,15 +333,6 @@ interface SortKey {
   readonly encoding: Uint8Array | undefined;
 }
 
-function compareBytes(a: Uint8Array, b: Uint8Array): number {
-  const n = Math.min(a.length, b.length);
-  for (let i = 0; i < n; i++) {
-    const d = (a[i] ?? 0) - (b[i] ?? 0);
-    if (d !== 0) return d;
-  }
-  return a.length - b.length;
-}
-
 const RANKS: Readonly<Record<JValue["kind"], number>> = { null: 0, bool: 1, int: 2, rational: 3, text: 4, bytes: 5, array: 6, map: 7 };
 
 /**
@@ -442,16 +426,21 @@ export function equal(heap: Heap, a: JValue, b: JValue): boolean {
 
 // ---- the JSON surface's bytes
 
-/** The bytes a string denotes in the JSON surface, if it is `0x` followed by an even number of lowercase hex digits. */
+/**
+ * Whether a string is `0x` followed by an even number of lowercase hex digits, the JSON surface's form of bytes: read
+ * in place, nothing allocated. Core's `fromHex` takes either case and no prefix, so it is not this form.
+ */
+export function isHexText(s: string): boolean {
+  if (s.length < 2 || s.charCodeAt(0) !== 0x30 || s.charCodeAt(1) !== 0x78 || s.length % 2 !== 0) return false;
+  for (let i = 2; i < s.length; i++) if (nibble(s.charCodeAt(i)) < 0) return false;
+  return true;
+}
+
+/** The bytes a string denotes in the JSON surface, if it has that form ({@link isHexText}): allocated once it does. */
 export function hexBytes(s: string): Uint8Array | undefined {
-  if (s.length < 2 || s.charCodeAt(0) !== 0x30 || s.charCodeAt(1) !== 0x78 || s.length % 2 !== 0) return undefined;
+  if (!isHexText(s)) return undefined;
   const out = new Uint8Array((s.length - 2) / 2);
-  for (let i = 0; i < out.length; i++) {
-    const hi = nibble(s.charCodeAt(2 + 2 * i));
-    const lo = nibble(s.charCodeAt(3 + 2 * i));
-    if (hi < 0 || lo < 0) return undefined;
-    out[i] = (hi << 4) | lo;
-  }
+  for (let i = 0; i < out.length; i++) out[i] = (nibble(s.charCodeAt(2 + 2 * i)) << 4) | nibble(s.charCodeAt(3 + 2 * i));
   return out;
 }
 

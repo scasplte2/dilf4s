@@ -14,6 +14,7 @@
  * equality and the canonical encoding read a container: both are charged by weight, which bounds the conversion.
  */
 import { ArrayValue, MapValue, MAX_DEPTH, MAX_WEIGHT, Value, type BoolValue, type BytesValue, type IntValue, type NullValue, type RationalValue, type TextValue } from "@kd5ujc/dilf4s-core";
+import { compareCodePoints, utf8LengthOf as utf8Length } from "@kd5ujc/dilf4s-core/internal";
 
 /** A canonical scalar. */
 export type Scalar = NullValue | BoolValue | IntValue | RationalValue | TextValue | BytesValue;
@@ -29,36 +30,6 @@ export type JValue = Scalar | AnyArray | AnyMap;
 
 /** `w`, saturated at core's `MAX_WEIGHT` (2^63 - 1): every term is non-negative, so clamping once saturates each step. */
 const saturated = (w: bigint): bigint => (w > MAX_WEIGHT ? MAX_WEIGHT : w);
-
-/** The UTF-8 length of `s`, a well-formed string, counted from its UTF-16 units. */
-export function utf8Length(s: string): number {
-  let n = 0;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    // a surrogate pair is 4 bytes, 2 per unit
-    n += c < 0x80 ? 1 : c < 0x800 ? 2 : c >= 0xd800 && c <= 0xdfff ? 2 : 3;
-  }
-  return n;
-}
-
-/**
- * The code-point order of two well-formed strings (the order of their UTF-8 bytes): UTF-16 order, except that a
- * surrogate (a code point past U+FFFF) sorts after every other unit, found at the first unit that differs.
- */
-export function compareCodePoints(a: string, b: string): number {
-  // the engine's own comparison finds equal text (often the same string) without a loop here
-  if (a === b) return 0;
-  const n = Math.min(a.length, b.length);
-  for (let i = 0; i < n; i++) {
-    const x = a.charCodeAt(i);
-    const y = b.charCodeAt(i);
-    if (x !== y) return fixup(x) - fixup(y);
-  }
-  return a.length - b.length;
-}
-
-/** U+E000..U+FFFF moved below the surrogates, which move above them. */
-const fixup = (c: number): number => (c >= 0xd800 ? (c >= 0xe000 ? c - 0x800 : c + 0x2000) : c);
 
 /** An array the machine built: its items as they are, its weight and depth computed once, from theirs, exactly. */
 export class JArray {

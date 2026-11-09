@@ -129,6 +129,18 @@ describe("host bindings", () => {
     expect(x.size).toBe(1);
     expect(x.get("y")).toBeUndefined();
   });
+
+  it("find every name by core's code-point order, a name with an unpaired surrogate too, and refuse such a name bound twice", () => {
+    // every name of up to two units over the bounds of the surrogates, in an order no sort gives
+    const units = ["a", "\ud7ff", "\ud800", "\udbff", "\udc00", "\udfff", "\ue000", "\uffff"];
+    const names = [...units, ...units.flatMap((u) => units.map((v) => u + v))].reverse();
+    const values = names.map((_, i) => expectOk(Value.int(BigInt(i)), "an index"));
+    const b = expectOk(Bindings.of(names.map((n, i) => [n, values[i] ?? Value.null] as const)), "every name");
+    expect(b.size).toBe(names.length);
+    for (const [i, n] of names.entries()) expect(b.get(n), JSON.stringify(n)).toBe(values[i]);
+    for (const n of ["", "b", "\ud800\ud800\ud800", "\u{10000}\u{10000}"]) expect(b.get(n), `unbound ${JSON.stringify(n)}`).toBeUndefined();
+    for (const n of ["\ud800", "\u{10000}", "\udc00\ud800"]) expect(expectErr(Bindings.of([[n, five], ["a", five], [n, five]]), JSON.stringify(n))).toMatchObject({ kind: "TypeMismatch" });
+  });
 });
 
 describe("programs", () => {

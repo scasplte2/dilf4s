@@ -12,7 +12,7 @@ import { toHexOf } from "@kd5ujc/dilf4s-core/internal";
 import { programExpr, sortedFields, view, type Expr, type Program } from "./ast.js";
 import { malformed, type JlvmError } from "./error.js";
 import { callName } from "./op.js";
-import { hexBytes } from "./values.js";
+import { isHexText } from "./values.js";
 
 /** JSON being written: text already rendered, or a container of it (a map expression may hold null fields, which no value can). */
 type Out = { readonly t: "raw"; readonly text: string } | { readonly t: "arr"; readonly items: readonly Out[] } | { readonly t: "obj"; readonly fields: readonly (readonly [string, Out])[] };
@@ -41,7 +41,7 @@ const member = (name: string, arg: Out): Rendered<Out> => {
 function hasHexText(root: Value): boolean {
   const todo: Value[] = [root];
   for (let v = todo.pop(); v !== undefined; v = todo.pop()) {
-    if (v.kind === "text" && hexBytes(v.value) !== undefined) return true;
+    if (v.kind === "text" && isHexText(v.value)) return true;
     if (v.kind === "array") for (const x of v.items) todo.push(x);
     else if (v.kind === "map") for (const [, x] of v.entries()) todo.push(x);
   }

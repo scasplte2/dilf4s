@@ -5,12 +5,11 @@
  * one surface and canonical form (jlvm.md section 1).
  */
 import { cbor, DomainTag, describeFailure, models, NullValue, Preview, taggedHash, type CanonicalError, type HashAlgorithm, type Result, type TypeMismatch, type Value } from "@kd5ujc/dilf4s-core";
-import { isAlgorithm } from "@kd5ujc/dilf4s-core/internal";
+import { compareCodePoints, isAlgorithm } from "@kd5ujc/dilf4s-core/internal";
 
 import { limit, malformed, type JlvmError } from "./error.js";
 import { amount } from "./gas.js";
 import { callName, isVariadic, opFromWire, type JlvmOp } from "./op.js";
-import { compareCodePoints } from "./jvalue.js";
 
 /** A program's expression: the canonical syntax tree (generated). */
 export type Expr = models.jlvm.JlvmExpr;

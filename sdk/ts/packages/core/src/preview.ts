@@ -1,5 +1,7 @@
 /** Caller text as a diagnostic may show it (docs/specs/conformance.md section 8). */
 
+import { utf8LengthOf } from "./utf8.js";
+
 /** The most code points a {@link Preview} keeps. */
 export const MAX_PREVIEW_CODE_POINTS = 32;
 
@@ -59,18 +61,14 @@ export class Preview {
   static of(text: string): Preview {
     if (typeof (text as unknown) !== "string") return Preview.notText;
     const kept: number[] = [];
-    let length = 0;
     let keptBytes = 0;
-    for (let i = 0; i < text.length; ) {
+    for (let i = 0; i < text.length && kept.length < MAX_PREVIEW_CODE_POINTS; ) {
       const c = text.codePointAt(i) ?? 0xfffd;
-      if (kept.length < MAX_PREVIEW_CODE_POINTS) {
-        kept.push(isSurrogate(c) ? 0xfffd : c);
-        keptBytes += width(c);
-      }
-      length += width(c);
+      kept.push(isSurrogate(c) ? 0xfffd : c);
+      keptBytes += width(c);
       i += c > 0xffff ? 2 : 1;
     }
-    return new Preview(KEY, String.fromCodePoint(...kept), length, keptBytes);
+    return new Preview(KEY, String.fromCodePoint(...kept), utf8LengthOf(text), keptBytes);
   }
 
   /** The preview of something that is not text: the head `<not text>`, a length of 0, not truncated. */

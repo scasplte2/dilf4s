@@ -5,10 +5,11 @@
  * so it never recurses and never hashes a name the program chose.
  */
 import { BoolValue, NullValue, Preview, type Value } from "@kd5ujc/dilf4s-core";
+import { compareCodePoints, utf8LengthOf } from "@kd5ujc/dilf4s-core/internal";
 
 import { parseVar, programExpr, sortedFields, view, type Expr, type Program, type VarRef } from "./ast.js";
 import { malformed } from "./error.js";
-import { compareCodePoints, JMap, utf8Length } from "./jvalue.js";
+import { JMap } from "./jvalue.js";
 import { isCrypto, isStrict, isVariadic, type CryptoOp, type JlvmOp, type StrictOp, type VariadicOp } from "./op.js";
 import { bad, good, kindName, segmentCount, type Out } from "./values.js";
 
@@ -160,7 +161,7 @@ function plan(e: Expr, lets: Lets): Planned {
       const fields = sortedFields(v.fields);
       const keys = fields.map(([k]) => k);
       // each key's UTF-8 length, found once here: building the map at run time reads no key
-      const keyBytes = keys.map(utf8Length);
+      const keyBytes = keys.map((k) => utf8LengthOf(k));
       return { kids: all(fields.map(([, x]) => x), lets), combine: (ns) => good({ t: "objectOf", keys, keyBytes, fields: ns }) };
     }
     case "apply":
