@@ -449,11 +449,15 @@ object Profile {
   val Patterns: Vector[String] =
     Vector("([0-9a-f]{2})*", "0x([0-9a-f]{2})*", "0|[1-9][0-9]*", "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*")
 
-  /** How each emitter names a wire key: the key itself, camelCase (Scala, TypeScript) and snake_case (Rust). */
+  /**
+   * How each emitter names a wire key: the key itself, camelCase (Scala, TypeScript), snake_case (Rust) and PascalCase
+   * (Go, whose exported names `xY` and `XY` would both make `XY`).
+   */
   val Namings: Vector[(String, String => String)] = Vector(
     "wire"       -> identity,
     "camelCase"  -> (k => CanonicalEmitter.fieldName(k).stripPrefix("`").stripSuffix("`")),
-    "snake_case" -> RustEmitter.fieldName
+    "snake_case" -> RustEmitter.fieldName,
+    "PascalCase" -> GoEmitter.fieldName
   )
 
   /** A choice of inline maps, its alternatives `//` in one map rule: an error family's shape (`{ "kind": "A", ... // "kind": "B" }`). */

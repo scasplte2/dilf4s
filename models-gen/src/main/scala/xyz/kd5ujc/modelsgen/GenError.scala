@@ -43,7 +43,7 @@ enum GenError:
 
 /** A language the generator emits. */
 enum Language:
-  case Scala, Rust, TypeScript
+  case Scala, Rust, TypeScript, Go
 
 enum ConfigProblem:
   case QualifiedName(value: String)

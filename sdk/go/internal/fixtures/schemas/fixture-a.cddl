@@ -1,0 +1,21 @@
+; Emitter fixture (not a dilf4s format): rules another module reaches through an alias, a choice, a field and an
+; error's cause.
+
+item = { "x": uint }
+
+items = [* item]
+
+mode = "on" / "off"
+
+; The SDK's Preview (conformance.md section 8): not generated, but an error's field may hold one.
+preview = { "head": text, "length": uint }
+
+inner-error-kind = "Broken" / "Gone"
+
+inner-error = {
+  ; Something broke.
+  "kind": "Broken",
+  ; What.
+  "what": text //
+  "kind": "Gone", "name": preview
+}

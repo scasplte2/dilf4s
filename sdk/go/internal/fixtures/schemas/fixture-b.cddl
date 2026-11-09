@@ -1,0 +1,79 @@
+;# import fixture-a as a
+; Emitter fixture (not a dilf4s format): every construct of the profile, and the ones the shared schemas do not use
+; that change the Go output: a record holding itself, two records holding each other, a choice of another package's
+; record and choice of texts, a wide enumeration, and an error wrapping another package's error.
+
+items-again = a.items
+
+; A record of another package, a record of this one, a text, and another package's choice of texts.
+choice = a.item / local / "empty" / a.mode
+
+local = { "y": uint }
+
+; A record holding itself by value, which Go holds through a pointer; a slice of itself needs none.
+node = { "value": uint, ? "next": node, "children": [* node] }
+
+; A record holding one choice in two fields: a model can hold one value in both, so its value doubles at each level.
+tree = { "left": branch, "right": branch }
+
+branch = tree / leaf
+
+leaf = { "leaf": uint }
+
+ping = { ? "pong": pong }
+
+pong = { "ping": ping }
+
+wide = &(low: -18446744073709551616, high: 18446744073709551615, small: 3)
+
+op = op-not / op-eq
+
+op-not = "!"
+
+op-eq = "=="
+
+everything = {
+  "version": 1,
+  "tag": "fixture",
+  "u": uint,
+  "i": int,
+  "n": nint,
+  "u32": uint .le 255,
+  "i32": -5..5,
+  "u64": 0..18446744073709551615,
+  "i64": -9223372036854775808..9223372036854775807,
+  "big": 0..340282366920938463463374607431768211455,
+  "bytes": bytes,
+  "fixed": bytes .size 4,
+  "sized": bytes .size (1..3),
+  "bounded-by-limit": bounded-bytes,
+  "text": text,
+  "sized-text": text .size (0..8),
+  "hex": text .regexp "([0-9a-f]{2})*",
+  "hex0x": text .regexp "0x([0-9a-f]{2})*",
+  "decimal": text .regexp "0|[1-9][0-9]*",
+  "state-key": text .regexp "[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*",
+  "flag": bool,
+  "any": any,
+  "list": [* [* uint]],
+  "bounded": [1*3 text],
+  "map": { * text => a.items },
+  ? "maybe": wide,
+  ? "choice": choice,
+  "mode": a.mode,
+  "op": op,
+  "items": items-again,
+}
+
+outer-error-kind = "Wrap" / "Bare"
+
+outer-error = {
+  "kind": "Wrap", "error": a.inner-error //
+  "kind": "Bare", ? "limit": 0..1024, "mode": a.mode
+}
+
+max-small = 1024
+
+max-wide = 18446744073709551615
+
+bounded-bytes = bytes .size (0..max-small)
