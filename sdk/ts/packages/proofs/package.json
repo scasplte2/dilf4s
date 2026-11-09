@@ -2,7 +2,7 @@
   "name": "@kd5ujc/dilf4s-proofs",
   "version": "0.1.0",
   "private": true,
-  "description": "dilf4s proof verifiers: Merkle trees, binary tries, versioned tries, Poseidon and its Merkle tree, BN254 group operations",
+  "description": "dilf4s proof verifiers: Merkle trees, binary tries, versioned tries, Poseidon and its Merkle tree, BN254 group operations, Groth16 and SP1",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,

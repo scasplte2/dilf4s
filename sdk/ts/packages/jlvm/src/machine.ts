@@ -12,7 +12,7 @@ import { models, Preview, type TextValue, type Value } from "@kd5ujc/dilf4s-core
 
 import { segments as splitPath, parseVar, type VarRef } from "./ast.js";
 import { CRYPTO } from "./crypto.js";
-import { arity, domain, limit, malformed, typeError, type EvalError } from "./error.js";
+import { arity, domain, limit, malformed, typeError, type JlvmError } from "./error.js";
 import { base, perUnit, pathText, plus, rendered as renderCharge, sized, sizedWithin, times, type GasSchedule } from "./gas.js";
 import { Heap, JMap, type JValue } from "./jvalue.js";
 import { position, type Bindings as LetBindings, type Iteration, type Logical, type Node } from "./node.js";
@@ -261,7 +261,7 @@ type Kont =
 /** One step of evaluation (`Machine.scala` `Step`). */
 type Step =
   | { readonly t: "done"; readonly value: JValue }
-  | { readonly t: "fail"; readonly error: EvalError }
+  | { readonly t: "fail"; readonly error: JlvmError }
   /** Pay, then do the work: nothing is done before it is paid for. */
   | { readonly t: "charge"; readonly gas: number; readonly then: Then }
   /** Evaluate the node, then continue with its value. */
@@ -270,12 +270,12 @@ type Step =
   | { readonly t: "note"; readonly warning: Warning; readonly value: JValue };
 
 const done = (value: JValue): Step => ({ t: "done", value });
-const fail = (error: EvalError): Step => ({ t: "fail", error });
+const fail = (error: JlvmError): Step => ({ t: "fail", error });
 const charge = (gas: number, then: Then): Step => ({ t: "charge", gas, then });
 const evaluate = (node: Node, scope: Scope, k: Kont): Step => ({ t: "eval", node, scope, k });
 const RETURN: Kont = { t: "return" };
 
-function result(r: Out | { readonly ok: false; readonly error: EvalError }): Step {
+function result(r: Out): Step {
   return r.ok ? done(r.value) : fail(r.error);
 }
 
@@ -284,7 +284,7 @@ function result(r: Out | { readonly ok: false; readonly error: EvalError }): Ste
 /** What an evaluation ends with: the gas used, the value or error, and the warnings. */
 export interface Ran {
   readonly used: number;
-  readonly result: { readonly ok: true; readonly value: Value } | { readonly ok: false; readonly error: EvalError };
+  readonly result: { readonly ok: true; readonly value: Value } | { readonly ok: false; readonly error: JlvmError };
   readonly warnings: readonly Warning[];
   /** The steps the driver took: a deterministic count of the work done. */
   readonly steps: number;

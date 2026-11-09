@@ -10,9 +10,7 @@
  *   forms.
  * - {@link evaluate} runs it on an explicit continuation stack, charging every unit of work before doing it.
  * - The cryptographic and proof operations (section 6) run on `@kd5ujc/dilf4s-signing`, `@kd5ujc/dilf4s-proofs` and
- *   core's hashing, but three whose primitives the TypeScript SDK lacks (`sigma_verify`, `schnorr_verify`,
- *   `groth16_verify`): an evaluation that reaches one of those ends with {@link Unimplemented}, after paying for it as
- *   section 7 says.
+ *   core's hashing.
  *
  * Library functions never throw: every failure is a typed result, and an argument of the wrong type (from JavaScript,
  * or a cast) is a `TypeMismatch`, checked before it is read.
@@ -24,7 +22,7 @@ import { decodeProgram, fromCanonicalValue, isProgram, Program } from "./ast.js"
 import { Bindings, isBindings } from "./bindings.js";
 import { siteOf } from "./error.js";
 import { ALL_OPS, CRYPTO_OPS, FORM_OPS, isCrypto, isForm, isStrict, isVariadic, opFromWire, opNamed } from "./op.js";
-import type { EvalError, JlvmError } from "./error.js";
+import type { JlvmError } from "./error.js";
 import { DEFAULT_GAS_LIMIT, LATEST_SCHEDULE, MAX_GAS_LIMIT, SCHEDULE_V1, type GasSchedule } from "./gas.js";
 import { run, type Warning } from "./machine.js";
 import { compile as compileNode, type Node } from "./node.js";
@@ -33,7 +31,7 @@ import { parseData, parseProgram } from "./surface.js";
 
 export { Bindings, isBindings } from "./bindings.js";
 export { MAX_CANONICAL_WEIGHT, MAX_PROGRAM_DEPTH, MAX_PROGRAM_SIZE, MAX_SURFACE_DEPTH, PROGRAM_TAG, Program, VERSION } from "./ast.js";
-export type { EvalError, JlvmError, JlvmErrorKind, JlvmSite, Unimplemented } from "./error.js";
+export type { JlvmError, JlvmErrorKind, JlvmSite } from "./error.js";
 export { NOT_A_JLVM_ERROR, siteOf } from "./error.js";
 export { DEFAULT_GAS_LIMIT, GCD_LIMBS, LATEST_SCHEDULE, MAX_GAS_LIMIT, RENDER_LIMBS, SCHEDULE_V1, type GasSchedule, type Merging, type OpCost, type Rate, type Search, type SizeUnit } from "./gas.js";
 export { MAX_WARNINGS, type Warning } from "./machine.js";
@@ -142,7 +140,7 @@ export interface Outcome {
   /** The gas used. */
   readonly gasUsed: number;
   /** The value, or the error. */
-  readonly result: Result<Value, EvalError>;
+  readonly result: Result<Value, JlvmError>;
   /** Lint warnings, distinct, at most {@link MAX_WARNINGS}. */
   readonly warnings: readonly Warning[];
 }
