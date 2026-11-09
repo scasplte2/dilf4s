@@ -33,15 +33,19 @@ lazy val commonScalacOptions = Seq(
   "-Wunused:all"
 )
 
-// Apache-2.0 section 4: every jar (classes, sources, docs, assemblies) carries the licence, NOTICE and the licences it names
+lazy val licenceTexts = settingKey[Seq[String]]("The texts in LICENSES/ that this module's own files are under, besides Apache-2.0")
+
+// Apache-2.0 section 4: every jar (classes, sources, docs, assemblies) carries the licence and NOTICE, and the text of
+// any other licence its own files are under (NOTICE lists them), and no other: no jar holds the LGPL test data
 lazy val licenceFiles = Def.setting {
   val root = (ThisBuild / baseDirectory).value
   Seq(root / "LICENSE" -> "META-INF/LICENSE", root / "NOTICE" -> "META-INF/NOTICE") ++
-    IO.listFiles(root / "LICENSES").toSeq.sorted.map(f => f -> s"META-INF/LICENSES/${f.getName}")
+    licenceTexts.value.map(t => root / "LICENSES" / t -> s"META-INF/LICENSES/$t")
 }
 
 lazy val commonSettings = Seq(
   scalacOptions ++= commonScalacOptions,
+  licenceTexts := Seq.empty,
   // as resources, so an assembly (built from the class directories, not the jars) carries them too
   Compile / resourceGenerators += Def.task {
     val out = (Compile / resourceManaged).value
@@ -127,6 +131,7 @@ lazy val numerics = project.in(file("numerics"))
   .settings(
     name := "dilf4s-numerics",
     commonSettings,
+    licenceTexts := Seq("MPL-2.0.txt"), // Ratio.scala is MPL-2.0 (NOTICE)
     commonTestSettings,
     libraryDependencies ++= Seq(
       Libraries.cats,
@@ -142,6 +147,7 @@ lazy val core = project.in(file("core"))
     name := "dilf4s-core",
     buildInfoSettings,
     commonSettings,
+    licenceTexts := Seq("MPL-2.0.txt"), // BloomFilter.scala is MPL-2.0 (NOTICE)
     commonTestSettings,
     libraryDependencies ++= Seq(
       Libraries.bc,
@@ -193,6 +199,7 @@ lazy val crypto = project.in(file("crypto"))
   .settings(
     name := "dilf4s-crypto",
     commonSettings,
+    licenceTexts := Seq("MIT-BIP-39.txt"), // the BIP-39 word lists are MIT (NOTICE)
     commonTestSettings,
     libraryDependencies ++= Seq(
       Libraries.cats,
