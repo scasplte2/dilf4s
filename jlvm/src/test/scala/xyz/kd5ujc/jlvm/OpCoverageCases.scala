@@ -157,6 +157,35 @@ object OpCoverageCases extends IOApp {
   }
 
   /**
+   * The verifiers' root outcomes that `verdicts` leaves out: `sigma_verify` on `sigma_v1.json`'s valid proofs (true) and
+   * on their proofs of another message (false) beyond a single key, from a Diffie-Hellman tuple to rings, thresholds and
+   * a ZeroJoin mix; `schnorr_verify` on a flipped response; and `ecrecover` on the high-`s` twin of a signature, which
+   * EIP-2 refuses. The differential fuzzer's coverage table found these missing (tools/difffuzz/README.md).
+   */
+  def rootVerifiers(sigma: Json): List[Case] = {
+    val rows = get(sigma.hcursor.downField("cases").as[List[Json]])
+    def row(name: String, kind: String): Option[Json] =
+      rows.find(r => r.hcursor.get[String]("name").contains(name) && r.hcursor.get[String]("kind").contains(kind))
+    def field(r: Json, k: String): CanonicalValue = get(JsonSurface.parse(get(r.hcursor.get[Json](k)).noSpaces))
+    val sigmaRows = for {
+      name <- List("dhtuple", "ring of three, the middle signs", "2-of-3, the outer two", "ZeroJoin half-mix, Bob spends")
+      kind <- List("valid", "other-message")
+      r    <- row(name, kind).toList
+    } yield probe(s"$name, $kind", Op.SigmaVerify, field(r, "proposition"), field(r, "proof"), field(r, "message"))
+    val schnorrRows = for {
+      r  <- row("dlog", "flipped-response").toList
+      pk <- r.hcursor.downField("proposition").get[String]("pk").toOption.toList
+    } yield probe("dlog, flipped-response", Op.SchnorrVerify, surface(s"\"$pk\""), field(r, "message"), field(r, "proof"))
+    val digest = EthKeys.keccak("transfer 10 to bob")
+    val signature = EthKeys.sign(BigInt(7), digest)
+    // (r, n - s, the other v) recovers the same key, so only the low-s rule refuses it
+    val n = BigInt("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16)
+    val twinS = ByteVector((n - BigInt(1, signature.slice(32, 64).toArray)).toByteArray).takeRight(32).padLeft(32)
+    val twin = signature.take(32) ++ twinS :+ (if (signature(64) == 27) 28 else 27).toByte
+    sigmaRows ++ schnorrRows :+ probe("the high-s twin of a signature is refused", Op.Ecrecover, CBytes(digest), CBytes(twin))
+  }
+
+  /**
    * The order in which `sigma_verify` refuses an oversized proposition (sigma.md §3): its weight before anything is
    * decoded, a connective's width before its children, the leaf bound before a leaf's points. The JLVM reports each as
    * `Crypto` after charging for the proposition's weight, so these pin that each is refused, at what cost, and that the
@@ -661,7 +690,7 @@ object OpCoverageCases extends IOApp {
       .mapN((secp, mk, tr, sg) =>
         sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ proofWeight(mk) ++ tries(tr) ++ sigmaBounds ++
         frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes ++ errorSites ++ sortKeyCeiling ++ hostBindings ++ lookupBounds ++ resultBounds ++
-        verdicts(sg)
+        verdicts(sg) ++ rootVerifiers(sg)
       )
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))
       .as(ExitCode.Success)

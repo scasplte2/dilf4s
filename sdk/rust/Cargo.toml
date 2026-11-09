@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["core", "fixtures", "jlvm", "proofs", "signing", "verify"]
+members = ["core", "difffuzz", "fixtures", "jlvm", "proofs", "signing", "verify"]
 
 [workspace.package]
 version = "0.1.0"

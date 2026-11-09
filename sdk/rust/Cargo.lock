@@ -386,6 +386,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dilf4s-difffuzz"
+version = "0.1.0"
+dependencies = [
+ "dilf4s-core",
+ "dilf4s-jlvm",
+]
+
+[[package]]
 name = "dilf4s-fixtures"
 version = "0.1.0"
 dependencies = [

@@ -38139,6 +38139,116 @@
       },
       "gasUsed" : 215,
       "warnings" : 0
+    },
+    {
+      "name" : "dilf4s sigma_verify: dhtuple, valid",
+      "program" : "{\"sigma_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":{\"g\":\"0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"h\":\"0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8\",\"type\":\"dhtuple\",\"u\":\"0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb\",\"v\":\"0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252\"},\"a1\":\"0x917db5398aa2c32b34c25a2d8064ccac289662777d9b130230c0c49cae0345ec97b19ab686ded4b31001bbe562eb5ec5d2948f6771b9dacf\",\"a2\":\"0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00\"}",
+      "outcome" : {
+        "json" : "true",
+        "cbor" : "f5"
+      },
+      "gasUsed" : 102005,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s sigma_verify: dhtuple, other-message",
+      "program" : "{\"sigma_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":{\"g\":\"0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"h\":\"0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8\",\"type\":\"dhtuple\",\"u\":\"0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb\",\"v\":\"0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252\"},\"a1\":\"0x917db5398aa2c32b34c25a2d8064ccac289662777d9b130230c0c49cae0345ec97b19ab686ded4b31001bbe562eb5ec5d2948f6771b9dacf\",\"a2\":\"0x616e6f74686572206d657373616765\"}",
+      "outcome" : {
+        "json" : "false",
+        "cbor" : "f4"
+      },
+      "gasUsed" : 101988,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s sigma_verify: ring of three, the middle signs, valid",
+      "program" : "{\"sigma_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":{\"children\":[{\"pk\":\"0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1\",\"type\":\"dlog\"},{\"pk\":\"0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b\",\"type\":\"dlog\"},{\"pk\":\"0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461\",\"type\":\"dlog\"}],\"type\":\"or\"},\"a1\":\"0x83b8b5fa965619ba87f905690cd30d2469e74b562e6d7aeb8cb3e81b4222f86a7098137ec65c4ce75c72bc7892c8016e31eef4d61710538b044f0fca785f0467985f64d415539589dbbe60b68217eff19abac13374232fe734a3cb81d3110a1c0b13acc2001db3c817a471ad69e5d1d5a30a7b7896545c4cdd54121f6cf7655c7bbe701426a4cc99f32ffd27cf342c76ed5ad907215d2478c6eb4f9aee2972466d599dec67ccc854\",\"a2\":\"0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00\"}",
+      "outcome" : {
+        "json" : "true",
+        "cbor" : "f5"
+      },
+      "gasUsed" : 154655,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s sigma_verify: ring of three, the middle signs, other-message",
+      "program" : "{\"sigma_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":{\"children\":[{\"pk\":\"0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1\",\"type\":\"dlog\"},{\"pk\":\"0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b\",\"type\":\"dlog\"},{\"pk\":\"0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461\",\"type\":\"dlog\"}],\"type\":\"or\"},\"a1\":\"0x83b8b5fa965619ba87f905690cd30d2469e74b562e6d7aeb8cb3e81b4222f86a7098137ec65c4ce75c72bc7892c8016e31eef4d61710538b044f0fca785f0467985f64d415539589dbbe60b68217eff19abac13374232fe734a3cb81d3110a1c0b13acc2001db3c817a471ad69e5d1d5a30a7b7896545c4cdd54121f6cf7655c7bbe701426a4cc99f32ffd27cf342c76ed5ad907215d2478c6eb4f9aee2972466d599dec67ccc854\",\"a2\":\"0x616e6f74686572206d657373616765\"}",
+      "outcome" : {
+        "json" : "false",
+        "cbor" : "f4"
+      },
+      "gasUsed" : 154638,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s sigma_verify: 2-of-3, the outer two, valid",
+      "program" : "{\"sigma_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":{\"children\":[{\"pk\":\"0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1\",\"type\":\"dlog\"},{\"pk\":\"0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b\",\"type\":\"dlog\"},{\"pk\":\"0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461\",\"type\":\"dlog\"}],\"k\":2,\"type\":\"threshold\"},\"a1\":\"0xf32a44a70ecd4cee0c01b392cb77dbe811fe249b01072c6085b89c17eb454dc30163e2d92d9ff3f5ffaeca7be843b67134ddb92a86b869a46dec58b43deb7b50b48b4c23bb599dddaec288ffb61a9aa601686f513843d9cc959d410eb166b49c0cb3f0d96caf256b3f3d75d6fecbef1b786d5fef67ff7b653d4ab5e8c237206edb4356dd2a53fa286f0a0f45f1b81d6e\",\"a2\":\"0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00\"}",
+      "outcome" : {
+        "json" : "true",
+        "cbor" : "f5"
+      },
+      "gasUsed" : 148355,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s sigma_verify: 2-of-3, the outer two, other-message",
+      "program" : "{\"sigma_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":{\"children\":[{\"pk\":\"0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1\",\"type\":\"dlog\"},{\"pk\":\"0x03251a6d4cc77f71a604744a41d74fe56d72000e0e35ee7c1b967140106ce6df7b\",\"type\":\"dlog\"},{\"pk\":\"0x03c39e18b24af3edf5b156ab2e21e66078c0b77b3ecc49cadd27854fd42ca04461\",\"type\":\"dlog\"}],\"k\":2,\"type\":\"threshold\"},\"a1\":\"0xf32a44a70ecd4cee0c01b392cb77dbe811fe249b01072c6085b89c17eb454dc30163e2d92d9ff3f5ffaeca7be843b67134ddb92a86b869a46dec58b43deb7b50b48b4c23bb599dddaec288ffb61a9aa601686f513843d9cc959d410eb166b49c0cb3f0d96caf256b3f3d75d6fecbef1b786d5fef67ff7b653d4ab5e8c237206edb4356dd2a53fa286f0a0f45f1b81d6e\",\"a2\":\"0x616e6f74686572206d657373616765\"}",
+      "outcome" : {
+        "json" : "false",
+        "cbor" : "f4"
+      },
+      "gasUsed" : 148338,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s sigma_verify: ZeroJoin half-mix, Bob spends, valid",
+      "program" : "{\"sigma_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":{\"children\":[{\"g\":\"0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"h\":\"0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb\",\"type\":\"dhtuple\",\"u\":\"0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252\",\"v\":\"0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8\"},{\"g\":\"0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"h\":\"0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb\",\"type\":\"dhtuple\",\"u\":\"0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8\",\"v\":\"0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252\"}],\"type\":\"or\"},\"a1\":\"0x4acb39cc7a5d3e50d76718c4654ca9e231f259875d5bd7a8dffd0f9dd7e93312ff0fe41402d27858d30b766673f757f9cb0a32cdd3c343d593103eebf5ba9deac1e1e0569dec4b9a77da4e11164e74512de074bf99f87566970538a61988b7a3fa7260cea2849396b2d8943ce7cd6d15\",\"a2\":\"0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00\"}",
+      "outcome" : {
+        "json" : "true",
+        "cbor" : "f5"
+      },
+      "gasUsed" : 206855,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s sigma_verify: ZeroJoin half-mix, Bob spends, other-message",
+      "program" : "{\"sigma_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":{\"children\":[{\"g\":\"0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"h\":\"0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb\",\"type\":\"dhtuple\",\"u\":\"0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252\",\"v\":\"0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8\"},{\"g\":\"0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"h\":\"0x03774ae7f858a9411e5ef4246b70c65aac5649980be5c17891bbec17895da008cb\",\"type\":\"dhtuple\",\"u\":\"0x03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8\",\"v\":\"0x02a0b1cae06b0a847a3fea6e671aaf8adfdfe58ca2f768105c8082b2e449fce252\"}],\"type\":\"or\"},\"a1\":\"0x4acb39cc7a5d3e50d76718c4654ca9e231f259875d5bd7a8dffd0f9dd7e93312ff0fe41402d27858d30b766673f757f9cb0a32cdd3c343d593103eebf5ba9deac1e1e0569dec4b9a77da4e11164e74512de074bf99f87566970538a61988b7a3fa7260cea2849396b2d8943ce7cd6d15\",\"a2\":\"0x616e6f74686572206d657373616765\"}",
+      "outcome" : {
+        "json" : "false",
+        "cbor" : "f4"
+      },
+      "gasUsed" : 206838,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s schnorr_verify: dlog, flipped-response",
+      "program" : "{\"schnorr_verify\":[{\"var\":\"a0\"},{\"var\":\"a1\"},{\"var\":\"a2\"}]}",
+      "data" : "{\"a0\":\"0x03cb0d49e4eae7e57059a3da8ac52626d26fc11330af8fb093fa597d8b93deb7b1\",\"a1\":\"0x1dc01772ee0171f5f614c673e3c7fa1107a8cf727bdf5a6dadb379e93c0d1d00\",\"a2\":\"0x46f54186f5a5fdc65b0f085a6fb46437d4fa2b7f7c60044c0a04f60211cc8ee916e06ed37943b9bac1e51f05e49e25200fcadb84f4bddef1\"}",
+      "outcome" : {
+        "json" : "false",
+        "cbor" : "f4"
+      },
+      "gasUsed" : 46205,
+      "warnings" : 0
+    },
+    {
+      "name" : "dilf4s ecrecover: the high-s twin of a signature is refused",
+      "program" : "{\"ecrecover\":[{\"var\":\"a0\"},{\"var\":\"a1\"}]}",
+      "data" : "{\"a0\":\"0xb92ff71ebeeaca3723c02619da3acae4144ef20329a7baa7e8580aeb9d0c6197\",\"a1\":\"0xfd6034fc3bf349f6ab3297ff5162ab818d629ac827af68a6813560b5f45defc1a4714a103d897576e0e6f0e71c69f150620a08160a469823941ab8cb5a799a341c\"}",
+      "outcome" : {
+        "error" : "Crypto",
+        "op" : "ecrecover"
+      },
+      "gasUsed" : 32648,
+      "warnings" : 0
     }
   ],
   "aliases" : [

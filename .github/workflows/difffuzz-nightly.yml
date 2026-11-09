@@ -1,0 +1,54 @@
+name: difffuzz-nightly
+
+# The JLVM differential fuzzing campaign (tools/difffuzz/README.md): a fresh seed each night, taken from the date, for
+# about 45 minutes on a standard runner. Shrunk mismatches, the coverage summary and the runners' standard error are
+# uploaded as an artifact; any mismatch fails the run. GitHub runs scheduled workflows from the default branch only.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "seed (default: today's date, yyyymmdd)"
+        required: false
+      minutes:
+        description: "minutes of fuzzing"
+        required: false
+        default: "45"
+
+jobs:
+  difffuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: sbt
+      - uses: sbt/setup-sbt@v1
+      # the same toolchain as sdk/rust/rust-toolchain.toml
+      - uses: dtolnay/rust-toolchain@1.99.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdk/rust
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sdk/ts/package-lock.json
+      - name: Seed
+        env:
+          SEED_INPUT: ${{ github.event.inputs.seed }}
+          MINUTES_INPUT: ${{ github.event.inputs.minutes }}
+        run: |
+          echo "SEED=${SEED_INPUT:-$(date -u +%Y%m%d)}" >> "$GITHUB_ENV"
+          echo "MINUTES=${MINUTES_INPUT:-45}" >> "$GITHUB_ENV"
+      - run: tools/difffuzz/run.sh --seed "$SEED" --cases 100000000 --minutes "$MINUTES" --out target/difffuzz
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: difffuzz-nightly-${{ env.SEED }}
+          path: target/difffuzz
+          if-no-files-found: ignore
