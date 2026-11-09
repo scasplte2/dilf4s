@@ -18,29 +18,26 @@ private[crypto] object Hmac {
   }
 
   /** PBKDF2-HMAC-SHA512 producing exactly one 64-byte block: T = U1 xor ... xor Uc, U1 = HMAC(P, S || INT(1)). */
-  def pbkdf2Sha512Block(password: ByteVector, salt: ByteVector, iterations: Int): ByteVector = {
-    val first = sha512(password, salt ++ ByteVector.fromInt(1))
-    (2 to iterations)
-      .foldLeft((first, first)) {
-        case ((u, t), _) =>
-          val next = sha512(password, u)
-          (next, t.xor(next))
-      }
-      ._2
-  }
+  def pbkdf2Sha512Block(password: ByteVector, salt: ByteVector, iterations: Int): ByteVector = block(password, salt, 1, iterations)
 
   /** PBKDF2-HMAC-SHA512 of any length: the concatenated blocks, truncated. */
   def pbkdf2Sha512(password: ByteVector, salt: ByteVector, iterations: Int, length: Int): ByteVector =
     (1 to (length + 63) / 64)
-      .foldLeft(ByteVector.empty) { (acc, block) =>
-        val first = sha512(password, salt ++ ByteVector.fromInt(block))
-        acc ++ (2 to iterations)
-          .foldLeft((first, first)) {
-            case ((u, t), _) =>
-              val next = sha512(password, u)
-              (next, t.xor(next))
-          }
-          ._2
-      }
+      .foldLeft(ByteVector.empty)((acc, i) => acc ++ block(password, salt, i, iterations))
       .take(length.toLong)
+
+  /**
+   * Block `index`. `xor` is a lazy view of its operands, so each round's sum is copied flat: kept as views, reading
+   * the block would recurse once per round, past a normal stack at BIP-39's 2048 (`compact` keeps a view as it is).
+   */
+  private def block(password: ByteVector, salt: ByteVector, index: Int, iterations: Int): ByteVector = {
+    val first = sha512(password, salt ++ ByteVector.fromInt(index))
+    (2 to iterations)
+      .foldLeft((first, first)) {
+        case ((u, t), _) =>
+          val next = sha512(password, u)
+          (next, t.xor(next).copy)
+      }
+      ._2
+  }
 }

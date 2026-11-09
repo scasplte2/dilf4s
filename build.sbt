@@ -44,7 +44,31 @@ lazy val commonSettings = Seq(
   Test / scalafixConfig := Some((LocalRootProject / baseDirectory).value / ".scalafix-test.conf")
 )
 
+/**
+ * Tests run in JVMs of their own at a normal stack, never on the 32 MiB that `.jvmopts` gives sbt (whose compiler
+ * may need it), so a test passes only if the code is stack safe where nodes run it: 1 MiB, the JVM's default thread
+ * stack on 64-bit Linux, macOS and Windows, stated so that it does not vary. A suite named `*StackSuite` runs alone in
+ * a cold JVM at 512 KiB: it reads the deepest inputs before anything has compiled their code, when frames are largest.
+ * Working directory: the repository root, as the tests' paths expect. `Test / fork` stays unset, so `Test/runMain`
+ * (the vector generators) still runs in sbt at the root.
+ */
+lazy val forkedTestGroups = Def.task {
+  val root = (LocalRootProject / baseDirectory).value
+  def at(stack: String) =
+    Tests.SubProcess(
+      ForkOptions()
+        .withWorkingDirectory(root)
+        .withRunJVMOptions(Vector(s"-Xss$stack", "-Xmx3g", "-Dfile.encoding=UTF8"))
+    )
+  val (stack, rest) = (Test / definedTests).value.partition(_.name.endsWith("StackSuite"))
+  new Tests.Group("normal-stack", rest, at("1m")) +: stack.map(t => new Tests.Group(t.name, Seq(t), at("512k")))
+}
+
+// at most three test JVMs at a time: each may take 3 GiB
+Global / concurrentRestrictions += Tags.limit(Tags.ForkedTestGroup, 3)
+
 lazy val commonTestSettings = Seq(
+  Test / testGrouping := forkedTestGroups.value,
   testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
   libraryDependencies ++= Seq(
     Libraries.catsEffectTestkit,
