@@ -419,6 +419,21 @@ fn int<'a, 'py>(obj: &'a Bound<'py, PyAny>) -> Option<&'a Bound<'py, PyInt>> {
     if obj.is_instance_of::<PyBool>() { None } else { obj.cast::<PyInt>().ok() }
 }
 
+/// A gas limit: an int (else a `TypeMismatch`), and `Err` with the `Limit` message of one a `u64` cannot hold, a
+/// negative one or one past 2**64 - 1 (jlvm.md section 7: any limit outside 0 to 2**53 - 1 is `Limit`).
+pub(crate) fn gas_limit_arg<'py>(obj: &Bound<'py, PyAny>) -> Result<Result<u64, String>, Fail<'py>> {
+    let py = obj.py();
+    let n = int(obj).ok_or_else(|| mismatch(py, "expected the gas limit: an int"))?;
+    Ok(match n.extract::<u64>() {
+        Ok(v) => Ok(v),
+        Err(_) if n.lt(0).unwrap_or(false) => Err(String::from("a gas limit is negative")),
+        Err(_) => {
+            let bits = n.call_method0("bit_length").and_then(|b| b.extract::<u64>()).unwrap_or(0);
+            Err(alloc::format!("a gas limit of {bits} bits is over 2^53 - 1"))
+        }
+    })
+}
+
 /// A non-negative integer that fits 64 bits.
 pub(crate) fn u64_arg<'py>(obj: &Bound<'py, PyAny>, what: &str) -> Result<u64, Fail<'py>> {
     let py = obj.py();

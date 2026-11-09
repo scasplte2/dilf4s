@@ -17,8 +17,8 @@ use pyo3::prelude::*;
 use pyo3::pyclass::CompareOp;
 
 use crate::boundary::{
-    Answer, Fail, Module, bytes, call, entries, instance, mismatch, py_bool, py_bytes, py_tuple, py_u64, text, u64_arg,
-    value,
+    Answer, Fail, Module, bytes, call, entries, gas_limit_arg, instance, mismatch, py_bool, py_bytes, py_tuple, py_u64,
+    text, value,
 };
 use crate::core_api::as_algorithm;
 use crate::errors::{Refusal, preview};
@@ -217,9 +217,16 @@ fn jlvm_evaluate(
                 env.insert(String::from(name), value(&v)?);
             }
         }
-        let limit = gas_limit
-            .filter(|g| !g.is_none())
-            .map_or(Ok(GasLimit::DEFAULT.0.value()), |g| u64_arg(g, "the gas limit"))?;
+        let limit = match gas_limit.filter(|g| !g.is_none()).map(gas_limit_arg).transpose()? {
+            None => GasLimit::DEFAULT.0.value(),
+            Some(Ok(limit)) => limit,
+            // a limit Rust's u64 cannot hold is refused as one past 2**53 - 1 is: Limit, with no gas used
+            Some(Err(message)) => {
+                let refused =
+                    Outcome { gas_used: Gas::new(0), result: Err(JlvmError::Limit { message }), warnings: Vec::new() };
+                return Ok(outcome(py, &refused)?);
+            }
+        };
         let config = Config { limit: GasLimit(Gas::new(limit)), schedule: GasSchedule::LATEST };
         let jlvm = jlvm()?;
         let o = py.detach(|| match target {
@@ -242,7 +249,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("JLVM_VERSION", dilf4s_jlvm::VERSION)?;
     m.add("JLVM_GAS_SCHEDULE", GasSchedule::LATEST.version)?;
     m.add("JLVM_DEFAULT_GAS_LIMIT", GasLimit::DEFAULT.0.value())?;
-    m.add("JLVM_MAX_GAS", Gas::MAX.value())?;
+    m.add("JLVM_MAX_GAS_LIMIT", GasLimit::MAX.0.value())?;
     m.add("JLVM_MAX_WARNINGS", dilf4s_jlvm::MAX_WARNINGS)?;
     m.add("JLVM_PROGRAM_TAG", dilf4s_jlvm::PROGRAM_TAG)?;
     Ok(())

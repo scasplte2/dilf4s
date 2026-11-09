@@ -182,3 +182,23 @@ def test_identity_under_another_algorithm(name: str) -> None:
     assert len(ok(p.id(name), name)) in {32, 64}, "a digest"
     assert ok(hash_algorithm(name), name) == name, "the name is an algorithm's"
     assert err(p.id("MD5"), "MD5").kind == "UnknownAlgorithm", "an unknown algorithm is refused"
+
+
+def test_a_gas_limit_outside_its_range_is_limit_through_both_entry_points() -> None:
+    """jlvm.md section 7: 0 to 2**53 - 1, metered alike at the maximum; outside it (negative, 2**53, or past what a
+    u64 holds) the `Limit` outcome with no gas used, never a refusal of the call. Not an int is a `TypeMismatch`."""
+    p = ok(parse('{"+": [1, 2]}'), "parse")
+    c = ok(jlvm.compile(p), "compile")
+    data = ok(parse_value("null"), "data")
+    assert jlvm.MAX_GAS_LIMIT == 2**53 - 1, "the largest limit"
+    for target in (p, c):
+        at_max = ok(evaluate(target, data, None, jlvm.MAX_GAS_LIMIT), "at the maximum")
+        assert at_max.result == Ok(ok(Value.int(3), "3")), "metered at the maximum"
+        assert at_max.gas_used == 148, f"the gas at the maximum: {at_max.gas_used}"
+        for limit in (-1, -(2**64), 2**53, 2**63, 2**64, 2**200):
+            o = ok(evaluate(target, data, None, limit), f"limit {limit}")
+            assert isinstance(o.result, Err), f"limit {limit}: refused, got {o.result!r}"
+            assert o.result.error.kind == "Limit", f"limit {limit}: Limit, got {o.result.error.kind}"
+            assert o.gas_used == 0, f"limit {limit}: no gas used, got {o.gas_used}"
+        for wrong in (1.5, "10", True):
+            assert isinstance(evaluate(target, data, None, wrong), Err), f"limit {wrong!r}: a TypeMismatch"  # type: ignore[arg-type]
