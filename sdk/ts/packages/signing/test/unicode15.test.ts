@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { mnemonicToSeed, toEntropy, toMnemonic, WordList } from "../src/index.js";
 import { ENGLISH } from "../src/wordlists/english.js";
@@ -37,5 +37,25 @@ describe("Unicode 15.0", () => {
     const m = expectOk(toMnemonic(new Uint8Array(16)), "m");
     expect(kind(mnemonicToSeed(m, "dilf4s\uD800"))).toBe("InvalidPassphrase");
     expect(kind(WordList.of([`abandon\uD800`, ...ENGLISH.slice(1)]))).toBe("InvalidWordList");
+  });
+
+  test("a runtime whose NFKD predates Unicode 15.0 reads ASCII only, and derives no seed it would normalise differently", () => {
+    // emulate one that normalises nothing, so U+1E030 (new in 15.0) stays itself; the only text such a runtime reads
+    // is ASCII, which is its own NFKD
+    const spy = vi.spyOn(String.prototype, "normalize").mockImplementation(function (this: string) {
+      return this;
+    });
+    try {
+      const kind = (r: { readonly ok: boolean; readonly error?: { readonly kind: string } }): string => (r.ok ? "accepted" : (r.error?.kind ?? "?"));
+      const m = expectOk(toMnemonic(new Uint8Array(16)), "m");
+      expect(kind(mnemonicToSeed(m, "dilf4s")), "an ASCII passphrase").toBe("accepted");
+      expect(kind(mnemonicToSeed(m, "\u{1E030} dilf4s")), "a passphrase that would normalise differently").toBe("InvalidPassphrase");
+      expect(kind(mnemonicToSeed(m, "caf\u00e9")), "any non-ASCII passphrase").toBe("InvalidPassphrase");
+      expect(kind(toEntropy([...Array<string>(11).fill("abandon"), "about"].join(" "))), "an ASCII phrase").toBe("accepted");
+      expect(kind(toEntropy(`${[...Array<string>(11).fill("abandon"), "about"].join(" ")}\u00a0`)), "a non-ASCII phrase").toBe("InvalidMnemonic");
+      expect(kind(WordList.of([`caf\u00e9`, ...ENGLISH.slice(1)])), "a non-ASCII word").toBe("InvalidWordList");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

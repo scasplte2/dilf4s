@@ -76,7 +76,8 @@ object WordList {
       case None => (KeyError.InvalidWordList(s"missing resource for ${language.name}", None): KeyError).asLeft[WordList].pure[F]
       case Some(stream) =>
         Resource.fromAutoCloseable(Sync[F].pure(stream)).use(in => Sync[F].blocking(new String(in.readAllBytes(), UTF_8))).map { text =>
-          apply(language, text.split("\n").toVector.map(w => Normalizer.normalize(w.trim, Normalizer.Form.NFKD)).filter(_.nonEmpty))
+          // the words as written: apply checks their code points before it normalises them
+          apply(language, text.split("\n").toVector.map(_.trim).filter(_.nonEmpty))
         }
     }
 }
