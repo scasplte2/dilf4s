@@ -26,7 +26,9 @@ import ProofFixtures._
  * arguments of each kind, which pins argument counts, type checks, the order they run in and what they cost; then
  * cases with real inputs for the operations no other vector file reaches, ASCII-only case mapping on non-ASCII text,
  * the order in which `sigma_verify` refuses an oversized proposition, reads that search callback frames with long
- * keys, and how program text is read (repeated names, numbers as paths and literals, null fields, depth). Every signature here is deterministic, so the file regenerates identically:
+ * keys, how program text is read (repeated names, numbers as paths and literals, null fields, depth), and each outcome
+ * an operation gives at a program's root that no other row gives. Every signature here is deterministic, so the file
+ * regenerates identically:
  * `sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.OpCoverageCases"`, then `JlvmVectorGen`.
  */
 object OpCoverageCases extends IOApp {
@@ -194,6 +196,45 @@ object OpCoverageCases extends IOApp {
         data,
         Option(1L << 32)
       )
+    )
+  }
+
+  /**
+   * Each outcome an operation gives at a program's root that no other row gives: `ecrecover` recovering a signer
+   * (`EthKeys`, RFC 6979), `schnorr_verify` and `sigma_verify` true and false (sigma_v1.json's first valid Ergo-compatible
+   * dlog and threshold proofs, then another message), and `>=` false. The SP1 guest picks its JLVM rows by what each
+   * shows at the root or at an error's site, so every operation then runs there with a value, a negative verdict
+   * where it gives one, and a refusal.
+   */
+  def verdicts(sigma: Json): List[Case] = {
+    val cases = get(sigma.hcursor.downField("cases").as[List[Json]])
+    def field(c: Json, name: String): String = str(c.hcursor.downField(name))
+    def valid(ty: String): Json =
+      cases
+        .find(c =>
+          field(c, "kind") == "valid" && str(c.hcursor.downField("proposition").downField("type")) == ty &&
+          c.hcursor.downField("ergo").as[Boolean].contains(true)
+        )
+        .getOrElse(sys.error(s"sigma_v1.json: no valid Ergo-compatible $ty proof"))
+    val dlog = valid("dlog")
+    val threshold = valid("threshold")
+    val pk = hex(str(dlog.hcursor.downField("proposition").downField("pk")))
+    def proposition(c: Json): CanonicalValue = surface(get(c.hcursor.downField("proposition").as[Json]).noSpaces)
+    val digest = EthKeys.keccak("dilf4s ecrecover")
+    List(
+      probe("recovers the signer", Op.Ecrecover, CBytes(digest), CBytes(EthKeys.sign(BigInt(7), digest))),
+      probe("verifies", Op.SchnorrVerify, CBytes(pk), bytes(field(dlog, "message")), bytes(field(dlog, "proof"))),
+      probe("another message", Op.SchnorrVerify, CBytes(pk), CBytes(other), bytes(field(dlog, "proof"))),
+      probe("a dlog verifies", Op.SigmaVerify, proposition(dlog), bytes(field(dlog, "proof")), bytes(field(dlog, "message"))),
+      probe(
+        "a threshold verifies",
+        Op.SigmaVerify,
+        proposition(threshold),
+        bytes(field(threshold, "proof")),
+        bytes(field(threshold, "message"))
+      ),
+      probe("a dlog, another message", Op.SigmaVerify, proposition(dlog), bytes(field(dlog, "proof")), CBytes(other)),
+      probe("less", Op.Ge, int(1), int(2))
     )
   }
 
@@ -616,10 +657,11 @@ object OpCoverageCases extends IOApp {
       .spaces2 + "\n"
 
   def run(args: List[String]): IO[ExitCode] =
-    (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"))
-      .mapN((secp, mk, tr) =>
+    (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"), vector("sigma_v1.json"))
+      .mapN((secp, mk, tr, sg) =>
         sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ proofWeight(mk) ++ tries(tr) ++ sigmaBounds ++
-        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes ++ errorSites ++ sortKeyCeiling ++ hostBindings ++ lookupBounds ++ resultBounds
+        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes ++ errorSites ++ sortKeyCeiling ++ hostBindings ++ lookupBounds ++ resultBounds ++
+        verdicts(sg)
       )
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))
       .as(ExitCode.Success)

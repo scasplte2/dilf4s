@@ -3,14 +3,16 @@
 extern crate std;
 
 use alloc::borrow::ToOwned as _;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::{format, vec};
 use std::path::PathBuf;
 
 use dilf4s_core::codec::Model;
+use dilf4s_core::generated::jlvm::{JlvmExpr, JlvmOp, JlvmProgram};
 use dilf4s_core::generated::jlvm_errors::JlvmSite;
-use dilf4s_core::generated::jlvm_vectors::{JlvmCause, JlvmErrorKind, JlvmOutcome, JlvmVectors};
+use dilf4s_core::generated::jlvm_vectors::{JlvmCase, JlvmCause, JlvmErrorKind, JlvmOutcome, JlvmVectors};
 use dilf4s_core::generated::kes_vectors::{
     KesCheck, KesConstruction, KesOutcome, KesParameters, KesRefusal, KesVectors,
 };
@@ -498,7 +500,7 @@ pub fn vrf(suite: &str, rejections: bool) -> Result<Vec<Named>, Error> {
 /// with each recorded `cause`: so every kind, both kinds of site and every cause run wherever the picked cases do. A kind with no row is an error (the coverage gate,
 /// conformance.md section 6).
 fn first_errors(v: &JlvmVectors) -> Result<Vec<usize>, Error> {
-    let error = |c: &dilf4s_core::generated::jlvm_vectors::JlvmCase| match &c.outcome {
+    let error = |c: &JlvmCase| match &c.outcome {
         JlvmOutcome::JlvmError(e) => Some(e.clone()),
         JlvmOutcome::JlvmValue(_) => None,
     };
@@ -546,39 +548,161 @@ fn cause(c: JlvmCause) -> String {
     }
 }
 
-/// The JLVM cases `keep` picks (by index and case), and the first case of each error kind and of the `var` site, run
-/// as the conformance vectors run them.
-pub fn jlvm(
-    keep: impl Fn(usize, &dilf4s_core::generated::jlvm_vectors::JlvmCase) -> bool,
-) -> Result<Vec<Named>, Error> {
+/// The operation at the root of a program, read from its canonical form (the generated `jlvm-expr`): the surface
+/// parsed as the JLVM parses it, so an alias (`getKey`, `size`, ...) is the operation it names, and no text is matched.
+/// `None` for text that is not a program, or whose root is not an operation.
+fn root_op(program: &str) -> Option<JlvmOp> {
+    let form = dilf4s_jlvm::parse(program).ok()?.canonical().ok()?;
+    match JlvmProgram::from_value(&form).ok()?.expr {
+        JlvmExpr::JlvmApply(a) => Some(a.op),
+        JlvmExpr::JlvmSpread(s) => Some(s.spread),
+        _ => None,
+    }
+}
+
+/// What a `jlvm_v1.json` row shows of one operation, read exactly: from the typed site of the row's error, or from the
+/// operation at the root of its program and the value it returned. A row shows nothing of an operation called deeper
+/// down, which may not have run (a branch not taken), nor of one whose name is only text in the row.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Shows {
+    /// The root operation returned a value that is not a negative verdict.
+    Value,
+    /// The root operation returned a negative verdict: `false`, or `ecvrf_verify`'s `{"valid": false}`.
+    False,
+    /// The operation refused: an error of this kind, with this normative cause (`Family.Kind`), arose at its site.
+    Refusal(String, Option<String>),
+}
+
+/// Whether a value's canonical CBOR is a negative verdict ([`Shows::False`]).
+fn negative_verdict(value: &[u8]) -> bool {
+    ["false", r#"{"valid": false}"#].iter().any(|text| json::parse(text).is_ok_and(|v| cbor::encode(&v) == value))
+}
+
+/// The operation a row shows something of, and what ([`Shows`]). `None` for an error at no operation's site (out of
+/// gas, a limit, malformed text, a `var` read) and for a value whose program's root is no operation.
+pub fn shows(c: &JlvmCase) -> Option<(JlvmOp, Shows)> {
+    match &c.outcome {
+        JlvmOutcome::JlvmError(e) => match e.op {
+            Some(JlvmSite::JlvmOp(op)) => Some((op, Shows::Refusal(e.error.to_string(), e.cause.clone().map(cause)))),
+            Some(JlvmSite::Var) | None => None,
+        },
+        JlvmOutcome::JlvmValue(x) => {
+            let op = root_op(&c.program)?;
+            let value = bytes(&x.cbor).ok()?;
+            Some((op, if negative_verdict(&value) { Shows::False } else { Shows::Value }))
+        }
+    }
+}
+
+/// Whether a row is one of `OpCoverageCases`' sweeps (each operation over 0 to 3 arguments of each kind) rather than a
+/// row with real inputs.
+fn sweep(c: &JlvmCase) -> bool {
+    c.name.contains(" × ") || c.name.ends_with(": no arguments")
+}
+
+/// A `jlvm_v1.json` row the guest runs.
+#[derive(Debug, Clone)]
+pub struct JlvmRow {
+    /// What it shows, of which operation ([`shows`]).
+    pub shows: Option<(JlvmOp, Shows)>,
+    /// The row, run as the conformance vectors run it, with what its vector says.
+    pub named: Named,
+}
+
+/// The `jlvm_v1.json` rows the SP1 guest runs ([`jlvm`]), and what they show of each operation.
+#[derive(Debug, Clone)]
+pub struct JlvmSample {
+    /// The rows, in file order.
+    pub rows: Vec<JlvmRow>,
+    /// What the rows show of each operation, and how many show it.
+    pub run: BTreeMap<JlvmOp, BTreeMap<Shows, usize>>,
+    /// What the whole file shows of each operation, and how many rows show it.
+    pub file: BTreeMap<JlvmOp, BTreeMap<Shows, usize>>,
+}
+
+fn tally<'a>(rows: impl Iterator<Item = &'a (JlvmOp, Shows)>) -> BTreeMap<JlvmOp, BTreeMap<Shows, usize>> {
+    let mut out: BTreeMap<JlvmOp, BTreeMap<Shows, usize>> = BTreeMap::new();
+    for (op, s) in rows {
+        let n = out.entry(*op).or_default().entry(s.clone()).or_default();
+        *n = n.saturating_add(1);
+    }
+    out
+}
+
+/// Rows the guest runs of each operation and each thing a row shows of it ([`Shows`]), lightest first ([`Rows`]).
+pub const PER_SHOWN: usize = 2;
+
+/// The rows that show one thing of one operation, each in file order: those with real inputs, those with host-built
+/// values (tests of the JLVM's bounds, the heaviest rows to run: one builds 508,399 digests), and the sweeps.
+#[derive(Default)]
+struct Rows {
+    real: Vec<usize>,
+    built: Vec<usize>,
+    swept: Vec<usize>,
+}
+
+/// The JLVM rows the guest runs, chosen by operation from the closed list ([`JlvmOp`]), deterministically:
+/// - for each operation and each thing a row shows of it ([`Shows`]: a value, a negative verdict, each kind and cause
+///   of refusal), the first [`PER_SHOWN`] rows: those with real inputs, then those with host-built values, then the
+///   sweeps;
+/// - and of those with real inputs, the first `real(op)`;
+/// - every 50th row, whatever it calls;
+/// - the first row of each error kind, of the `var` site and of each cause ([`first_errors`]).
+pub fn jlvm(real: impl Fn(JlvmOp) -> usize) -> Result<JlvmSample, Error> {
     let v: JlvmVectors = load("jlvm_v1.json")?;
-    let firsts = first_errors(&v)?;
-    v.cases
+    let shown: Vec<Option<(JlvmOp, Shows)>> = v.cases.iter().map(shows).collect();
+    let mut groups: BTreeMap<&(JlvmOp, Shows), Rows> = BTreeMap::new();
+    for (i, (c, s)) in v.cases.iter().zip(&shown).enumerate() {
+        if let Some(key) = s {
+            let rows = groups.entry(key).or_default();
+            let bucket = match (sweep(c), c.built.as_ref().is_some_and(|b| !b.is_empty())) {
+                (true, _) => &mut rows.swept,
+                (false, true) => &mut rows.built,
+                (false, false) => &mut rows.real,
+            };
+            bucket.push(i);
+        }
+    }
+    let mut picked: BTreeSet<usize> = groups
         .iter()
-        .enumerate()
-        .filter(|(i, c)| keep(*i, c) || firsts.contains(i))
-        .map(|(_, c)| {
-            let result = match &c.outcome {
-                JlvmOutcome::JlvmValue(x) => Ok(bytes(&x.cbor)?),
-                JlvmOutcome::JlvmError(e) => {
-                    Err((e.error.to_string(), e.op.map(|s| s.to_string()), e.cause.clone().map(cause)))
-                }
-            };
-            let case = Case::Jlvm {
-                program: c.program.clone(),
-                data: c.data.clone(),
-                env: c.env.iter().flatten().map(|(k, x)| (k.clone(), x.clone())).collect(),
-                built: c
-                    .built
-                    .iter()
-                    .flatten()
-                    .map(|(k, b)| Ok((k.clone(), recipe(b)?)))
-                    .collect::<Result<_, Error>>()?,
-                gas_limit: c.gas_limit.unwrap_or(v.gas_limit),
-            };
-            Ok(named(format!("jlvm {}", c.name), case, Expect::Jlvm { result, gas: c.gas_used, warnings: c.warnings }))
+        .flat_map(|((op, _), g)| {
+            let lightest = g.real.iter().chain(&g.built).chain(&g.swept).take(PER_SHOWN);
+            lightest.chain(g.real.iter().take(real(*op)))
         })
-        .collect()
+        .copied()
+        .collect();
+    picked.extend((0..v.cases.len()).step_by(50));
+    picked.extend(first_errors(&v)?);
+    let rows = picked
+        .iter()
+        .map(|&i| {
+            let c = v.cases.get(i).ok_or_else(|| format!("jlvm_v1.json: no row {i}"))?;
+            Ok(JlvmRow { shows: shown.get(i).cloned().flatten(), named: jlvm_named(&v, c)? })
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    Ok(JlvmSample {
+        run: tally(rows.iter().filter_map(|r| r.shows.as_ref())),
+        file: tally(shown.iter().flatten()),
+        rows,
+    })
+}
+
+/// A row, run as the conformance vectors run it, with what its vector says.
+fn jlvm_named(v: &JlvmVectors, c: &JlvmCase) -> Result<Named, Error> {
+    let result = match &c.outcome {
+        JlvmOutcome::JlvmValue(x) => Ok(bytes(&x.cbor)?),
+        JlvmOutcome::JlvmError(e) => {
+            Err((e.error.to_string(), e.op.map(|s| s.to_string()), e.cause.clone().map(cause)))
+        }
+    };
+    let case = Case::Jlvm {
+        program: c.program.clone(),
+        data: c.data.clone(),
+        env: c.env.iter().flatten().map(|(k, x)| (k.clone(), x.clone())).collect(),
+        built: c.built.iter().flatten().map(|(k, b)| Ok((k.clone(), recipe(b)?))).collect::<Result<_, Error>>()?,
+        gas_limit: c.gas_limit.unwrap_or(v.gas_limit),
+    };
+    Ok(named(format!("jlvm {}", c.name), case, Expect::Jlvm { result, gas: c.gas_used, warnings: c.warnings }))
 }
 
 /// A `built` binding's recipe, its leaf and templates decoded from hex: built where the case runs.
