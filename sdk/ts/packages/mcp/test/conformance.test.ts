@@ -1,6 +1,6 @@
 /**
- * The conformance vectors through the tool: a deterministic sample of `shared/vectors/jlvm_v1.json` (every seventh case
- * that a text can carry, in file order) called through `jlvm_evaluate` by an MCP client in memory, each giving the
+ * Every textual conformance vector in `shared/vectors/jlvm_v1.json`, called through `jlvm_evaluate` by an MCP client
+ * in memory, each giving the
  * vector's value (canonical CBOR, and its surface JSON exactly when the vector records one) or error (kind, `op`,
  * cause), its gas and its warnings. A text that does not parse is a refusal, which the vectors record as that error
  * with no gas. Every proved call of `shared/vectors/zk_jlvm_v1.json` gives the file's statement, whose canonical CBOR is
@@ -21,8 +21,6 @@ const vectors = loadVectors("jlvm_v1.json", models.jlvmVectors.JlvmVectors);
 const zk = loadVectors("zk_jlvm_v1.json", models.zkJlvmVectors.ZkJlvmVectors);
 
 const textual = vectors.cases.filter((c) => c.built === undefined);
-const STRIDE = 7;
-const sample = textual.filter((_, i) => i % STRIDE === 0);
 
 const family = (name: string): string => name.toLowerCase();
 
@@ -90,12 +88,10 @@ const argsOf = (c: { readonly program: string; readonly data: string; readonly e
 });
 
 describe("jlvm_v1.json through jlvm_evaluate", { timeout: 600_000 }, () => {
-  it("the file holds the cases this test samples", () => {
-    // counted from the file, not pinned: rows other PRs add to jlvm_v1.json must not break this test (#139 added 7
-    // while this one was open); the sample is every STRIDE-th case a text carries, and those are all but the built ones
-    expect(vectors.cases.length, "cases").toBeGreaterThan(3000);
-    expect(textual.length + vectors.cases.filter((c) => c.built !== undefined).length, "every case is textual or built").toBe(vectors.cases.length);
-    expect(sample.length, "the sample").toBe(Math.ceil(textual.length / STRIDE));
+  it("the file holds exactly the textual and built cases this test covers", () => {
+    expect(vectors.cases.length, "cases").toBe(3363);
+    expect(textual.length, "textual cases").toBe(3343);
+    expect(vectors.cases.filter((c) => c.built !== undefined).length, "built cases").toBe(20);
   });
 
   it("every text of every case a text carries is within the server's caps, but the rows past the exponent budget", () => {
@@ -103,11 +99,11 @@ describe("jlvm_v1.json through jlvm_evaluate", { timeout: 600_000 }, () => {
     expect(textual.filter((c) => !fits(c)).map((c) => c.name)).toEqual(["dilf4s JSON exponent budget: a program past it is refused", "dilf4s JSON exponent budget: a binding past it is refused"]);
   });
 
-  it("each sampled case gives the vector's outcome, gas and warnings, its value's JSON included", async () => {
+  it("each textual case gives the vector's outcome, gas and warnings, its value's JSON included", async () => {
     // the highest cap, so the cases with a limit past the default run at their own
     const { call, close } = await connected({ gasCap: GAS_CAP_CEILING });
     const failures: string[] = [];
-    for (const c of sample) {
+    for (const c of textual) {
       const got = actual(await call("jlvm_evaluate", argsOf(c, vectors.gasLimit)));
       const want = expectedOf(c, c.gasLimit ?? vectors.gasLimit);
       if (got !== want) failures.push(`${c.name}: want ${want.slice(0, 300)}, got ${got.slice(0, 300)}`);
@@ -118,7 +114,7 @@ describe("jlvm_v1.json through jlvm_evaluate", { timeout: 600_000 }, () => {
 
   it("each case whose bindings are built with shared parts has a binding no text within the cap can carry", () => {
     const heavy = vectors.cases.filter((c) => c.built !== undefined);
-    expect(heavy.length, "the built cases this test checks").toBeGreaterThanOrEqual(20);
+    expect(heavy.length, "the built cases this test checks").toBe(20);
     for (const c of heavy) {
       const renderings = [...(c.built ?? new Map<string, models.jlvmVectors.BuiltValue>()).values()].map((b) => json.renderWithin(built(b), MAX_TEXT_BYTES));
       expect(
@@ -132,7 +128,7 @@ describe("jlvm_v1.json through jlvm_evaluate", { timeout: 600_000 }, () => {
 describe("zk_jlvm_v1.json through jlvm_evaluate", { timeout: 120_000 }, () => {
   it("each call's statement is the file's, and its canonical CBOR is the proof's public values", async () => {
     const { call, close } = await connected();
-    expect(zk.calls.length).toBeGreaterThan(0);
+    expect(zk.calls.length).toBe(8);
     for (const c of zk.calls) {
       const r = await call("jlvm_evaluate", argsOf(c, 0n));
       expect(r.structured["ok"], c.name).toBe(true);

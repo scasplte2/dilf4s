@@ -32,28 +32,39 @@ const STEPS_PER_GAS = 4;
 describe("steps are linear in gas", { timeout: 600_000 }, () => {
   it("on every conformance case that runs", () => {
     let checked = 0;
+    let refused = 0;
+    const refusal = (c: models.jlvmVectors.JlvmCase, kind: string): void => {
+      expect(c.outcome, `${c.name}: the excluded case must expect this refusal`).toEqual({ error: kind });
+      expect(c.gasUsed, `${c.name}: refused before evaluation`).toBe(0n);
+      expect(c.warnings, `${c.name}: refused before warnings`).toBe(0n);
+      refused++;
+    };
     let worst = 0;
     for (const c of vectors.cases) {
       const p = parse(c.program);
       const d = parseValue(c.data);
-      if (!p.ok || !d.ok) continue;
-      const root = compile(p.value);
-      const limit = Number(c.gasLimit ?? vectors.gasLimit);
-      // a limit over the maximum is refused before anything runs
-      if (!root.ok || limit > MAX_GAS_LIMIT) continue;
+      if (!p.ok) { refusal(c, p.error.kind); continue; }
+      if (!d.ok) { refusal(c, d.error.kind); continue; }
       const env: [string, V][] = [];
-      // a binding refused as it is read (one past the JSON exponent budget) runs nothing
       const bindings = [...(c.env ?? [])].map(([k, v]) => [k, parseValue(v)] as const);
-      if (bindings.some(([, v]) => !v.ok)) continue;
+      const bad = bindings.find(([, v]) => !v.ok)?.[1];
+      if (bad !== undefined && !bad.ok) { refusal(c, bad.error.kind); continue; }
       for (const [k, v] of bindings) env.push([k, expectOk(v, "a binding")]);
       for (const [k, b] of c.built ?? []) env.push([k, built(b)]);
+      const limit = Number(c.gasLimit ?? vectors.gasLimit);
+      // Text inputs are read before the limit; the limit is checked before compilation.
+      if (limit < 0 || limit > MAX_GAS_LIMIT) { refusal(c, "Limit"); continue; }
+      const root = compile(p.value);
+      if (!root.ok) { refusal(c, root.error.kind); continue; }
       const r = run(SCHEDULE_V1, root.value, d.value, expectOk(Bindings.of(env), "env"), limit);
       expect(r.used, `${c.name}: the vector's gas`).toBe(Number(c.gasUsed));
       expect(r.steps, `${c.name}: ${r.steps.toString()} steps for ${r.used.toString()} gas`).toBeLessThanOrEqual(STEPS_PER_GAS * r.used + 2);
       worst = Math.max(worst, r.steps / Math.max(r.used, 1));
       checked++;
     }
-    expect(checked).toBeGreaterThan(2400);
+    expect(checked, "evaluated cases").toBe(3152);
+    expect(refused, "cases refused before evaluation").toBe(211);
+    expect(checked + refused).toBe(vectors.cases.length);
     expect(worst).toBeLessThan(1);
   });
 

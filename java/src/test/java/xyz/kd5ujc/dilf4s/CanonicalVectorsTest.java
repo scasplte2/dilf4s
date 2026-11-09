@@ -32,10 +32,9 @@ public class CanonicalVectorsTest {
     contentTag = ok(Hashing.domainTag(str(vectors, "contentHashTag")), "the content hash tag");
   }
 
-  /** Runs every row of `section`, at least `least` of them: a floor, so rows another change adds never break this test. */
-  private static void check(String section, int least, Function<Value.Map, Executable> row) {
+  private static void check(String section, int expected, Function<Value.Map, Executable> row) {
     final List<Value.Map> rows = rows(vectors, section);
-    assertTrue(rows.size() >= least, section + " rows: " + rows.size());
+    assertEquals(expected, rows.size(), section + " rows");
     assertAll(section, rows.stream().map(row));
   }
 
