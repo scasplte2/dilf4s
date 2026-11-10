@@ -368,22 +368,27 @@ mod tests {
         include!("../tests/common/programs.rs");
     }
 
-    fn vector_programs() -> Vec<Program> {
+    fn vector_programs() -> (Vec<Program>, Vec<Program>) {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../shared/vectors/jlvm_v1.json");
         let text = std::fs::read_to_string(path).unwrap();
         let v = JlvmVectors::from_value(&json::parse(&text).unwrap()).unwrap();
-        programs::read(&v, |text| crate::parse(text).map_err(|e| alloc::format!("{:?}", e.kind())))
+        let programs = programs::read(&v, |text| crate::parse(text).map_err(|e| alloc::format!("{:?}", e.kind())));
+        let aliases =
+            v.aliases.iter().flat_map(|a| [&a.program, &a.own]).map(|text| crate::parse(text).unwrap()).collect();
+        (programs, aliases)
     }
 
     /// The reader against the reference's recursive reading through the generated decoder: on every vector program's
-    /// form, and on every mutation of each of the first twelve maps of every twentieth, the two accept the same forms,
+    /// form, and on every mutation of each of the first twelve maps of every twentieth and every alias. Alias coverage
+    /// is explicit so appending corpus rows cannot shift an alias out of the stride sample. The two accept the same forms,
     /// build the same tree, and refuse with the same kind, and so does the whole of [`from_canonical`].
     #[test]
     fn the_reader_reads_every_form_as_the_generated_decoder_does() {
-        let programs = vector_programs();
+        let (programs, aliases) = vector_programs();
+        assert_eq!(aliases.len(), 8, "both spellings of each alias are mutated");
         assert_eq!(programs.len(), 3312, "vector programs including aliases");
         let mut forms: Vec<Value> = programs.iter().map(|p| p.canonical().unwrap()).collect();
-        for p in programs.iter().step_by(20) {
+        for p in programs.iter().step_by(20).chain(&aliases) {
             let f = p.canonical().unwrap();
             for n in 0..12 {
                 forms.extend(at_map(&f, &mut { n }, &mutations).unwrap_or_default());
@@ -408,8 +413,8 @@ mod tests {
             assert_eq!(from_canonical(f).map_err(|e| e.kind()), reference, "{f:?}");
         }
         std::println!("{accepted} forms accepted and {refused} refused alike");
-        assert_eq!(accepted, 9020, "accepted canonical forms");
-        assert_eq!(refused, 17191, "refused canonical forms");
+        assert_eq!(accepted, 9278, "accepted canonical forms");
+        assert_eq!(refused, 17896, "refused canonical forms");
     }
 
     /// The tree is built only while it is within the size bound: a form of 2^20 shared nulls (about 2^20 in weight,
