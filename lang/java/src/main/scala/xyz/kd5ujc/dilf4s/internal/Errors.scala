@@ -146,30 +146,28 @@ object Errors {
         new xyz.kd5ujc.dilf4s.error.HashError.UnknownAlgorithm(preview(name))
     }
 
-  def cryptoError(e: xyz.kd5ujc.models.crypto_errors.CryptoError): xyz.kd5ujc.dilf4s.error.CryptoError =
+  def cryptoError(e: xyz.kd5ujc.crypto.signing.CryptoError): xyz.kd5ujc.dilf4s.error.CryptoError =
     e match {
-      case xyz.kd5ujc.models.crypto_errors.CryptoError.InvalidEncoding(what, reason) =>
-        new xyz.kd5ujc.dilf4s.error.CryptoError.InvalidEncoding(what, reason)
-      case xyz.kd5ujc.models.crypto_errors.CryptoError.InvalidKey(reason) => new xyz.kd5ujc.dilf4s.error.CryptoError.InvalidKey(reason)
-      case xyz.kd5ujc.models.crypto_errors.CryptoError.BackendFailure(operation, reason) =>
-        new xyz.kd5ujc.dilf4s.error.CryptoError.BackendFailure(operation, reason)
+      case xyz.kd5ujc.crypto.signing.CryptoError.InvalidEncoding(subject, reason) =>
+        new xyz.kd5ujc.dilf4s.error.CryptoError.InvalidEncoding(subject.label, reason.message)
+      case xyz.kd5ujc.crypto.signing.CryptoError.InvalidKey(reason) =>
+        new xyz.kd5ujc.dilf4s.error.CryptoError.InvalidKey(reason.message)
+      case xyz.kd5ujc.crypto.signing.CryptoError.BackendFailure(operation, cause) =>
+        new xyz.kd5ujc.dilf4s.error.CryptoError.BackendFailure(operation.label, Option(cause.getMessage).getOrElse(cause.getClass.getName))
     }
 
-  def keyError(e: xyz.kd5ujc.models.crypto_errors.KeyError): xyz.kd5ujc.dilf4s.error.KeyError =
+  def keyError(e: xyz.kd5ujc.crypto.keys.KeyError): xyz.kd5ujc.dilf4s.error.KeyError =
     e match {
-      case xyz.kd5ujc.models.crypto_errors.KeyError.InvalidEntropy(reason)  => new xyz.kd5ujc.dilf4s.error.KeyError.InvalidEntropy(reason)
-      case xyz.kd5ujc.models.crypto_errors.KeyError.InvalidMnemonic(reason) => new xyz.kd5ujc.dilf4s.error.KeyError.InvalidMnemonic(reason)
-      case xyz.kd5ujc.models.crypto_errors.KeyError.InvalidWordList(reason, separator) =>
-        new xyz.kd5ujc.dilf4s.error.KeyError.InvalidWordList(
-          reason,
-          separator.fold(java.util.Optional.empty[xyz.kd5ujc.dilf4s.error.Preview]())(x => java.util.Optional.of(preview(x)))
-        )
-      case xyz.kd5ujc.models.crypto_errors.KeyError.InvalidPassphrase(reason) =>
-        new xyz.kd5ujc.dilf4s.error.KeyError.InvalidPassphrase(reason)
-      case xyz.kd5ujc.models.crypto_errors.KeyError.InvalidDerivation(reason) =>
-        new xyz.kd5ujc.dilf4s.error.KeyError.InvalidDerivation(reason)
-      case xyz.kd5ujc.models.crypto_errors.KeyError.InvalidPath(refusal, reason) =>
-        new xyz.kd5ujc.dilf4s.error.KeyError.InvalidPath(pathRefusal(refusal), reason)
+      case xyz.kd5ujc.crypto.keys.KeyError.InvalidEntropy(_)  => new xyz.kd5ujc.dilf4s.error.KeyError.InvalidEntropy(e.message)
+      case xyz.kd5ujc.crypto.keys.KeyError.InvalidMnemonic(_) => new xyz.kd5ujc.dilf4s.error.KeyError.InvalidMnemonic(e.message)
+      case xyz.kd5ujc.crypto.keys.KeyError.InvalidWordList(_, _) =>
+        new xyz.kd5ujc.dilf4s.error.KeyError.InvalidWordList(e.message, java.util.Optional.empty[xyz.kd5ujc.dilf4s.error.Preview]())
+      case xyz.kd5ujc.crypto.keys.KeyError.InvalidPassphrase(_) =>
+        new xyz.kd5ujc.dilf4s.error.KeyError.InvalidPassphrase(e.message)
+      case xyz.kd5ujc.crypto.keys.KeyError.InvalidDerivation(_) =>
+        new xyz.kd5ujc.dilf4s.error.KeyError.InvalidDerivation(e.message)
+      case xyz.kd5ujc.crypto.keys.KeyError.InvalidPath(reason) =>
+        new xyz.kd5ujc.dilf4s.error.KeyError.InvalidPath(pathRefusal(reason.refusal), e.message)
     }
 
   def vrfError(e: xyz.kd5ujc.models.crypto_errors.VrfError): xyz.kd5ujc.dilf4s.error.VrfError =

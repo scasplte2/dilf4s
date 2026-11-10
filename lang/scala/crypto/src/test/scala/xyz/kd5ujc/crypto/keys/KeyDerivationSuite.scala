@@ -6,6 +6,7 @@ import java.nio.file.{Files, Paths}
 import cats.effect.IO
 import cats.syntax.all._
 
+import xyz.kd5ujc.crypto.CryptoFixtureFailure
 import xyz.kd5ujc.crypto.signing._
 
 import io.circe.{ACursor, Json, parser}
@@ -15,7 +16,7 @@ import weaver.SimpleIOSuite
 object KeyDerivationSuite extends SimpleIOSuite {
 
   private val english: IO[WordList] =
-    WordList.load[IO](Bip39.Language.English).flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO])
+    WordList.load[IO](Bip39.Language.English).flatMap(_.leftMap(CryptoFixtureFailure(_)).liftTo[IO])
 
   private def vectors(file: String): List[Json] =
     parser.parse(new String(Files.readAllBytes(Paths.get("docs", "test-vectors", file)), UTF_8)).flatMap(_.as[List[Json]]).toOption.get
@@ -78,7 +79,7 @@ object KeyDerivationSuite extends SimpleIOSuite {
   )
 
   test("BIP-39: Japanese vectors (ideographic spaces, NFKD passphrase)") {
-    WordList.load[IO](Bip39.Language.Japanese).flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO]).map { words =>
+    WordList.load[IO](Bip39.Language.Japanese).flatMap(_.leftMap(CryptoFixtureFailure(_)).liftTo[IO]).map { words =>
       def nfkd(s: String) = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFKD)
       japanese.foldMap {
         case (entropy, phrase, seed) =>
@@ -97,14 +98,24 @@ object KeyDerivationSuite extends SimpleIOSuite {
 
   test("BIP-39: bad checksum, unknown word, wrong length and bad entropy are typed errors") {
     english.map { words =>
-      def mnemonicError(phrase: String) = Bip39.toEntropy(phrase, words) match {
-        case Left(KeyError.InvalidMnemonic(_)) => true
-        case _                                 => false
-      }
-      expect(mnemonicError(List.fill(12)("abandon").mkString(" ")), "checksum mismatch")
-        .and(expect(mnemonicError(List.fill(11)("abandon").mkString(" ") + " abou"), "unknown word"))
-        .and(expect(mnemonicError(List.fill(11)("abandon").mkString(" ")), "11 words"))
-        .and(expect(Bip39.toMnemonic(Secret(ByteVector.fill(17)(0)), words).isLeft, "17 bytes of entropy"))
+      expect
+        .same(
+          Left(KeyError.InvalidMnemonic(KeyError.MnemonicReason.Checksum)),
+          Bip39.toEntropy(List.fill(12)("abandon").mkString(" "), words)
+        )
+        .and(
+          expect.same(
+            Left(KeyError.InvalidMnemonic(KeyError.MnemonicReason.UnknownWord)),
+            Bip39.toEntropy(List.fill(11)("abandon").mkString(" ") + " abou", words)
+          )
+        )
+        .and(
+          expect.same(
+            Left(KeyError.InvalidMnemonic(KeyError.MnemonicReason.WordCount(11))),
+            Bip39.toEntropy(List.fill(11)("abandon").mkString(" "), words)
+          )
+        )
+        .and(expect.same(Left(KeyError.InvalidEntropy(17)), Bip39.toMnemonic(Secret(ByteVector.fill(17)(0)), words)))
         .and(
           expect(
             Bip39
@@ -142,16 +153,29 @@ object KeyDerivationSuite extends SimpleIOSuite {
     expect
       .same(Right(List(0x8000002cL, 0L, 7L)), ChildIndex.path("m/44'/0/7").map(_.map(_.serialized)))
       .and(expect.same(Right(List(0x80000000L)), ChildIndex.path("m/0h").map(_.map(_.serialized))))
-      .and(expect(ChildIndex.path("44'/0").isLeft, "missing m"))
-      .and(expect(ChildIndex.path("m/x").isLeft, "non-numeric"))
-      .and(expect(ChildIndex.path("m/2147483648").isLeft, "index out of range"))
-      .and(expect(ChildIndex.path("m/-1").isLeft, "negative"))
+      .and(expect.same(Left(KeyError.InvalidPath(KeyError.PathReason.MissingMaster)), ChildIndex.path("44'/0")))
+      .and(expect.same(Left(KeyError.InvalidPath(KeyError.PathReason.Malformed(0))), ChildIndex.path("m/x")))
+      .and(expect.same(Left(KeyError.InvalidPath(KeyError.PathReason.OutOfRange(0))), ChildIndex.path("m/2147483648")))
+      .and(expect.same(Left(KeyError.InvalidPath(KeyError.PathReason.Malformed(0))), ChildIndex.path("m/-1")))
   }
 
   pureTest("paths are strict: nothing is trimmed, segments are ASCII digits, and none is empty") {
     // each of these was accepted before: Java's toLong takes a sign and non-ASCII digits, and the path was trimmed
-    val refused = List(" m/1", "m/1 ", "m/1\n", "m/+5", "m/-0", "m/\u0661", "m/\uff11", "m/", "m//1", "m/1/", "m/'", "m/h")
-    refused.foldMap(p => expect(ChildIndex.path(p).isLeft, s"${p.toList.map(_.toInt)} is refused")) |+|
+    val refused = List(
+      " m/1"     -> KeyError.PathReason.MissingMaster,
+      "m/1 "     -> KeyError.PathReason.Malformed(0),
+      "m/1\n"    -> KeyError.PathReason.Malformed(0),
+      "m/+5"     -> KeyError.PathReason.Malformed(0),
+      "m/-0"     -> KeyError.PathReason.Malformed(0),
+      "m/\u0661" -> KeyError.PathReason.Malformed(0),
+      "m/\uff11" -> KeyError.PathReason.Malformed(0),
+      "m/"       -> KeyError.PathReason.Malformed(0),
+      "m//1"     -> KeyError.PathReason.Malformed(0),
+      "m/1/"     -> KeyError.PathReason.Malformed(1),
+      "m/'"      -> KeyError.PathReason.Malformed(0),
+      "m/h"      -> KeyError.PathReason.Malformed(0)
+    )
+    refused.foldMap { case (path, reason) => expect.same(Left(KeyError.InvalidPath(reason)), ChildIndex.path(path)) } |+|
     expect.same(Right(Nil), ChildIndex.path("m"))
   }
 
@@ -166,30 +190,32 @@ object KeyDerivationSuite extends SimpleIOSuite {
       s"m${"/7" * 255}"  -> List.fill(255)(7L),
       s"m${"/1'" * 255}" -> List.fill(255)(0x80000001L)
     )
-    val refused: List[(String, (PathRefusal, String))] = List(
-      "m/2147483648'"                -> (PathRefusal.OutOfRange: PathRefusal, "path segment 0 is out of range"),
-      "m/4294967295"                 -> (PathRefusal.OutOfRange: PathRefusal, "path segment 0 is out of range"),
-      "m/9999999999"                 -> (PathRefusal.OutOfRange: PathRefusal, "path segment 0 is out of range"),
-      "m/0/10000000000"              -> (PathRefusal.TooManyDigits: PathRefusal, "path segment 1 has 11 digits, more than 10"),
-      s"m/1/2/${"9" * 4096}'"        -> (PathRefusal.TooManyDigits: PathRefusal, "path segment 2 has 4096 digits, more than 10"),
-      "m/007"                        -> (PathRefusal.LeadingZero: PathRefusal, "path segment 0 has a leading zero"),
-      "m/00"                         -> (PathRefusal.LeadingZero: PathRefusal, "path segment 0 has a leading zero"),
-      "m/000'"                       -> (PathRefusal.LeadingZero: PathRefusal, "path segment 0 has a leading zero"),
-      "m/1/01h"                      -> (PathRefusal.LeadingZero: PathRefusal, "path segment 1 has a leading zero"),
-      "m/02147483647'"               -> (PathRefusal.LeadingZero: PathRefusal, "path segment 0 has a leading zero"),
-      s"m/${zeros}1'"                -> (PathRefusal.LeadingZero: PathRefusal, "path segment 0 has a leading zero"),
-      s"m/${zeros}12345678901"       -> (PathRefusal.LeadingZero: PathRefusal, "path segment 0 has a leading zero"),
-      "m/1/x9"                       -> (PathRefusal.Malformed: PathRefusal, "path segment 1 is malformed"),
-      "m/"                           -> (PathRefusal.Malformed: PathRefusal, "path segment 0 is malformed"),
-      s"m${"/7" * 256}"              -> (PathRefusal.TooDeep: PathRefusal, "path has more than 255 segments"),
-      s"m${"/7" * 255}/x"            -> (PathRefusal.TooDeep: PathRefusal, "path has more than 255 segments"),
-      s"m${"/7" * 9}/x${"/7" * 300}" -> (PathRefusal.Malformed: PathRefusal, "path segment 9 is malformed"),
-      "44'/0"                        -> (PathRefusal.MissingMaster: PathRefusal, "path must start with m"),
-      ""                             -> (PathRefusal.MissingMaster: PathRefusal, "path must start with m")
+    val refused: List[(String, (KeyError.PathReason, String))] = List(
+      "m/2147483648'"                -> (KeyError.PathReason.OutOfRange(0), "path segment 0 is out of range"),
+      "m/4294967295"                 -> (KeyError.PathReason.OutOfRange(0), "path segment 0 is out of range"),
+      "m/9999999999"                 -> (KeyError.PathReason.OutOfRange(0), "path segment 0 is out of range"),
+      "m/0/10000000000"              -> (KeyError.PathReason.TooManyDigits(1, 11), "path segment 1 has 11 digits, more than 10"),
+      s"m/1/2/${"9" * 4096}'"        -> (KeyError.PathReason.TooManyDigits(2, 4096), "path segment 2 has 4096 digits, more than 10"),
+      "m/007"                        -> (KeyError.PathReason.LeadingZero(0), "path segment 0 has a leading zero"),
+      "m/00"                         -> (KeyError.PathReason.LeadingZero(0), "path segment 0 has a leading zero"),
+      "m/000'"                       -> (KeyError.PathReason.LeadingZero(0), "path segment 0 has a leading zero"),
+      "m/1/01h"                      -> (KeyError.PathReason.LeadingZero(1), "path segment 1 has a leading zero"),
+      "m/02147483647'"               -> (KeyError.PathReason.LeadingZero(0), "path segment 0 has a leading zero"),
+      s"m/${zeros}1'"                -> (KeyError.PathReason.LeadingZero(0), "path segment 0 has a leading zero"),
+      s"m/${zeros}12345678901"       -> (KeyError.PathReason.LeadingZero(0), "path segment 0 has a leading zero"),
+      "m/1/x9"                       -> (KeyError.PathReason.Malformed(1), "path segment 1 is malformed"),
+      "m/"                           -> (KeyError.PathReason.Malformed(0), "path segment 0 is malformed"),
+      s"m${"/7" * 256}"              -> (KeyError.PathReason.TooDeep, "path has more than 255 segments"),
+      s"m${"/7" * 255}/x"            -> (KeyError.PathReason.TooDeep, "path has more than 255 segments"),
+      s"m${"/7" * 9}/x${"/7" * 300}" -> (KeyError.PathReason.Malformed(9), "path segment 9 is malformed"),
+      "44'/0"                        -> (KeyError.PathReason.MissingMaster, "path must start with m"),
+      ""                             -> (KeyError.PathReason.MissingMaster, "path must start with m")
     )
     accepted.foldMap { case (p, is) => expect.same(Right(is), serialized(p)) } |+|
-    refused.foldMap { case (p, r) => expect.same(Left(KeyError.InvalidPath(r._1, r._2)), ChildIndex.path(p)) } |+|
-    expect.same(PathRefusal.values.toSet, refused.map(_._2._1).toSet)
+    refused.foldMap {
+      case (p, r) => expect.same(Left(KeyError.InvalidPath(r._1)), ChildIndex.path(p)).and(expect.same(r._2, r._1.message))
+    } |+|
+    expect.same(PathRefusal.values.toSet, refused.map(_._2._1.refusal).toSet)
   }
 
   // BigInt of a million digits took about 23 s; the bound leaves room for a cold JIT on a loaded machine
@@ -201,9 +227,9 @@ object KeyDerivationSuite extends SimpleIOSuite {
       (t, (l, p, d)) <- IO((ChildIndex.path(long), ChildIndex.path(padded), ChildIndex.path(deep))).timed
     } yield
       expect(t.toMillis < 2000, s"took ${t.toMillis} ms")
-        .and(expect.same(Left(KeyError.InvalidPath(PathRefusal.TooManyDigits, "path segment 0 has 1000000 digits, more than 10")), l))
-        .and(expect.same(Left(KeyError.InvalidPath(PathRefusal.LeadingZero, "path segment 0 has a leading zero")), p))
-        .and(expect.same(Left(KeyError.InvalidPath(PathRefusal.TooDeep, "path has more than 255 segments")), d))
+        .and(expect.same(Left(KeyError.InvalidPath(KeyError.PathReason.TooManyDigits(0, 1000000))), l))
+        .and(expect.same(Left(KeyError.InvalidPath(KeyError.PathReason.LeadingZero(0))), p))
+        .and(expect.same(Left(KeyError.InvalidPath(KeyError.PathReason.TooDeep)), d))
   }
 
   // ------------------------------------------------------------------ SLIP-10 Ed25519 (vector 1)
@@ -217,7 +243,12 @@ object KeyDerivationSuite extends SimpleIOSuite {
       .and(expect.same(Right(hex"90046a93de5380a72b5e45010748567d5ea02bbf6522f979e05c0d8d8ca9fffb"), m.map(_.chainCode)))
       .and(expect.same(Right(hex"68e0fe46dfb67e368c75379acec591dad19df3cde26e63b93a8e704f1dade7a3"), m0h.map(_.key.bytes)))
       .and(expect.same(Right(hex"8b59aa11380b624e81507a27fedda59fea6d0b779a778918a2fd3590e16e9c69"), m0h.map(_.chainCode)))
-      .and(expect(ChildIndex.path("m/0").flatMap(Slip10Ed25519.derive(seed, _)).isLeft, "soft indices are rejected"))
+      .and(
+        expect.same(
+          Left(KeyError.InvalidDerivation(KeyError.DerivationReason.HardenedOnly)),
+          ChildIndex.path("m/0").flatMap(Slip10Ed25519.derive(seed, _))
+        )
+      )
   }
 
   // ------------------------------------------------------------------ BIP32 secp256k1 (vector 1)
@@ -248,7 +279,12 @@ object KeyDerivationSuite extends SimpleIOSuite {
       expect
         .same(Right(hex"03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c"), viaPublic.map(_._1.bytes))
         .and(expect.same(viaPrivate.map(k => (backend.ecdsaPublicKeyOf.verifyingKey(k.key), k.chainCode)), viaPublic))
-        .and(expect(ChildIndex.hardened(1).flatMap(bip32.publicChild(parentVk, parent.chainCode, _)).isLeft, "hardened rejected"))
+        .and(
+          expect.same(
+            Left(KeyError.InvalidDerivation(KeyError.DerivationReason.PrivateKeyRequired)),
+            ChildIndex.hardened(1).flatMap(bip32.publicChild(parentVk, parent.chainCode, _))
+          )
+        )
     }
   }
 
@@ -266,8 +302,11 @@ object KeyDerivationSuite extends SimpleIOSuite {
       expect
         .same(Right((parent.key.bytes, chain)), child.map(k => (k.key.bytes, k.chainCode)))
         .and(expect.same(Right((parentVk, chain)), publicChild))
-        .and(expect(bip32.childOf(parent, n ++ chain).isLeft, "I_L = n is skipped"))
-        .and(expect(bip32.publicChildOf(parentVk, n ++ chain).isLeft, "I_L = n is skipped (CKDpub)"))
+        .and(expect.same(Left(KeyError.InvalidDerivation(KeyError.DerivationReason.TweakOutOfRange)), bip32.childOf(parent, n ++ chain)))
+        .and(
+          expect
+            .same(Left(KeyError.InvalidDerivation(KeyError.DerivationReason.TweakOutOfRange)), bip32.publicChildOf(parentVk, n ++ chain))
+        )
         .and(expect(bip32.childOf(parent, (ByteVector.low(31) :+ 1.toByte) ++ chain).isRight, "I_L = 1 adds one"))
     }
   }
@@ -282,9 +321,15 @@ object KeyDerivationSuite extends SimpleIOSuite {
       val icarusVk = Ed25519Bip32.publicKeyOf.verifyingKey(icarus.key)
       val soft = ChildIndex.soft(1).toOption.get
       List(parent.chainCode.take(31), parent.chainCode :+ 0.toByte, ByteVector.empty).foldMap { cc =>
-        expect(bip32.publicChild(parentVk, cc, soft).isLeft, s"BIP32 CKDpub with a ${cc.size}-byte chain code") |+|
-        expect(Ed25519Bip32.publicChild(icarusVk, cc, soft).isLeft, s"Icarus public derivation with a ${cc.size}-byte chain code") |+|
-        expect(ExtendedKey.from(parent.key, cc).isLeft, s"an extended key with a ${cc.size}-byte chain code")
+        expect.same(
+          Left(KeyError.InvalidDerivation(KeyError.DerivationReason.ChainCodeLength(cc.size))),
+          bip32.publicChild(parentVk, cc, soft)
+        ) |+|
+        expect.same(
+          Left(KeyError.InvalidDerivation(KeyError.DerivationReason.ChainCodeLength(cc.size))),
+          Ed25519Bip32.publicChild(icarusVk, cc, soft)
+        ) |+|
+        expect.same(Left(KeyError.InvalidDerivation(KeyError.DerivationReason.ChainCodeLength(cc.size))), ExtendedKey.from(parent.key, cc))
       } |+| expect(ExtendedKey.from(parent.key, parent.chainCode).isRight, "32 bytes")
     }
   }
@@ -298,7 +343,7 @@ object KeyDerivationSuite extends SimpleIOSuite {
             generated.foldMap {
               case (n, m) =>
                 expect.same(Right(n * 3 / 4), m.map(_.words.size)).and(expect(m.flatMap(x => Bip39.toEntropy(x.phrase, words)).isRight))
-            }.and(expect(bad.isLeft, "17 bytes rejected"))
+            }.and(expect.same(Left(KeyError.InvalidEntropy(17)), bad))
           }
         }
     }
@@ -399,11 +444,15 @@ object KeyDerivationSuite extends SimpleIOSuite {
 
   pureTest("BIP32-Ed25519: hardened public derivation and unclamped keys are rejected") {
     val anyVk = Ed25519Bip32.publicKeyOf.verifyingKey(extended(hx(vectors("Bip32Ed25519Ckd.json").head, "inputs", "rootSecretKey")).key)
-    expect(ChildIndex.hardened(0).flatMap(Ed25519Bip32.publicChild(anyVk, ByteVector.fill(32)(0), _)).isLeft)
+    expect
+      .same(
+        Left(KeyError.InvalidDerivation(KeyError.DerivationReason.PrivateKeyRequired)),
+        ChildIndex.hardened(0).flatMap(Ed25519Bip32.publicChild(anyVk, ByteVector.fill(32)(0), _))
+      )
       .and(
-        expect(
-          Ed25519Bip32.codec.signingKey(hx(vectors("ExtendedEd25519.json").head, "inputs", "secretKey").take(64)).isLeft,
-          "unclamped kL"
+        expect.same(
+          Left(CryptoError.InvalidKey(CryptoError.KeyReason.Ed25519Bip32Scalar)),
+          Ed25519Bip32.codec.signingKey(hx(vectors("ExtendedEd25519.json").head, "inputs", "secretKey").take(64))
         )
       )
   }

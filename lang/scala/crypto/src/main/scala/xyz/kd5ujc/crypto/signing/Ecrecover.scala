@@ -3,6 +3,7 @@ package xyz.kd5ujc.crypto.signing
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.hash.{Hasher, Keccak256}
+import xyz.kd5ujc.crypto.signing.CryptoError.{EncodingReason, KeyReason, Subject}
 
 import org.bouncycastle.crypto.ec.CustomNamedCurves
 import org.bouncycastle.math.ec.{ECAlgorithms, ECPoint}
@@ -21,14 +22,20 @@ object Ecrecover {
     case DigestLength(actual: Long)
     case SignatureLength(actual: Long)
     case InvalidRecoveryId(actual: Int)
-    case InvalidPublicKey
+    case InvalidPublicKey(cause: Throwable)
+
+    def message: String = this match {
+      case DigestLength(actual)      => s"the digest is $DigestSize bytes, got $actual"
+      case SignatureLength(actual)   => s"a signature is $SignatureSize bytes (r ‖ s ‖ v), got $actual"
+      case InvalidRecoveryId(actual) => s"v is 27 or 28 (or 0 or 1), got $actual"
+      case InvalidPublicKey(_)       => "not a secp256k1 public key"
+    }
 
     def toCryptoError: CryptoError = this match {
-      case DigestLength(actual) => CryptoError.InvalidEncoding("ecrecover digest", s"the digest is $DigestSize bytes, got $actual")
-      case SignatureLength(actual) =>
-        CryptoError.InvalidEncoding("ecrecover signature", s"a signature is $SignatureSize bytes (r ‖ s ‖ v), got $actual")
-      case InvalidRecoveryId(actual) => CryptoError.InvalidEncoding("ecrecover signature", s"v is 27 or 28 (or 0 or 1), got $actual")
-      case InvalidPublicKey          => CryptoError.InvalidKey("not a secp256k1 public key")
+      case DigestLength(_) => CryptoError.InvalidEncoding(Subject.EcrecoverDigest, EncodingReason.Recovery(this))
+      case SignatureLength(_) | InvalidRecoveryId(_) =>
+        CryptoError.InvalidEncoding(Subject.EcrecoverSignature, EncodingReason.Recovery(this))
+      case InvalidPublicKey(_) => CryptoError.InvalidKey(KeyReason.Recovery(this))
     }
   }
 
@@ -94,5 +101,5 @@ object Ecrecover {
 
   /** The address of a SEC1-encoded public key (33 or 65 bytes), if it is a point of the curve. */
   def address(key: ByteVector): Either[Error, ByteVector] =
-    Either.catchNonFatal(curve.decodePoint(key.toArray)).leftMap(_ => Error.InvalidPublicKey).map(addressOf)
+    Either.catchNonFatal(curve.decodePoint(key.toArray)).leftMap(Error.InvalidPublicKey(_)).map(addressOf)
 }

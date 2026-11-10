@@ -6,6 +6,7 @@ import cats.effect.std.SecureRandom
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.hash.{DomainTag, Hasher, Sha256, TaggedHash}
+import xyz.kd5ujc.crypto.signing.CryptoError.{DecodeFailure, EncodingReason, KeyReason, Operation, Scheme, Subject}
 
 import fr.acinq.secp256k1.{Secp256k1 => Native}
 import scodec.bits.ByteVector
@@ -34,7 +35,7 @@ object Message32 {
     Either.cond(
       bytes.size == 32L,
       Message32(bytes),
-      CryptoError.InvalidEncoding("BIP-340 message", s"expected 32 bytes, got ${bytes.size}")
+      CryptoError.InvalidEncoding(Subject.Bip340Message, EncodingReason.Length(32, bytes.size))
     )
 }
 
@@ -45,58 +46,57 @@ object Message32 {
  */
 final class Secp256k1 private (native: Native) {
 
-  private def call[A](operation: String)(thunk: => A): Either[CryptoError, A] =
+  private def call[A](operation: Operation)(thunk: => A): Either[CryptoError.BackendFailure, A] =
     Either
       .catchNonFatal(thunk)
-      .leftMap(e => CryptoError.BackendFailure(s"secp256k1 $operation", Option(e.getMessage).getOrElse(e.getClass.getName)))
+      .leftMap(e => CryptoError.BackendFailure(operation, e))
 
   private val sha256 = Hasher[Sha256]
   private val schnorrTag = TaggedHash[Sha256](DomainTag.literal(Secp256k1.SchnorrTag))
   private val n = Secp256k1.Order
 
   /** 32 bytes (else `InvalidEncoding`) holding a scalar in `[1, n)` (else `InvalidKey`). */
-  private def secretKey[S](scheme: String, bytes: ByteVector): Either[CryptoError, SigningKey[S]] =
+  private def secretKey[S](scheme: Scheme, bytes: ByteVector): Either[CryptoError, SigningKey[S]] =
     SchemeCodec
-      .sized(s"$scheme signing key", 32, bytes)
+      .sized(Subject.SigningKey(scheme), 32, bytes)
       .flatMap(b =>
-        Either.cond(
-          call("secKeyVerify")(native.secKeyVerify(b.toArray)).getOrElse(false),
-          new SigningKey[S](b),
-          CryptoError.InvalidKey("secp256k1 secret key must be a scalar in [1, n)")
-        )
+        call(Operation.SecKeyVerify)(native.secKeyVerify(b.toArray))
+          .leftMap(e => CryptoError.InvalidKey(KeyReason.ScalarDecode(scheme, DecodeFailure.Backend(e))))
+          .flatMap(valid => Either.cond(valid, new SigningKey[S](b), CryptoError.InvalidKey(KeyReason.ScalarRange(scheme))))
       )
 
   /** A key libsecp256k1 does not parse is not a key: `InvalidKey`, whatever the backend reports. */
-  private def parsedPoint(scheme: String, point33: ByteVector): Either[CryptoError, Unit] =
-    call("pubkeyParse")(native.pubkeyParse(point33.toArray))
-      .bimap(_ => CryptoError.InvalidKey(s"$scheme verifying key is not a valid point"), _ => ())
+  private def parsedPoint(scheme: Scheme, point33: ByteVector): Either[CryptoError, Unit] =
+    call(Operation.PubkeyParse)(native.pubkeyParse(point33.toArray))
+      .bimap(e => CryptoError.InvalidKey(KeyReason.Decode(scheme, DecodeFailure.Backend(e))), _ => ())
 
   // ------------------------------------------------------------------ ECDSA
 
   val ecdsaCodec: SchemeCodec[Secp256k1Ecdsa] = new SchemeCodec[Secp256k1Ecdsa] {
     val name: String = "secp256k1-ECDSA"
-    def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[Secp256k1Ecdsa]] = secretKey(name, bytes)
+    def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[Secp256k1Ecdsa]] = secretKey(Scheme.Secp256k1Ecdsa, bytes)
 
     /** 33-byte compressed SEC1 point (tag 02 or 03), checked on the curve. */
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[Secp256k1Ecdsa]] =
       SchemeCodec
-        .sized("secp256k1 verifying key", 33, bytes)
+        .sized(Subject.VerifyingKey(Scheme.Secp256k1Ecdsa), 33, bytes)
         .flatMap(b =>
           Either
-            .cond(SchemeCodec.compressedTag(b), b, CryptoError.InvalidKey("secp256k1 verifying key is not a compressed point"))
-            .flatMap(parsedPoint("secp256k1", _))
+            .cond(SchemeCodec.compressedTag(b), b, CryptoError.InvalidKey(KeyReason.CompressedPoint(Scheme.Secp256k1Ecdsa)))
+            .flatMap(parsedPoint(Scheme.Secp256k1Ecdsa, _))
             .as(VerifyingKey[Secp256k1Ecdsa](b))
         )
 
     /** 64-byte compact `r || s` with `1 <= r < n` and `1 <= s <= n/2`: the high-S twin is rejected (malleability). */
     def signature(bytes: ByteVector): Either[CryptoError, Signature[Secp256k1Ecdsa]] =
-      if (bytes.size != 64L) CryptoError.InvalidEncoding("secp256k1 signature", s"expected 64 bytes, got ${bytes.size}").asLeft
+      if (bytes.size != 64L)
+        CryptoError.InvalidEncoding(Subject.Signature(Scheme.Secp256k1Ecdsa), EncodingReason.Length(64, bytes.size)).asLeft
       else {
         val (r, s) = (BigInt(1, bytes.take(32).toArray), BigInt(1, bytes.drop(32).toArray))
         Either.cond(
           r >= 1 && r < n && s >= 1 && s <= n / 2,
           Signature[Secp256k1Ecdsa](bytes),
-          CryptoError.InvalidEncoding("secp256k1 signature", "r and s must be in range and s must be low (canonical)")
+          CryptoError.InvalidEncoding(Subject.Signature(Scheme.Secp256k1Ecdsa), EncodingReason.NonCanonicalEcdsa)
         )
       }
   }
@@ -109,7 +109,8 @@ final class Secp256k1 private (native: Native) {
 
   val ecdsaVerifier: Verifier[Secp256k1Ecdsa] =
     (key: VerifyingKey[Secp256k1Ecdsa], message: ByteVector, signature: Signature[Secp256k1Ecdsa]) =>
-      call("verify")(native.verify(signature.bytes.toArray, sha256.digest(message).bytes.toArray, key.bytes.toArray)).getOrElse(false)
+      call(Operation.Verify)(native.verify(signature.bytes.toArray, sha256.digest(message).bytes.toArray, key.bytes.toArray))
+        .getOrElse(false)
 
   val ecdsaSeedDerivation: SeedDerivation[Secp256k1Ecdsa] = new SeedDerivation[Secp256k1Ecdsa] {
     val seedLength: Long = 32
@@ -119,27 +120,29 @@ final class Secp256k1 private (native: Native) {
 
   /** `(a + b) mod n` on secret scalars, in libsecp256k1 (constant time); fails if either is invalid or the sum is 0. */
   private[crypto] def tweakAdd(a: ByteVector, b: ByteVector): Either[CryptoError, ByteVector] =
-    call("privKeyTweakAdd")(native.privKeyTweakAdd(a.toArray, b.toArray)).map(ByteVector.view)
+    call(Operation.PrivKeyTweakAdd)(native.privKeyTweakAdd(a.toArray, b.toArray)).map(ByteVector.view)
 
   /** `P + [t]G` on a compressed point, returned compressed; fails if `t` is not a scalar or the sum is infinity. */
   private[crypto] def pubTweakAdd(point33: ByteVector, tweak: ByteVector): Either[CryptoError, ByteVector] =
-    call("pubKeyTweakAdd")(native.pubKeyCompress(native.pubKeyTweakAdd(native.pubkeyParse(point33.toArray), tweak.toArray)))
+    call(Operation.PubKeyTweakAdd)(native.pubKeyCompress(native.pubKeyTweakAdd(native.pubkeyParse(point33.toArray), tweak.toArray)))
       .map(ByteVector.view)
 
   // ------------------------------------------------------------------ BIP-340 Schnorr (standard and tagged)
 
-  private def schnorrCodecFor[S](scheme: String): SchemeCodec[S] = new SchemeCodec[S] {
-    val name: String = scheme
+  private def schnorrCodecFor[S](scheme: Scheme): SchemeCodec[S] = new SchemeCodec[S] {
+    val name: String = scheme.label
     def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[S]] = secretKey(scheme, bytes)
 
     /** 32-byte x-only key; it must lift to a curve point (even y). */
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[S]] =
-      SchemeCodec.sized(s"$scheme verifying key", 32, bytes).flatMap(b => parsedPoint(scheme, ByteVector(0x02) ++ b).as(VerifyingKey[S](b)))
+      SchemeCodec
+        .sized(Subject.VerifyingKey(scheme), 32, bytes)
+        .flatMap(b => parsedPoint(scheme, ByteVector(0x02) ++ b).as(VerifyingKey[S](b)))
     def signature(bytes: ByteVector): Either[CryptoError, Signature[S]] =
       Either.cond(
         bytes.size == 64L,
         Signature[S](bytes),
-        CryptoError.InvalidEncoding(s"$scheme signature", s"expected 64 bytes, got ${bytes.size}")
+        CryptoError.InvalidEncoding(Subject.Signature(scheme), EncodingReason.Length(64, bytes.size))
       )
   }
 
@@ -148,17 +151,17 @@ final class Secp256k1 private (native: Native) {
 
   private def signRaw[S](key: SigningKey[?], message32: ByteVector, aux: ByteVector): Either[CryptoError, Signature[S]] =
     Either
-      .cond(aux.size == 32L, aux, CryptoError.InvalidEncoding("BIP-340 auxiliary randomness", s"expected 32 bytes, got ${aux.size}"))
-      .flatMap(a => call("signSchnorr")(native.signSchnorr(message32.toArray, key.bytes.toArray, a.toArray)))
+      .cond(aux.size == 32L, aux, CryptoError.InvalidEncoding(Subject.Bip340AuxiliaryRandomness, EncodingReason.Length(32, aux.size)))
+      .flatMap(a => call(Operation.SignSchnorr)(native.signSchnorr(message32.toArray, key.bytes.toArray, a.toArray)))
       .map(b => Signature[S](ByteVector.view(b)))
 
   private def verifyRaw(key: VerifyingKey[?], message32: ByteVector, signature: Signature[?]): Boolean =
     signature.bytes.size == 64L &&
-    call("verifySchnorr")(native.verifySchnorr(signature.bytes.toArray, message32.toArray, key.bytes.toArray)).getOrElse(false)
+    call(Operation.VerifySchnorr)(native.verifySchnorr(signature.bytes.toArray, message32.toArray, key.bytes.toArray)).getOrElse(false)
 
   // standard
 
-  val bip340Codec: SchemeCodec[Bip340] = schnorrCodecFor[Bip340]("BIP-340")
+  val bip340Codec: SchemeCodec[Bip340] = schnorrCodecFor[Bip340](Scheme.Bip340)
   val bip340PublicKeyOf: PublicKeyOf[Bip340] = (key: SigningKey[Bip340]) => xOnly[Bip340](key)
 
   /** Standard BIP-340 with caller-supplied 32-byte auxiliary randomness (known answers, external RNGs). */
@@ -180,7 +183,7 @@ final class Secp256k1 private (native: Native) {
 
   // tagged (dilf4s)
 
-  val taggedSchnorrCodec: SchemeCodec[Secp256k1TaggedSchnorr] = schnorrCodecFor[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr")
+  val taggedSchnorrCodec: SchemeCodec[Secp256k1TaggedSchnorr] = schnorrCodecFor[Secp256k1TaggedSchnorr](Scheme.TaggedSchnorr)
   val taggedSchnorrPublicKeyOf: PublicKeyOf[Secp256k1TaggedSchnorr] = (key: SigningKey[Secp256k1TaggedSchnorr]) =>
     xOnly[Secp256k1TaggedSchnorr](key)
 

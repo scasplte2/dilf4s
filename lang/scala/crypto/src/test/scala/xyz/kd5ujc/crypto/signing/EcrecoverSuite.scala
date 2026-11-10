@@ -121,7 +121,10 @@ object EcrecoverSuite extends IOSuite with Checkers {
   }
 
   pureTest("malformed public keys have a distinct refusal") {
-    expect.same(Left(Ecrecover.Error.InvalidPublicKey), Ecrecover.address(ByteVector.empty))
+    Ecrecover.address(ByteVector.empty) match {
+      case Left(Ecrecover.Error.InvalidPublicKey(cause)) => expect.same(classOf[IllegalArgumentException], cause.getClass)
+      case other => failure(s"expected an invalid public key with its original decoder cause, got $other")
+    }
   }
 
   pureTest("the shared secp256k1 order is SEC 2's n and BouncyCastle's curve order") {

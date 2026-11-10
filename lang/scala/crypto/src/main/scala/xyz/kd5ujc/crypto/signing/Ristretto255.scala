@@ -6,6 +6,8 @@ import cats.Functor
 import cats.effect.std.SecureRandom
 import cats.syntax.all._
 
+import xyz.kd5ujc.crypto.signing.CryptoError.{DecodeFailure, EncodingReason, KeyReason, Scheme, Subject}
+
 import cafe.cryptography.curve25519.{CompressedRistretto, Constants, RistrettoElement, Scalar}
 import org.bouncycastle.crypto.digests.SHA512Digest
 import scodec.bits.ByteVector
@@ -36,39 +38,49 @@ object Ristretto255Schnorr {
     Scalar.fromBytesModOrderWide(out)
   }
 
-  private def canonicalScalar(b: ByteVector): Either[Throwable, Scalar] = Either.catchNonFatal(Scalar.fromCanonicalBytes(b.toArray))
+  private def canonicalScalar(b: ByteVector): Either[DecodeFailure, Scalar] =
+    Either.catchNonFatal(Scalar.fromCanonicalBytes(b.toArray)).leftMap(DecodeFailure.Foreign(_))
 
   /** RFC 9591 `DeserializeElement`: canonical encoding of a non-identity element. */
-  private def element(b: ByteVector): Either[Throwable, RistrettoElement] =
+  private def element(b: ByteVector): Either[DecodeFailure, RistrettoElement] =
     Either
       .catchNonFatal(new CompressedRistretto(b.toArray).decompress())
-      .filterOrElse(e => !e.ctEquals(RistrettoElement.IDENTITY).equals(1), new IllegalArgumentException("identity element"))
+      .leftMap(DecodeFailure.Foreign(_))
+      .filterOrElse(e => !e.ctEquals(RistrettoElement.IDENTITY).equals(1), DecodeFailure.Identity)
 
   implicit val codec: SchemeCodec[Ristretto255Schnorr] = new SchemeCodec[Ristretto255Schnorr] {
     val name: String = "ristretto255-Schnorr"
     def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[Ristretto255Schnorr]] =
       SchemeCodec
-        .sized("ristretto255 signing key", 32, bytes)
+        .sized(Subject.SigningKey(Scheme.Ristretto255), 32, bytes)
         .flatMap(b =>
-          Either.cond(
-            canonicalScalar(b).exists(s => !s.equals(Scalar.ZERO)),
-            new SigningKey[Ristretto255Schnorr](b),
-            CryptoError.InvalidKey("ristretto255 secret key must be a canonical non-zero scalar")
-          )
+          canonicalScalar(b)
+            .filterOrElse(s => !s.equals(Scalar.ZERO), DecodeFailure.ZeroScalar)
+            .leftMap(e => CryptoError.InvalidKey(KeyReason.ScalarDecode(Scheme.Ristretto255, e)))
+            .as(new SigningKey[Ristretto255Schnorr](b))
         )
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[Ristretto255Schnorr]] =
-      if (bytes.size != 32L) CryptoError.InvalidEncoding("ristretto255 verifying key", s"expected 32 bytes, got ${bytes.size}").asLeft
+      if (bytes.size != 32L)
+        CryptoError.InvalidEncoding(Subject.VerifyingKey(Scheme.Ristretto255), EncodingReason.Length(32, bytes.size)).asLeft
       else
         element(bytes).bimap(
-          _ => CryptoError.InvalidKey("ristretto255 verifying key is not a canonical non-identity element"),
+          e => CryptoError.InvalidKey(KeyReason.Decode(Scheme.Ristretto255, e)),
           _ => VerifyingKey(bytes)
         )
     def signature(bytes: ByteVector): Either[CryptoError, Signature[Ristretto255Schnorr]] =
-      Either.cond(
-        bytes.size == 64L && element(bytes.take(32)).isRight && canonicalScalar(bytes.drop(32)).isRight,
-        Signature[Ristretto255Schnorr](bytes),
-        CryptoError.InvalidEncoding("ristretto255 signature", "expected R (non-identity element) || z (canonical scalar)")
-      )
+      for {
+        _ <- Either.cond(
+          bytes.size == 64L,
+          (),
+          CryptoError.InvalidEncoding(Subject.Signature(Scheme.Ristretto255), EncodingReason.RistrettoLength(bytes.size))
+        )
+        _ <- element(bytes.take(32)).leftMap(e =>
+          CryptoError.InvalidEncoding(Subject.Signature(Scheme.Ristretto255), EncodingReason.RistrettoElement(e))
+        )
+        _ <- canonicalScalar(bytes.drop(32)).leftMap(e =>
+          CryptoError.InvalidEncoding(Subject.Signature(Scheme.Ristretto255), EncodingReason.RistrettoScalar(e))
+        )
+      } yield Signature[Ristretto255Schnorr](bytes)
   }
 
   private def secret(key: SigningKey[Ristretto255Schnorr]): Scalar = Scalar.fromBytesModOrder(key.bytes.toArray)
@@ -96,7 +108,7 @@ object Ristretto255Schnorr {
     Either.cond(
       randomness.size == RandomnessLength.toLong,
       signWith(key, message, randomness),
-      CryptoError.InvalidEncoding("nonce randomness", s"expected $RandomnessLength bytes")
+      CryptoError.InvalidEncoding(Subject.NonceRandomness, EncodingReason.Length(RandomnessLength.toLong, randomness.size))
     )
 
   def signer[F[_]: Functor](implicit R: SecureRandom[F]): RandomizedSigner[F, Ristretto255Schnorr] =
@@ -121,7 +133,11 @@ object Ristretto255Schnorr {
       d.update(seed.toArray, 0, seed.size.toInt)
       d.doFinal(out, 0)
       Either
-        .cond(seed.size == seedLength, seed, CryptoError.InvalidEncoding("ristretto255 seed", s"expected $seedLength bytes"))
+        .cond(
+          seed.size == seedLength,
+          seed,
+          CryptoError.InvalidEncoding(Subject.RistrettoSeed, EncodingReason.Length(seedLength, seed.size))
+        )
         .flatMap(_ => codec.signingKey(ByteVector.view(Scalar.fromBytesModOrderWide(out).toByteArray)))
         .map(sk => KeyPair(sk, publicKeyOf.verifyingKey(sk)))
     }

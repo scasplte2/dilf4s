@@ -343,6 +343,8 @@ object CanonicalEmitter {
     case Jlvm extends NativeErrorFamily(QName("jlvm-errors", "jlvm-error"))
     case JlvmCause extends NativeErrorFamily(QName("jlvm-errors", "jlvm-crypto-cause"))
     case Sigma extends NativeErrorFamily(QName("crypto-errors", "sigma-error"))
+    case Signing extends NativeErrorFamily(QName("crypto-errors", "crypto-error"))
+    case Key extends NativeErrorFamily(QName("crypto-errors", "key-error"))
   }
 
   object NativeErrorFamily {
