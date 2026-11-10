@@ -28,14 +28,14 @@ uv run --no-sync pytest
 
 The package is a client SDK; it never runs as a node. A crafted argument that names one large buffer many times is,
 in general, read once per distinct object: `bytes` are borrowed, a `bytearray` or `memoryview` is copied once per
-call, and collections are checked before anything is copied in proportion to their references. Two paths found in
-review do not yet hold to that. In each, such an argument can use memory in proportion to its references before it is
-refused:
+call, and collections are checked before anything is copied in proportion to their references. One path found in
+review still copies a buffer separately for each argument:
 
-- **Merkle digest lists** (`merkle_root`, `InclusionProof`, `ConsistencyProof`): after the first digest of the wrong
-  width, each later reference gets its own small zero placeholder. A million references cost about 56 MB before
-  the `Encoding` refusal.
 - **Versioned-trie arguments** (`VersionedTrie.verify_versions`'s root and range ends, and a `VersionedHead`'s
   fields): these are read separately, so one buffer passed as all of them is copied once per argument.
+
+Merkle digest lists retain only the prefix through the first invalid-width digest. Later entries are still
+type-checked, preserving `TypeMismatch` precedence, but allocate no digest placeholders. Input references are
+still collected for boundary validation.
 
 A caller that passes each buffer once, rather than one object many times, is unaffected.

@@ -5,7 +5,6 @@
 //! dispatched to the Rust code for that hash ([`with_hasher!`]). A digest argument of the wrong length is refused by the
 //! family's malformed-input kind (`Encoding`), as the JLVM's operations refuse one.
 
-use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -82,9 +81,8 @@ pub(crate) fn digest_of<H: Hasher, E>(b: &[u8], refuse: impl FnOnce(usize) -> E)
 }
 
 /// A list or tuple of digests of `width` bytes, each measured before it is copied. Rust converts them in order and
-/// refuses at the first of another length, by that length; so that one is copied once, and the ones after it, which no
-/// check reaches, stand in as zero digests (each still checked to be bytes). A list of many references to one large
-/// buffer then costs that buffer once, never its size times the count.
+/// refuses at the first of another length, by that length. Retain that prefix only, but type-check every later
+/// reference so a boundary `TypeMismatch` keeps precedence over the Merkle `Encoding` refusal.
 fn digest_list<'py>(obj: &Bound<'py, PyAny>, what: &str, width: usize) -> Result<Vec<Vec<u8>>, Fail<'py>> {
     let mut refused = false;
     items(obj, what)?
@@ -92,11 +90,12 @@ fn digest_list<'py>(obj: &Bound<'py, PyAny>, what: &str, width: usize) -> Result
         .map(|b| {
             let n = bytes_len(b)?;
             if refused {
-                return Ok(alloc::vec![0; width]);
+                return Ok(None);
             }
             refused = n != width;
-            bytes(b).map(Cow::into_owned)
+            bytes(b).map(|b| Some(b.into_owned()))
         })
+        .filter_map(Result::transpose)
         .collect()
 }
 
@@ -1567,4 +1566,33 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("TRIE_MAX_VARIABLE_BYTES", trie::MAX_VARIABLE_BYTES)?;
     m.add("GROTH16_PROOF_BYTES", groth16::PROOF_BYTES)?;
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::panic, reason = "unit tests fail with diagnostics")]
+mod tests {
+    use super::digest_list;
+    use pyo3::prelude::*;
+    use pyo3::types::{PyBytes, PyList};
+
+    #[test]
+    fn digest_list_retains_exactly_the_prefix_through_the_first_bad_width() {
+        Python::initialize();
+        Python::attach(|py| {
+            let valid = PyBytes::new(py, &[7; 32]);
+            let invalid = PyBytes::new(py, &[9]);
+            for tail in [0, 1, 65536] {
+                let refs =
+                    [valid.clone(), invalid.clone()].into_iter().chain(core::iter::repeat_n(valid.clone(), tail));
+                let list = PyList::new(py, refs).unwrap_or_else(|e| panic!("list: {e}"));
+                let kept = digest_list(list.as_any(), "digests", 32)
+                    .unwrap_or_else(|_| panic!("byte arguments must pass the type boundary"));
+                assert_eq!(kept, alloc::vec![alloc::vec![7; 32], alloc::vec![9]], "tail length {tail}");
+            }
+            let list = PyList::new(py, [valid.clone(), valid.clone(), valid]).unwrap_or_else(|e| panic!("list: {e}"));
+            let kept =
+                digest_list(list.as_any(), "digests", 32).unwrap_or_else(|_| panic!("valid digests must be retained"));
+            assert_eq!(kept, alloc::vec![alloc::vec![7; 32]; 3]);
+        });
+    }
 }
