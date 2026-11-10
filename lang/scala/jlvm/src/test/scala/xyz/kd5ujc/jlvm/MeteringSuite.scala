@@ -18,8 +18,8 @@ import weaver.{Expectations, IOSuite}
  * Denial-of-service regressions: every unit of work is charged before it is done and bounded by the gas limit. Nothing
  * here measures time, so a loaded machine cannot fail it. A test either reads the bound off the gas (the charge a piece
  * of work pays grows with its size), or counts the comparisons the evaluator makes through counting [[Kernels]] and
- * bounds them by the input's size: a program-chosen name or value is only ever compared, never hashed, and in
- * O(n log n) comparisons. How fast a unit of work runs is calibration, measured by the `benchmarks` GasRatios job.
+ * bounds them by the input's size. Names use comparison orders; value membership counts radix byte reads and branch
+ * visits against key length. Neither hashes attacker-controlled input. How fast a unit of work runs is calibration, measured by the `benchmarks` GasRatios job.
  */
 object MeteringSuite extends IOSuite {
 
@@ -62,32 +62,25 @@ object MeteringSuite extends IOSuite {
     order.compare(a, b)
   }
 
-  /** The production kernels, with the name order counting its comparisons in `names` and the value order in `values`. */
-  private def counting(names: AtomicLong, values: AtomicLong): Kernels =
-    Kernels.Default.copy(names = counted(Ordering.String, names), values = counted(Values.sortKeyOrder, values))
+  private def counting(names: AtomicLong): Kernels = Kernels.Default.copy(names = counted(Ordering.String, names))
 
   /** `ceil(log2 n)`. */
   private def log2(n: Int): Long = 64L - java.lang.Long.numberOfLeadingZeros(n.toLong - 1)
 
-  /**
-   * Compiles and evaluates `p` with counting kernels: the outcome, and the name and value comparisons the evaluation
-   * made (compilation's are counted apart, in [[compiling]]).
-   */
-  private def comparing(jlvm: Jlvm, p: Program, data: CanonicalValue): IO[(Outcome, Long, Long)] =
-    (IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (names, values) =>
+  private def comparing(jlvm: Jlvm, p: Program, data: CanonicalValue): IO[(Outcome, Long)] =
+    IO(new AtomicLong).flatMap { names =>
       IO {
-        val kernels = counting(names, values)
+        val kernels = counting(names)
         val compiled = get(Compiled(p, kernels))
-        val (n0, v0) = (names.get, values.get)
-        val o = jlvm.evaluate(compiled, data, Map.empty, Config(), kernels)
-        (o, names.get - n0, values.get - v0)
+        val before = names.get
+        val result = jlvm.evaluate(compiled, data, Map.empty, Config(), kernels)
+        (result, names.get - before)
       }
     }
 
-  /** Parses and compiles `json` with counting kernels: whether it compiled, and the name comparisons it made. */
   private def compiling(json: String): IO[(Boolean, Long)] =
-    (IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (names, values) =>
-      IO((Parser.parse(json).flatMap(Compiled(_, counting(names, values))).isRight, names.get))
+    IO(new AtomicLong).flatMap { names =>
+      IO((Parser.parse(json).flatMap(Compiled(_, counting(names))).isRight, names.get))
     }
 
   // ---- 1. join
@@ -181,27 +174,23 @@ object MeteringSuite extends IOSuite {
     override def equals(that: Any): Boolean = sys.error(s"element $n was compared for equality")
   }
 
-  private val byNumber: Ordering[Opaque] = Ordering.by(_.n)
-
-  test("deduplication never hashes or compares values for equality, and compares them O(n log n) times") { _ =>
-    // 8192 elements, each value twice; a quadratic algorithm would compare about n^2 / 2 = 33 million times
+  test("radix deduplication reads explicit keys without hashing or comparing payload objects") { _ =>
     val n = 8192
-    val log2n = log2(n)
     val xs = Vector.tabulate(n)(i => new Opaque(i % (n / 2)))
-    (IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (uniqueCount, subsetCount) =>
-      IO {
-        val unique = Either.catchNonFatal(Dedup.Sorting.distinct(xs)(using counted(byNumber, uniqueCount)).map(_.n)).leftMap(_.getMessage)
-        val subset = Either
-          .catchNonFatal(Dedup.Sorting.subset(xs.iterator.map(Right(_)), xs)(using counted(byNumber, subsetCount)))
-          .leftMap(_.getMessage)
-          .flatMap(_.leftMap(_.toString))
-        expect
-          .same(Right(Vector.range(0, n / 2)), unique)
-          .and(expect.same(Right(true), subset))
-          .and(expect(uniqueCount.get <= 2 * n * log2n, s"unique compared ${uniqueCount.get} times for $n elements"))
-          .and(expect(subsetCount.get <= 3 * n * log2n, s"intersect compared ${subsetCount.get} times for $n elements"))
-      }
+    def key(x: Opaque): RadixIndex.Key = RadixIndex.Key(2, 4L)(i => (x.n >>> ((3 - i.toInt) * 8)) & 255)
+    val (index, reversed, work) = xs.foldLeft((RadixIndex.empty, List.empty[Int], RadixIndex.Work.Zero)) {
+      case ((index, kept, work), x) =>
+        val next = index.added(key(x))
+        (next.index, if (next.added) x.n :: kept else kept, work + next.work)
     }
+    val lookups = xs.map(x => index.contains(key(x)))
+    IO.pure(
+      expect
+        .same(Vector.range(0, n / 2), reversed.reverse.toVector)
+        .and(expect(lookups.forall(_._1), "every payload key is present"))
+        .and(expect(work.bytes <= n.toLong * (18L * 13L + 1L), s"insertion byte reads ${work.bytes}"))
+        .and(expect(lookups.forall(_._2.bytes <= 10L * 13L), "every lookup is bounded by its key length"))
+    )
   }
 
   test("intersect stops at the first element missing from the second array, before keying the rest") { jlvm =>
@@ -211,12 +200,13 @@ object MeteringSuite extends IOSuite {
     val intersect = program("""{"intersect": [{"var": "a"}, {"var": "b"}]}""")
     (IO(new AtomicLong), IO(new AtomicLong)).flatMapN { (consumed, keyed) =>
       IO {
-        val generic = Dedup.Sorting.subset(
-          Iterator.tabulate(8192) { i =>
-            consumed.incrementAndGet(); Right(new Opaque(if (i == 0) -1 else i))
-          },
-          Vector(new Opaque(1))
-        )(using byNumber)
+        val generic = Kernels.Default.dedup
+          .subset(
+            Vector.tabulate(8192)(identity),
+            (i: Int) => { consumed.incrementAndGet(); Values.sortKey(CInt(if (i == 0) -1 else i)) },
+            Vector(get(Values.sortKey(CInt(1))))
+          )
+          .map(_._1)
         val kernels = Kernels.Default.copy(key = v => { keyed.incrementAndGet(); Values.sortKey(v) })
         val o = jlvm.evaluate(get(Compiled(intersect, kernels)), data, Map.empty, Config(), kernels)
         expect
@@ -253,21 +243,25 @@ object MeteringSuite extends IOSuite {
     )
   }
 
-  test("unique and intersect compare colliding strings through the evaluator's value order, O(n log n) times") { jlvm =>
-    // at least n - 1 comparisons: the values went through the order, not a hash set
+  test("the production deduplicator scans colliding strings within linear byte and branch bounds") { jlvm =>
     val n = 8192
-    val same = obj("xs" -> arr(colliding(13).map(t)))
-    (
-      comparing(jlvm, program("""{"unique": {"var": "xs"}}"""), same),
-      comparing(jlvm, program("""{"intersect": [{"var": "xs"}, {"var": "xs"}]}"""), same)
-    ).mapN {
-      case ((u, _, uc), (i, _, ic)) =>
-        expect
-          .same(Right(arr(colliding(13).map(t))), u.result)
-          .and(expect.same(Right(True), i.result))
-          .and(expect(uc >= n - 1 && uc <= 2 * n * log2(n), s"unique compared $uc times for $n values"))
-          .and(expect(ic >= n - 1 && ic <= 3 * n * log2(n), s"intersect compared $ic times for $n values"))
-    }
+    val values = colliding(13).map(t)
+    val keys = values.map(v => get(Values.sortKey(v)))
+    val bytes = keys.map(_.radix.length).sum
+    val (unique, uw) = Kernels.Default.dedup.distinct(keys)
+    val (subset, iw) = get(Kernels.Default.dedup.subset(keys, (k: Values.SortKey) => Right(k), keys))
+    val data = obj("xs" -> arr(values))
+    IO.pure(
+      expect
+        .same(values, unique.map(_.value))
+        .and(expect.same(true, subset))
+        .and(expect(uw.bytes > 0 && uw.bytes <= 18L * bytes + n, s"unique byte reads ${uw.bytes} for $bytes key bytes"))
+        .and(expect(iw.bytes > uw.bytes && iw.bytes <= 28L * bytes + n, s"intersect byte reads ${iw.bytes} for $bytes key bytes"))
+        .and(expect(uw.branches <= 16L * bytes + n, s"unique branch visits ${uw.branches}"))
+        .and(expect(iw.branches <= 24L * bytes + 2L * n, s"intersect branch visits ${iw.branches}"))
+        .and(expect.same(Right(arr(values)), eval(jlvm, program("""{"unique": {"var": "xs"}}"""), data).result))
+        .and(expect.same(Right(True), eval(jlvm, program("""{"intersect": [{"var": "xs"}, {"var": "xs"}]}"""), data).result))
+    )
   }
 
   test("unique and intersect of colliding strings: the right answers, for the same gas as strings that do not collide") { jlvm =>
@@ -422,7 +416,7 @@ object MeteringSuite extends IOSuite {
     // 1024 bindings and a read of the last: the two runs differ only in the names, so they cost the same gas
     val n = 1024
     (comparing(jlvm, program(lets(n, colliding(10))), CNull), comparing(jlvm, program(lets(n, control(10))), CNull)).mapN {
-      case ((o, names, _), (c, _, _)) =>
+      case ((o, names), (c, _)) =>
         expect
           .same(Right(CInt(1)), o.result)
           .and(expect.same(o.gasUsed, c.gasUsed))

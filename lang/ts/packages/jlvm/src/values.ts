@@ -3,10 +3,11 @@
  * ordering, text, substring search and deduplication.
  */
 import { ArrayValue, BoolValue, BytesValue, cbor, equals, IntValue, models, NullValue, TextValue, type CanonicalError, type MapValue, type RationalValue, type Result, type Value } from "@kd5ujc/dilf4s-core";
-import { compareBytes, compareCodePoints } from "@kd5ujc/dilf4s-core/internal";
+import { compareCodePoints } from "@kd5ujc/dilf4s-core/internal";
 
 import { limit, typeError, type JlvmError } from "./error.js";
 import type { JlvmOp } from "./op.js";
+import { RadixIndex, radixKey, type RadixKey } from "./radix.js";
 
 /** The largest number, in bits of the numerator and of the denominator (jlvm.md section 2). */
 export const MAX_NUMBER_BITS = models.limits.JLVM_MAX_NUMBER_BITS;
@@ -317,7 +318,7 @@ export const containsText = (haystack: string, needle: string): boolean =>
 export const containsBytes = (haystack: Uint8Array, needle: Uint8Array): boolean =>
   kmp(haystack.length, (i) => haystack[i] ?? -1, needle.length, (i) => needle[i] ?? -2);
 
-// ---- an order for deduplicating
+// ---- typed byte keys for deduplicating
 
 /**
  * An upper bound on a canonical encoding's bytes per unit of the value's weight: a head is at most 9 bytes for a node
@@ -332,84 +333,54 @@ const ENCODING_PER_WEIGHT = 32n;
  */
 const MAX_KEY_BYTES = cbor.MAX_ENCODED_BYTES;
 
-/** A sort key for deduplicating: kinds first; scalars then compare structurally, and arrays and maps by their canonical encoding. */
-interface SortKey {
-  readonly rank: number;
-  readonly value: Value;
-  readonly encoding: Uint8Array | undefined;
-}
-
 const RANKS: Readonly<Record<Value["kind"], number>> = { null: 0, bool: 1, int: 2, rational: 3, text: 4, bytes: 5, array: 6, map: 7 };
 
-/**
- * The sort key of `value`. A collection's encoding is budgeted by its weight, which the operation has paid for, and
- * capped at {@link MAX_KEY_BYTES}: a value heavier than the cap is refused from its weight, before anything is written.
- */
-function sortKey(op: JlvmOp, value: Value): Out<SortKey> {
+/** Typed byte keys preserve structural equality and the existing compound-key encoding ceiling. */
+function keyOf(op: JlvmOp, value: Value): Out<RadixKey> {
   const rank = RANKS[value.kind];
-  if (value.kind === "bytes" && value.length > MAX_KEY_BYTES) return bad(limit(`${op}: a byte string past ${MAX_KEY_BYTES.toString()} bytes`));
-  // a byte string is its own key, copied out once rather than at every comparison
-  if (value.kind === "bytes") return good({ rank, value, encoding: value.bytes });
-  if (value.kind !== "array" && value.kind !== "map") return good({ rank, value, encoding: undefined });
+  if (value.kind === "null") return good(radixKey(rank, 0, () => 0));
+  if (value.kind === "bool") return good(radixKey(rank, 1, () => Number(value.value)));
+  if (value.kind === "text") return good(radixKey(rank, 2 * value.value.length, (i) => {
+    const c = value.value.charCodeAt(Math.floor(i / 2));
+    return i % 2 === 0 ? c >>> 8 : c & 255;
+  }));
+  if (value.kind === "bytes") {
+    if (value.length > MAX_KEY_BYTES) return bad(limit(`${op}: a byte string past ${MAX_KEY_BYTES.toString()} bytes`));
+    const bytes = value.bytes;
+    return good(radixKey(rank, bytes.length, (i) => bytes[i] ?? 0));
+  }
   const budget = value.weight * ENCODING_PER_WEIGHT;
   const cap = budget > BigInt(MAX_KEY_BYTES) ? MAX_KEY_BYTES : Number(budget);
-  const e = cbor.encodeWithin(value, cap);
-  return e.ok ? good({ rank, value, encoding: e.value }) : bad(limit(`${op}: the encoding exceeds ${cap.toString()} bytes`));
+  const encoded = cbor.encodeWithin(value, cap);
+  return encoded.ok
+    ? good(radixKey(rank, encoded.value.length, (i) => encoded.value[i] ?? 0))
+    : bad(limit(`${op}: the encoding exceeds ${cap.toString()} bytes`));
 }
 
-function compareKeys(x: SortKey, y: SortKey): number {
-  if (x.rank !== y.rank) return x.rank - y.rank;
-  const [a, b] = [x.value, y.value];
-  if (a.kind === "bool" && b.kind === "bool") return Number(a.value) - Number(b.value);
-  if (a.kind === "int" && b.kind === "int") return a.value < b.value ? -1 : a.value > b.value ? 1 : 0;
-  if (a.kind === "rational" && b.kind === "rational") {
-    if (a.numerator !== b.numerator) return a.numerator < b.numerator ? -1 : 1;
-    return a.denominator < b.denominator ? -1 : a.denominator > b.denominator ? 1 : 0;
-  }
-  if (a.kind === "text" && b.kind === "text") return compareCodePoints(a.value, b.value);
-  return x.encoding !== undefined && y.encoding !== undefined ? compareBytes(x.encoding, y.encoding) : 0;
-}
-
-/** `vs` without repeats, keeping each value's first occurrence, in order: a stable sort and a scan, O(n log n). */
+/** First occurrences, in input order, with work linear in the typed keys' total length. */
 export function distinct(op: JlvmOp, vs: readonly Value[]): Out<readonly Value[]> {
-  const keyed: (readonly [SortKey, number])[] = [];
-  for (const [i, v] of vs.entries()) {
-    const k = sortKey(op, v);
-    if (!k.ok) return k;
-    keyed.push([k.value, i]);
+  const index = new RadixIndex();
+  const kept: Value[] = [];
+  for (const value of vs) {
+    const key = keyOf(op, value);
+    if (!key.ok) return key;
+    if (index.add(key.value).added) kept.push(value);
   }
-  keyed.sort((a, b) => compareKeys(a[0], b[0]));
-  const firsts: number[] = [];
-  let previous: SortKey | undefined;
-  for (const [key, i] of keyed) {
-    if (previous === undefined || compareKeys(previous, key) !== 0) firsts.push(i);
-    previous = key;
-  }
-  firsts.sort((a, b) => a - b);
-  return good(firsts.map((i) => vs[i] ?? NULL));
+  return good(kept);
 }
 
-/** Whether every element of `xs` is in `ys`: a binary search of `ys` in that order, O((m + n) log n). */
+/** Builds all of `ys` before probing `xs`, stopping at its first absent value or refusal. */
 export function subset(op: JlvmOp, xs: readonly Value[], ys: readonly Value[]): Out<boolean> {
-  const sorted: SortKey[] = [];
-  for (const y of ys) {
-    const k = sortKey(op, y);
-    if (!k.ok) return k;
-    sorted.push(k.value);
+  const index = new RadixIndex();
+  for (const value of ys) {
+    const key = keyOf(op, value);
+    if (!key.ok) return key;
+    index.add(key.value);
   }
-  sorted.sort(compareKeys);
-  for (const x of xs) {
-    const k = sortKey(op, x);
-    if (!k.ok) return k;
-    let [lo, hi] = [0, sorted.length];
-    for (; lo < hi; ) {
-      const mid = (lo + hi) >>> 1;
-      const c = compareKeys(sorted[mid] ?? k.value, k.value);
-      if (c < 0) lo = mid + 1;
-      else hi = mid;
-    }
-    const found = sorted[lo];
-    if (found === undefined || compareKeys(found, k.value) !== 0) return good(false);
+  for (const value of xs) {
+    const key = keyOf(op, value);
+    if (!key.ok) return key;
+    if (!index.contains(key.value).found) return good(false);
   }
   return good(true);
 }

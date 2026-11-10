@@ -196,17 +196,25 @@ object Values {
   // ---- an order for deduplicating
 
   /**
-   * A sort key for deduplicating: kinds first; scalars then compare structurally (numbers by numerator and
-   * denominator, text by UTF-16 unit, bytes bytewise), and arrays and maps by their canonical encoding, computed once.
-   * The order is total and consistent with equality, and nothing is hashed, so values a program chooses cannot be made
-   * to collide. A key's `encoding` is one whole array (bytes' own, copied once if they are a slice or a rope), so a
-   * comparison reads it in place and never copies.
+   * A typed key for deduplicating, with a comparison order retained for callers. The radix index reads text in place
+   * and other payloads from one flat byte vector. Numbers and compound values are canonically encoded once.
    */
-  final case class SortKey(rank: Int, value: CanonicalValue, encoding: ByteVector)
+  final case class SortKey(rank: Int, value: CanonicalValue, encoding: ByteVector) {
+    private[jlvm] val radix: RadixIndex.Key = value match {
+      case CNull    => RadixIndex.Key(rank, 0L)(_ => 0)
+      case CBool(b) => RadixIndex.Key(rank, 1L)(_ => if (b) 1 else 0)
+      case CText(s) =>
+        RadixIndex.Key(rank, s.length.toLong * 2L) { i =>
+          val c = s.charAt((i / 2L).toInt).toInt
+          if ((i & 1L) == 0L) c >>> 8 else c & 255
+        }
+      case _ => RadixIndex.Key(rank, encoding.size)(i => encoding(i).toInt & 255)
+    }
+  }
 
   private def unsigned(a: ByteVector, b: ByteVector): Int = java.util.Arrays.compareUnsigned(a.toArrayUnsafe, b.toArrayUnsafe)
 
-  /** The production order on [[SortKey]]s ([[Kernels.Default]]'s `values`). */
+  /** A comparison order consistent with equality; production membership uses the radix key. */
   given sortKeyOrder: Ordering[SortKey] = (a, b) =>
     if (a.rank != b.rank) Integer.compare(a.rank, b.rank)
     else
@@ -231,8 +239,8 @@ object Values {
     v match {
       case CNull        => SortKey(0, v, ByteVector.empty).asRight
       case CBool(_)     => SortKey(1, v, ByteVector.empty).asRight
-      case CInt(_)      => SortKey(2, v, ByteVector.empty).asRight
-      case CRational(_) => SortKey(3, v, ByteVector.empty).asRight
+      case CInt(_)      => encoded(2)
+      case CRational(_) => encoded(3)
       case CText(_)     => SortKey(4, v, ByteVector.empty).asRight
       // a byte string is its own key, read as one array: one longer than the ceiling (a host's lazy view) is refused
       case CBytes(b) =>

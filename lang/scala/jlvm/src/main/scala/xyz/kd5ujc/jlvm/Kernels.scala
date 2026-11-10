@@ -1,26 +1,23 @@
 package xyz.kd5ujc.jlvm
 
 import scala.annotation.tailrec
-import scala.collection.Searching
 
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
 
 /**
  * How the parser, the compiler and the evaluator order what a program chooses, and how their work is counted: binding
  * names (the `let` scope while compiling, the `$` bindings while evaluating), object keys (a map expression's fields),
- * and values (`unique`, `intersect`). Nothing a program chooses is hashed, where values made to collide could slow a
- * lookup; it is compared, through these orders and nothing else. A value is compared by its sort key
- * ([[Values.sortKey]], which encodes an array or a map once), made by `key`. `steps` is told of each expression the
- * parser, [[Program.from]] and the compiler visit. Production uses [[Kernels.Default]]; a test passes orders, a key
+ * and values (`unique`, `intersect`). Nothing a program chooses is hashed. Names use the supplied orders; values use
+ * a radix index over typed byte keys ([[Values.sortKey]], which encodes each compound value once). `steps` is told
+ * of each expression the parser, [[Program.from]] and the compiler visit. Production uses [[Kernels.Default]]; a test passes orders, a key
  * and steps that count their calls, which bounds the work on adversarial input without timing it.
  */
 private[jlvm] final case class Kernels(
-  names:  Ordering[String],
-  keys:   Ordering[String],
-  values: Ordering[Values.SortKey],
-  key:    CanonicalValue => Either[Cbor.TooLarge, Values.SortKey],
-  dedup:  Dedup,
-  steps:  Steps
+  names: Ordering[String],
+  keys:  Ordering[String],
+  key:   CanonicalValue => Either[Cbor.TooLarge, Values.SortKey],
+  dedup: Dedup,
+  steps: Steps
 )
 
 private[jlvm] object Kernels {
@@ -28,9 +25,9 @@ private[jlvm] object Kernels {
   /** Code-point order on object keys (the canonical order: UTF-8 byte order). */
   val CodePoints: Ordering[String] = (a, b) => Values.compareCodePoints(a, b)
 
-  /** UTF-16 order on names, code-point order on keys, the canonical value order, sorting, and uncounted steps. */
+  /** UTF-16 order on names, code-point order on keys, radix membership on values, and uncounted steps. */
   val Default: Kernels =
-    Kernels(Ordering.String, CodePoints, Values.sortKeyOrder, Values.sortKey, Dedup.Sorting, Steps.Uncounted)
+    Kernels(Ordering.String, CodePoints, Values.sortKey, Dedup.Radix, Steps.Uncounted)
 }
 
 /** Told of each unit of parse and compile work: an expression visited by one pass. */
@@ -49,47 +46,44 @@ private[jlvm] object Steps {
   }
 }
 
-/** Deduplication and subset tests that use only an order on their elements: never `hashCode` or `equals`. */
+/** First occurrences and subset membership, with the traversal's work available to tests. */
 private[jlvm] trait Dedup {
-
-  /** `vs` without repeats, keeping each value's first occurrence, in order. */
-  def distinct[A](vs: Vector[A])(using order: Ordering[A]): Vector[A]
-
-  /**
-   * Whether every element of `xs` is in `ys`, or the first refusal met in `xs` while reading it: `xs` is consumed only
-   * up to its first element missing from `ys`, or its first refusal.
-   */
-  def subset[E, A](xs: Iterator[Either[E, A]], ys: Vector[A])(using order: Ordering[A]): Either[E, Boolean]
+  def distinct(vs:     Vector[Values.SortKey]): (Vector[Values.SortKey], RadixIndex.Work)
+  def subset[E, A](xs: Vector[A], key: A => Either[E, Values.SortKey], ys: Vector[Values.SortKey]): Either[E, (Boolean, RadixIndex.Work)]
 }
 
 private[jlvm] object Dedup {
-
-  /** A stable sort and a scan, O(n log n) comparisons; a sort and a binary search per element, O((m + n) log n). */
-  object Sorting extends Dedup {
-
-    def distinct[A](vs: Vector[A])(using order: Ordering[A]): Vector[A] = {
-      val sorted = vs.zipWithIndex.sortBy(_._1)
-      val firsts = sorted.zip(None +: sorted.map(Option(_))).collect {
-        case ((e, i), previous) if !previous.exists(p => order.equiv(p._1, e)) => i
+  object Radix extends Dedup {
+    def distinct(vs: Vector[Values.SortKey]): (Vector[Values.SortKey], RadixIndex.Work) = {
+      val (_, reversed, work) = vs.foldLeft((RadixIndex.empty, List.empty[Values.SortKey], RadixIndex.Work.Zero)) {
+        case ((index, kept, work), value) =>
+          val next = index.added(value.radix)
+          (next.index, if (next.added) value :: kept else kept, work + next.work)
       }
-      firsts.sorted.map(vs)
+      (reversed.reverse.toVector, work)
     }
 
-    def subset[E, A](xs: Iterator[Either[E, A]], ys: Vector[A])(using order: Ordering[A]): Either[E, Boolean] = {
-      val sorted = ys.sorted
+    def subset[E, A](
+      xs:  Vector[A],
+      key: A => Either[E, Values.SortKey],
+      ys:  Vector[Values.SortKey]
+    ): Either[E, (Boolean, RadixIndex.Work)] = {
+      val (index, built) = ys.foldLeft((RadixIndex.empty, RadixIndex.Work.Zero)) {
+        case ((index, work), value) =>
+          val next = index.added(value.radix)
+          (next.index, work + next.work)
+      }
       @tailrec
-      def from(): Either[E, Boolean] =
-        if (!xs.hasNext) Right(true)
+      def from(at: Int, work: RadixIndex.Work): Either[E, (Boolean, RadixIndex.Work)] =
+        if (at == xs.size) Right((true, work))
         else
-          xs.next() match {
-            case Left(e) => Left(e)
-            case Right(x) =>
-              sorted.search(x) match {
-                case Searching.Found(_)          => from()
-                case Searching.InsertionPoint(_) => Right(false)
-              }
+          key(xs(at)) match {
+            case Left(error) => Left(error)
+            case Right(value) =>
+              val (found, looked) = index.contains(value.radix)
+              if (found) from(at + 1, work + looked) else Right((false, work + looked))
           }
-      from()
+      from(0, built)
     }
   }
 }
