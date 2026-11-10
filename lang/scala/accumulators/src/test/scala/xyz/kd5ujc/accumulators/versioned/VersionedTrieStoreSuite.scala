@@ -408,10 +408,18 @@ object VersionedTrieStoreSuite extends SimpleIOSuite with Checkers {
         )
         _ <- open(s._1)
       } yield ()
-    }.map {
-      case Left(VersionedTrieError.Store(_: xyz.kd5ujc.storage.StoreError.Corrupt)) => success
-      case other                                                                    => failure(s"expected corruption, got $other")
-    }
+    }.map(r =>
+      expect.same(
+        Left(
+          VersionedTrieError.Store(
+            xyz.kd5ujc.storage.StoreError.Corrupt(
+              xyz.kd5ujc.storage.CorruptionReason.IndexOutOfStep(1, false, false)
+            )
+          )
+        ),
+        r
+      )
+    )
   }
 
   test("the state proof at the head verifies with the trie verifier directly against the head's state root") {

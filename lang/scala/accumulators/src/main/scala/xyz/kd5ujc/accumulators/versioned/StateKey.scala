@@ -30,20 +30,6 @@ extension (e: StateKeyError) {
   }
 }
 
-object StateKeyErrors {
-
-  /** A short message for logs and store errors; the kind and the normative fields are what conformance compares. */
-  def describe(e: StateKeyError): String = e match {
-    case StateKeyError.Empty                        => "empty key"
-    case StateKeyError.TooLong(limit)               => s"longer than $limit UTF-8 bytes"
-    case StateKeyError.NotUtf8                      => "not UTF-8"
-    case StateKeyError.TooManySegments(k, limit)    => s"$k has more than $limit segments"
-    case StateKeyError.InvalidSegment(k, at)        => s"$k: segment $at does not match [a-z0-9][a-z0-9._-]*"
-    case StateKeyError.SegmentTooLong(k, at, limit) => s"$k: segment $at is longer than $limit characters"
-    case StateKeyError.NamespaceFull(ns)            => s"namespace $ns leaves no room for one more segment"
-  }
-}
-
 /**
  * A key of a versioned trie's state: `segment *("/" segment)`, each segment `[a-z0-9][a-z0-9._-]*` (docs/specs/versioned-trie.md
  * §2). Its trie key is its UTF-8 bytes, so keys order by code point and a namespace is a byte prefix.
@@ -114,7 +100,13 @@ object StateKey {
   implicit val stateKeyShow: Show[StateKey] = Show.show(_.value)
 
   implicit val stateKeyCodec: KeyCodec[StateKey] =
-    KeyCodec.instance(_.bytes, b => fromBytes(b).leftMap(e => StoreError.Encoding("state key", StateKeyErrors.describe(e))))
+    KeyCodec.instance(
+      _.bytes,
+      b =>
+        fromBytes(b).leftMap(e =>
+          StoreError.Encoding(xyz.kd5ujc.storage.StoreContext.StateKey, xyz.kd5ujc.storage.EncodingReason.StateKey(e))
+        )
+    )
 }
 
 /**

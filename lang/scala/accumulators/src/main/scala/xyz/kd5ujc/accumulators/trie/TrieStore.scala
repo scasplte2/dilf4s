@@ -148,7 +148,7 @@ object TrieStore {
         case Some(b) if b.size == 24L =>
           State(b.take(8).toLong(signed = false), b.slice(8L, 16L).toLong(signed = false), b.drop(16).toLong(signed = false), Some(b))
             .pure[F]
-        case Some(b) => failS(StoreError.Corrupt(s"trie state has ${b.size} bytes"))
+        case Some(b) => failS(StoreError.Corrupt(CorruptionReason.Width(StoredRecord.TrieState, b.size, 24)))
       }
 
     def latest: F[Version] = state.map(s => Version.unsafe(s.latest))
@@ -167,10 +167,10 @@ object TrieStore {
         case Some(b)              => digest(b).map(Some(_))
       }
 
-    private def liftC[A](e: Either[String, A]): F[A] = e.fold(m => failS[A](StoreError.Corrupt(s"node record: $m")), _.pure[F])
+    private def liftC[A](e: Either[CorruptionReason, A]): F[A] = e.fold(m => failS[A](StoreError.Corrupt(m)), _.pure[F])
 
     private def digest(b: ByteVector): F[Digest[H]] =
-      Digest.fromBytes[H](b)(using T.hasher).fold(e => failS(StoreError.Corrupt(e.toString)), _.pure[F])
+      Digest.fromBytes[H](b)(using T.hasher).fold(e => failS(StoreError.Corrupt(CorruptionReason.Hash(e))), _.pure[F])
 
     def root(version: Version): F[Digest[H]] =
       state.flatMap(s => checkReadable(s, version) >> rootHash(version.value).map(_.getOrElse(T.empty)))
@@ -192,17 +192,22 @@ object TrieStore {
     private def decodeEntry(h: Digest[H], bytes: ByteVector): F[(Node[H], Int)] = {
       val parsed: F[Node[H]] =
         liftC(
-          Cbor.decode(bytes.drop(4)).leftMap(_.toString).flatMap(xyz.kd5ujc.models.trie.TrieNode.codec.decoder.decode(_).leftMap(_.message))
+          Cbor
+            .decode(bytes.drop(4))
+            .leftMap(e => CorruptionReason.Canonical(StoreContext.TrieNode, e): CorruptionReason)
+            .flatMap(
+              xyz.kd5ujc.models.trie.TrieNode.codec.decoder.decode(_).leftMap(e => CorruptionReason.Decode(StoreContext.TrieNode, e))
+            )
         ).flatMap { w =>
           (liftT(NodeCodec.fromWire(w.s)), w.v.traverse(digest), w.l.traverse(digest), w.r.traverse(digest)).tupled.flatMap {
             case (segment, Some(v), None, None) => (Node.leaf(segment, v): Node[H]).pure[F]
             case (segment, v, l, r) if Node.validBranch(v, l.fold(0)(_ => 1) + r.fold(0)(_ => 1)) =>
               (Node.branch(segment, v, l, r): Node[H]).pure[F]
-            case _ => failS[Node[H]](StoreError.Corrupt("node violates the branch invariant"))
+            case _ => failS[Node[H]](StoreError.Corrupt(CorruptionReason.TrieBranchInvariant))
           }
         }
       parsed.flatMap { n =>
-        if (n.hash != h) failS(StoreError.Corrupt(s"node ${h.hex} hashes to ${n.hash.hex}"))
+        if (n.hash != h) failS(StoreError.Corrupt(CorruptionReason.NodeHashMismatch(h.bytes, n.hash.bytes)))
         else (n, bytes.take(4).toInt()).pure[F]
       }
     }
@@ -218,7 +223,7 @@ object TrieStore {
         case (h, None)         => RawBatch.delete(nodeKey(h)).asRight[Cbor.TooLarge]
       }
         .fold(
-          e => failS[RawBatch](StoreError.Encoding("node record", s"its encoding is over ${e.limit} bytes")),
+          e => failS[RawBatch](StoreError.Encoding(StoreContext.TrieNode, EncodingReason.EncodedSize(e))),
           batches => batches.foldLeft(RawBatch.empty)(_ ++ _).pure[F]
         )
 

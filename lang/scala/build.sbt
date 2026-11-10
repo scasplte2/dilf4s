@@ -311,6 +311,7 @@ lazy val jlvm = project.in(file("jlvm"))
 // Its public API is Java (src/main/java). The conversions from the reference's types are Scala (src/main/scala,
 // package xyz.kd5ujc.dilf4s.internal), so every match over a reference family is checked exhaustive.
 lazy val javaApi = project.in(file("java-api"))
+  .settings(commonTestSettings)
   .settings(
     name := "dilf4s-java",
     Compile / sourceDirectory := (ThisBuild / repositoryRoot).value / "lang" / "java" / "src" / "main",

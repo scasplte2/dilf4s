@@ -160,7 +160,7 @@ object VersionedStore {
       raw match {
         case None                    => 0L.pure[F]
         case Some(b) if b.size == 8L => b.toLong(signed = false).pure[F]
-        case Some(b)                 => fail(StoreError.Corrupt(s"version record has ${b.size} bytes"))
+        case Some(b)                 => fail(StoreError.Corrupt(CorruptionReason.Width(StoredRecord.Version, b.size, 8)))
       }
 
     /**
@@ -176,7 +176,7 @@ object VersionedStore {
     private def versionRecords: F[Records] =
       raw.getAll(List(latestKey, floorKey, generationKey)).flatMap {
         case List(l, f, g) => parseVersion(g).map(n => Records(l, f, g, n + 1))
-        case other         => fail(StoreError.Corrupt(s"expected 3 version records, got ${other.size}"))
+        case other         => fail(StoreError.Corrupt(CorruptionReason.VersionRecordCount(other.size, 3)))
       }
 
     def revision: F[Revision] = versionRecords.map(r => Revision(r.guards))
@@ -190,17 +190,19 @@ object VersionedStore {
       liftE(
         VersionedRecord.codec
           .encode(VersionedRecord(before, after))
-          .leftMap(e => StoreError.Corrupt(s"record: $e"))
-          .flatMap(Cbor.encode(_).leftMap(e => StoreError.Encoding("record", s"its encoding is over ${e.limit} bytes")))
+          .leftMap(e => StoreError.Corrupt(CorruptionReason.Canonical(StoreContext.VersionRecord, e)))
+          .flatMap(Cbor.encode(_).leftMap(e => StoreError.Encoding(StoreContext.VersionRecord, EncodingReason.EncodedSize(e))))
       )
 
     private def readRecord(bytes: ByteVector): F[(Option[ByteVector], Option[ByteVector])] =
       liftE(
         Cbor
           .decode(bytes)
-          .leftMap(_.toString)
-          .flatMap(VersionedRecord.codec.decoder.decode(_).leftMap(_.message))
-          .bimap(e => StoreError.Corrupt(s"record: $e"), r => (r.b, r.a))
+          .leftMap(e => StoreError.Corrupt(CorruptionReason.Canonical(StoreContext.VersionRecord, e)))
+          .flatMap(
+            VersionedRecord.codec.decoder.decode(_).leftMap(e => StoreError.Corrupt(CorruptionReason.Decode(StoreContext.VersionRecord, e)))
+          )
+          .map(r => (r.b, r.a))
       )
 
     private def decodeValue(b: Option[ByteVector]): F[Option[V]] = b.traverse(bytes => liftE(V.decode(bytes)))
