@@ -274,7 +274,7 @@ fn every_vector_program_round_trips_through_its_canonical_form() {
         assert_eq!(from_canonical(&p.canonical().unwrap()).as_ref(), Ok(&p), "{text}: from its form");
         programs += 1;
     }
-    assert_eq!(programs, 3303, "programs round-trip");
+    assert_eq!(programs, 3304, "programs round-trip");
     for row in &vectors.aliases {
         let p = decode(&hex::decode(&row.cbor).unwrap()).unwrap_or_else(|e| panic!("{}: {e}", row.alias));
         assert_eq!(hex::encode(&p.id(HashAlgorithm::Sha256).unwrap()), row.id, "{}: identity", row.alias);

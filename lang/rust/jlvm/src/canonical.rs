@@ -379,7 +379,7 @@ mod tests {
     #[test]
     fn the_reader_reads_every_form_as_the_generated_decoder_does() {
         let programs = vector_programs();
-        assert_eq!(programs.len(), 3303, "vector programs including aliases");
+        assert_eq!(programs.len(), 3304, "vector programs including aliases");
         let mut forms: Vec<Value> = programs.iter().map(|p| p.canonical().unwrap()).collect();
         for p in programs.iter().step_by(20) {
             let f = p.canonical().unwrap();
@@ -406,8 +406,8 @@ mod tests {
             assert_eq!(from_canonical(f).map_err(|e| e.kind()), reference, "{f:?}");
         }
         std::println!("{accepted} forms accepted and {refused} refused alike");
-        assert_eq!(accepted, 9008, "accepted canonical forms");
-        assert_eq!(refused, 17141, "refused canonical forms");
+        assert_eq!(accepted, 9020, "accepted canonical forms");
+        assert_eq!(refused, 17191, "refused canonical forms");
     }
 
     /// The tree is built only while it is within the size bound: a form of 2^20 shared nulls (about 2^20 in weight,

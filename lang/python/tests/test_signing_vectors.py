@@ -255,7 +255,7 @@ def test_key_derivation_refusals() -> None:
             return f"{c['check']} {c['name']}: accepted, expected {c['kind']}"
         return None if kind_of(r.error) == c["kind"] else f"{c['check']} {c['name']}: got {kind_of(r.error)}"
 
-    assert failures(rows, check) == 16
+    assert failures(rows, check) == 23
     pinned = {c["kind"] for c in rows}
     assert set(get_args(key.KeyErrorKind)) - pinned == {"InvalidPath"}, (
         "every key error kind, the paths rows pinning InvalidPath"

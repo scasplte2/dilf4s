@@ -120,7 +120,7 @@ public class JlvmVectorsTest {
   @Test
   void cases() {
     final List<Value.Map> rows = rows(vectors, "cases");
-    assertEquals(3361, rows.size(), "the cases");
+    assertEquals(3363, rows.size(), "the cases");
     assertAll(rows.stream().map(c -> () -> {
       final String name = str(c, "name");
       final Jlvm.Outcome o = run(c);

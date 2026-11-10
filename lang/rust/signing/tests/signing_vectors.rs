@@ -292,7 +292,7 @@ fn key_derivation_refusals() {
         Err(e) if e.kind() == c.kind => Ok(()),
         Err(e) => Err(format!("{:?} {}: expected {:?}, got {:?}", c.check, c.name, c.kind, e.kind())),
     });
-    assert_eq!(n, 16, "key refusal rows");
+    assert_eq!(n, 23, "key refusal rows");
 }
 
 /// The coverage gate (conformance.md section 6) for `KeyError`: every kind of the schema has a `keyRefusals` row, but

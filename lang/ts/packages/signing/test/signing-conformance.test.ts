@@ -209,7 +209,7 @@ describe("signing_v1.json", { timeout: 60_000 }, () => {
   };
 
   test("key-derivation refusals: each row's call is refused with its KeyError kind", () => {
-    expect(vectors.keyRefusals.length).toBe(16);
+    expect(vectors.keyRefusals.length).toBe(23);
     const mismatches = vectors.keyRefusals.flatMap((c) => {
       const r = keyCall(c);
       const actual = r.ok ? "accepted" : r.error.kind;

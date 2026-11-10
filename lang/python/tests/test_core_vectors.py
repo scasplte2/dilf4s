@@ -58,7 +58,7 @@ def test_json_cases() -> None:
         bad = [f"{c['json']}: {what} expected {want}, got {got}" for what, want, got in problems if want != got]
         return "; ".join(bad) or None
 
-    assert failures(V["json"], check) == 132
+    assert failures(V["json"], check) == 138
 
 
 def test_model_cases() -> None:
