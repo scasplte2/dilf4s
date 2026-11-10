@@ -85,6 +85,8 @@ jobs:
             # a JLVM in any language, what each is built on, the vectors and the harness: these run the difffuzz job,
             # and with it the Rust and TypeScript jobs that build its runners
             jlvm:
+              - 'lang/scala/storage/**'
+              - 'lang/scala/models-gen/**'
               - 'lang/scala/jlvm/**'
               - 'lang/scala/core/**'
               - 'lang/scala/numerics/**'

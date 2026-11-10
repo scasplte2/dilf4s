@@ -13,6 +13,9 @@ extern crate alloc;
 #[path = "../../core/tests/common/mod.rs"]
 mod common;
 
+#[path = "common/programs.rs"]
+mod programs;
+
 use alloc::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -160,6 +163,7 @@ fn mismatch(case: &JlvmCase, o: &Outcome) -> Option<(&'static str, String)> {
 #[test]
 fn conformance_vectors() {
     let vectors = load();
+    assert_eq!(vectors.cases.len(), 3363, "conformance corpus");
     let filter = std::env::var("JLVM_CASE").ok();
     let jlvm = Jlvm::new(Native::new().unwrap());
     let mut passed = 0usize;
@@ -185,9 +189,9 @@ fn conformance_vectors() {
         }
     }
     assert!(failures.is_empty(), "{} buckets of failures", failures.len());
-    if filter.is_none() {
-        assert_eq!(passed, vectors.cases.len());
-    }
+    let selected = vectors.cases.iter().filter(|c| filter.as_ref().is_none_or(|f| c.name.contains(f.as_str()))).count();
+    assert!(selected > 0, "JLVM_CASE matched no cases");
+    assert_eq!(passed, selected, "every selected case passed");
 }
 
 /// Whether a kind carries a normative `op` (jlvm.md section 3). Exhaustive, so a new kind must decide.
@@ -261,20 +265,16 @@ fn every_canonical_form_is_read_as_its_row_says() {
 #[test]
 fn every_vector_program_round_trips_through_its_canonical_form() {
     let vectors = load();
-    let texts = vectors.cases.iter().map(|c| c.program.as_str());
-    let aliases = vectors.aliases.iter().flat_map(|a| [a.program.as_str(), a.own.as_str()]);
-    let mut programs = 0usize;
-    for text in texts.chain(aliases) {
-        let Ok(p) = parse(text) else { continue };
+    let programs = programs::read(&vectors, |text| parse(text).map_err(|e| format!("{:?}", e.kind())));
+    for p in programs {
+        let text = format!("{p:?}");
         let bytes = p.encode().unwrap();
         let back = decode(&bytes).unwrap_or_else(|e| panic!("{text}: {e}"));
         assert_eq!(back, p, "{text}: decoded");
         assert_eq!(back.encode().unwrap(), bytes, "{text}: re-encoded");
         assert_eq!(back.id(HashAlgorithm::Sha256).unwrap(), p.id(HashAlgorithm::Sha256).unwrap(), "{text}: identity");
         assert_eq!(from_canonical(&p.canonical().unwrap()).as_ref(), Ok(&p), "{text}: from its form");
-        programs += 1;
     }
-    assert_eq!(programs, 3304, "programs round-trip");
     for row in &vectors.aliases {
         let p = decode(&hex::decode(&row.cbor).unwrap()).unwrap_or_else(|e| panic!("{}: {e}", row.alias));
         assert_eq!(hex::encode(&p.id(HashAlgorithm::Sha256).unwrap()), row.id, "{}: identity", row.alias);

@@ -9,7 +9,7 @@ import weaver.SimpleIOSuite
 
 /**
  * The gas table of docs/specs/jlvm.md §7, rendered from [[GasSchedule.V1]]: the spec holds it between two markers, and
- * [[GasTableSuite]] fails when it is stale. Regenerate with `sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.GasTableGen"`.
+ * [[GasTableSuite]] fails when it is stale. Regenerate with `tools/sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.GasTableGen"`.
  */
 object GasTable {
 
@@ -78,7 +78,7 @@ object GasTableSuite extends SimpleIOSuite {
       val table = GasTable.render(GasSchedule.V1)
       expect(
         GasTable.replaced(spec, table).contains(spec),
-        s"${GasTable.path}'s gas table is stale; regenerate with: sbt \"jlvm/Test/runMain xyz.kd5ujc.jlvm.GasTableGen\""
+        s"${GasTable.path}'s gas table is stale; regenerate with: tools/sbt \"jlvm/Test/runMain xyz.kd5ujc.jlvm.GasTableGen\""
       )
     }
   }

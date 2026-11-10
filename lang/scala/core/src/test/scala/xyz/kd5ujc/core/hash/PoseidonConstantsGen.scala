@@ -10,7 +10,7 @@ import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue}
 
 /**
  * Writes `PoseidonConstants.scala` from [[PoseidonDerivation]]. Run from the repository root:
- * `tools/sbt "core/Test/runMain xyz.kd5ujc.core.hash.PoseidonConstantsGen"`, then `sbt preparePR` to format it.
+ * `tools/sbt "core/Test/runMain xyz.kd5ujc.core.hash.PoseidonConstantsGen"`, then `tools/sbt preparePR` to format it.
  */
 object PoseidonConstantsGen extends IOApp {
 

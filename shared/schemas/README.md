@@ -9,7 +9,7 @@ models, which are committed:
 - Rust: `lang/rust/core/src/generated/` (`RustEmitter`).
 
 After changing a schema, regenerate them with
-`sbt "modelsGen/runMain xyz.kd5ujc.modelsgen.SdkMain shared/schemas lang/ts/packages/core/src/generated lang/rust/core/src/generated"`.
+`tools/sbt "modelsGen/runMain xyz.kd5ujc.modelsgen.SdkMain shared/schemas lang/ts/packages/core/src/generated lang/rust/core/src/generated"`.
 `SdkSourcesSuite` fails while the committed SDK models are stale.
 
 | Schema | Defines | Normative text |

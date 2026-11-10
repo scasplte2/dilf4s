@@ -21,6 +21,10 @@ import weaver.IOSuite
 object JlvmVectors {
 
   val path: Path = Paths.get("shared", "vectors", "jlvm_v1.json")
+  val parseRefusalsPath: Path = Paths.get("shared", "vectors", "jlvm_parse_refusals_v1.tsv")
+
+  def renderParseRefusals(in: Inputs): String =
+    in.cases.flatMap(i => Parser.parse(i.program).left.toOption.map(e => s"${i.name}\t${e.kind}\n")).mkString
 
   /**
    * `env` holds host bindings as JSON surface text, and `built` host bindings too heavy to write out, as `built-value`
@@ -207,8 +211,10 @@ object JlvmVectors {
 
 object JlvmVectorGen extends IOApp {
   def run(args: List[String]): IO[ExitCode] =
-    (Jlvm.load[IO], JlvmVectors.inputs)
-      .flatMapN((jlvm, in) => IO.blocking(Files.write(JlvmVectors.path, JlvmVectors.render(jlvm, in).getBytes(UTF_8))))
+    (Jlvm.load[IO], JlvmVectors.inputs).flatMapN { (jlvm, in) =>
+      IO.blocking(Files.write(JlvmVectors.path, JlvmVectors.render(jlvm, in).getBytes(UTF_8))) >>
+      IO.blocking(Files.write(JlvmVectors.parseRefusalsPath, JlvmVectors.renderParseRefusals(in).getBytes(UTF_8)))
+    }
       .as(ExitCode.Success)
 }
 
@@ -222,8 +228,15 @@ object JlvmVectorsSuite extends IOSuite {
       IO.blocking(new String(Files.readAllBytes(JlvmVectors.path), UTF_8)).map { committed =>
         expect(
           committed == JlvmVectors.render(jlvm, in),
-          s"${JlvmVectors.path} is stale; regenerate with: sbt \"jlvm/Test/runMain xyz.kd5ujc.jlvm.JlvmVectorGen\""
+          s"${JlvmVectors.path} is stale; regenerate with: tools/sbt \"jlvm/Test/runMain xyz.kd5ujc.jlvm.JlvmVectorGen\""
         )
+      }
+  }
+
+  test("committed program parse refusals name exactly the reference's excluded cases") {
+    case (_, in) =>
+      IO.blocking(new String(Files.readAllBytes(JlvmVectors.parseRefusalsPath), UTF_8)).map { committed =>
+        expect.same(67L, committed.linesIterator.size.toLong).and(expect.same(JlvmVectors.renderParseRefusals(in), committed))
       }
   }
 
@@ -322,7 +335,8 @@ object JlvmVectorsSuite extends IOSuite {
         val scanned = in.cases.map(i => i.name -> JlvmVectors.run(jlvm, i).result.fold(_ => (0, 0), v => scan(List(v), 0, 0)))
         val rough = scanned.collect { case (name, (_, r)) if r > 0 => name }
         val seen = scanned.map(_._2._1).sum
-        expect(seen >= 50, s"the outcomes hold $seen byte strings")
+        expect
+          .same(95, seen)
           .and(expect(rough.isEmpty, s"${rough.size} outcomes hold a rope: ${rough.take(5).mkString("; ")}"))
       }
   }

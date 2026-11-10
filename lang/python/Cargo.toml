@@ -2,7 +2,7 @@
 # maturin into the `dilf4s._native` extension of the `dilf4s` package (pyproject.toml).
 #
 # Its own workspace and lockfile, so neither lang/rust/native/Cargo.lock nor lang/rust/Cargo.lock (the SP1 guest's, whose paths fix
-# the guest's verifying key) changes. Cargo.lock started as a copy of lang/rust/native/Cargo.lock, and tests/test_lockfile.py
+# the guest's verifying key) changes. Cargo.lock started as a copy of lang/rust/native/Cargo.lock, and tests/test_api.py
 # checks every crate the two share resolves to the same version, so the bindings run the code the Rust SDK tests.
 [workspace]
 

@@ -364,13 +364,15 @@ mod tests {
         out
     }
 
+    mod programs {
+        include!("../tests/common/programs.rs");
+    }
+
     fn vector_programs() -> Vec<Program> {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../shared/vectors/jlvm_v1.json");
         let text = std::fs::read_to_string(path).unwrap();
         let v = JlvmVectors::from_value(&json::parse(&text).unwrap()).unwrap();
-        let cases = v.cases.iter().map(|c| c.program.as_str());
-        let aliases = v.aliases.iter().flat_map(|a| [a.program.as_str(), a.own.as_str()]);
-        cases.chain(aliases).filter_map(|t| crate::parse(t).ok()).collect()
+        programs::read(&v, |text| crate::parse(text).map_err(|e| alloc::format!("{:?}", e.kind())))
     }
 
     /// The reader against the reference's recursive reading through the generated decoder: on every vector program's

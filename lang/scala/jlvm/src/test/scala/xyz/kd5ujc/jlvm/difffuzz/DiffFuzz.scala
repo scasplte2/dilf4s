@@ -121,7 +121,7 @@ final case class Stats(
 )
 
 /**
- * The differential driver: `sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.difffuzz.DiffFuzz [options]"`, or
+ * The differential driver: `tools/sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.difffuzz.DiffFuzz [options]"`, or
  * `tools/difffuzz/run.sh`. It generates cases from a seed (or replays a file, or the vectors), runs every case on the
  * reference in process and on the Rust and TypeScript runners in child processes, and compares each record exactly.
  * A mismatch is shrunk, keeping the same mismatch, and written to `findings.jsonl`; the run then exits non-zero.

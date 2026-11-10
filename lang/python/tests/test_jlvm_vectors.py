@@ -23,6 +23,7 @@ from dilf4s.jlvm import (
     parse,
     parse_value,
 )
+from tests.support import VECTORS as VECTOR_DIR
 from tests.support import Json, built, err, failures, load, ok
 
 VECTORS: Final = load("jlvm_v1.json")
@@ -146,14 +147,18 @@ def test_every_canonical_form_is_read_as_its_row_says() -> None:
 
 
 def test_every_program_round_trips_through_its_canonical_form() -> None:
-    texts = [c["program"] for c in VECTORS["cases"]]
-    texts += [t for a in VECTORS["aliases"] for t in (a["program"], a["own"])]
+    expected = dict(line.split("\t") for line in (VECTOR_DIR / "jlvm_parse_refusals_v1.tsv").read_text().splitlines())
+    assert len(expected) == 67, "expected program parse refusals"
+    assert len(VECTORS["cases"]) == 3363
+    assert len(VECTORS["aliases"]) == 4
+    parsed_cases = [(c["name"], parse(c["program"])) for c in VECTORS["cases"]]
+    refused = {name: r.error.kind for name, r in parsed_cases if isinstance(r, Err)}
+    assert refused == expected, "exact program parse refusals, by case name and error kind"
+    accepted = [r.value for _, r in parsed_cases if isinstance(r, Ok)]
+    accepted += [ok(parse(t), a["alias"]) for a in VECTORS["aliases"] for t in (a["program"], a["own"])]
     programs = 0
-    for text in texts:
-        parsed = parse(text)
-        if isinstance(parsed, Err):
-            continue
-        p = parsed.value
+    for p in accepted:
+        text = repr(p)
         encoded = ok(p.encode(), text)
         back = ok(decode(encoded), text)
         assert back == p, f"{text}: decoded"

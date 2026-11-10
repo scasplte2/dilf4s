@@ -501,7 +501,7 @@ object VersionedTrieVectorsSuite extends SimpleIOSuite {
     (IO(new String(Files.readAllBytes(VersionedTrieVectors.path), UTF_8)), VersionedTrieVectors.render).mapN { (committed, rendered) =>
       expect(
         committed == rendered,
-        s"${VersionedTrieVectors.path} is stale; regenerate with: sbt \"accumulators/Test/runMain xyz.kd5ujc.accumulators.versioned.VersionedTrieVectorGen\""
+        s"${VersionedTrieVectors.path} is stale; regenerate with: tools/sbt \"accumulators/Test/runMain xyz.kd5ujc.accumulators.versioned.VersionedTrieVectorGen\""
       )
     }
   }

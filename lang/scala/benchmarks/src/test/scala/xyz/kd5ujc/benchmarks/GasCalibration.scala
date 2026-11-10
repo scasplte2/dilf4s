@@ -21,7 +21,7 @@ import scodec.bits.ByteVector
  * less a baseline that evaluates the same argument reads) and the metering shares ([[shares]]): the timed
  * denial-of-service checks, kept out of the test gate.
  *
- * `sbt "benchmarks/Test/runMain xyz.kd5ujc.benchmarks.GasCalibration"` (add `metering` for the metering charges alone).
+ * `tools/sbt "benchmarks/Test/runMain xyz.kd5ujc.benchmarks.GasCalibration"` (add `metering` for the metering charges alone).
  */
 object GasCalibration extends IOApp {
 

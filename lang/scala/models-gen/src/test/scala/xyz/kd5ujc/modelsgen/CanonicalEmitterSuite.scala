@@ -13,7 +13,7 @@ object CanonicalEmitterSuite extends FunSuite {
   private def gen(cddl:       String): Either[GenError, String] = Main.generate(Vector("t" -> cddl), "p").map(_.foldMap(_._2))
   private def violation(cddl: String): Option[UnsupportedFeature] = gen(cddl).swap.toOption.collect { case GenError.Unsupported(_, f) => f }
 
-  /** Regenerate with: sbt "modelsGen/runMain xyz.kd5ujc.modelsgen.Main shared/schemas <dir> xyz.kd5ujc.models". */
+  /** Regenerate with: tools/sbt "modelsGen/runMain xyz.kd5ujc.modelsgen.Main shared/schemas <dir> xyz.kd5ujc.models". */
   test("generated sources for shared/schemas match the reviewed golden snapshot") {
     val modules =
       List(

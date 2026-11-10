@@ -29,7 +29,7 @@ import ProofFixtures._
  * keys, how program text is read (repeated names, numbers as paths and literals, null fields, depth), and each outcome
  * an operation gives at a program's root that no other row gives. Every signature here is deterministic, so the file
  * regenerates identically:
- * `sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.OpCoverageCases"`, then `JlvmVectorGen`.
+ * `tools/sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.OpCoverageCases"`, then `JlvmVectorGen`.
  */
 object OpCoverageCases extends IOApp {
 

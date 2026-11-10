@@ -192,7 +192,7 @@ object ZkVectorsSuite extends SimpleIOSuite {
     IO.blocking(new String(Files.readAllBytes(ZkVectors.path), UTF_8)).map { committed =>
       expect(
         committed == ZkVectors.render,
-        s"${ZkVectors.path} is stale; regenerate with: sbt \"crypto/Test/runMain xyz.kd5ujc.crypto.zk.ZkVectorGen\""
+        s"${ZkVectors.path} is stale; regenerate with: tools/sbt \"crypto/Test/runMain xyz.kd5ujc.crypto.zk.ZkVectorGen\""
       )
     }
   }

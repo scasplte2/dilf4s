@@ -650,7 +650,7 @@ object CanonicalVectors {
   def render: String = VectorJson.pretty(build) + "\n"
 }
 
-/** `sbt "core/Test/runMain xyz.kd5ujc.core.vectors.CanonicalVectorGen"` regenerates the committed vectors. */
+/** `tools/sbt "core/Test/runMain xyz.kd5ujc.core.vectors.CanonicalVectorGen"` regenerates the committed vectors. */
 object CanonicalVectorGen extends IOApp {
 
   def run(args: List[String]): IO[ExitCode] =

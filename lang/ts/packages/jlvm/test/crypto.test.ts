@@ -58,34 +58,44 @@ function expected(c: Case): string {
   return `error ${o.error} op ${o.op ?? "none"} cause ${only === undefined ? "none" : `${only[0].toLowerCase()}:${String(only[1])}`}`;
 }
 
-function run(c: Case, program: string): Outcome | undefined {
-  const p = parse(program);
-  const d = parseValue(c.data);
-  if (!p.ok || !d.ok) return undefined;
+function run(c: Case, program: string): Outcome {
+  const p = expectOk(parse(program), `${c.name}: program`);
+  const d = expectOk(parseValue(c.data), `${c.name}: data`);
   const env: [string, models.jlvmVectors.BuiltValue | string][] = [...(c.env ?? []), ...(c.built ?? [])];
   const pairs = env.map(([k, v]) => [k, typeof v === "string" ? expectOk(parseValue(v), "a binding") : built(v)] as const);
-  return expectOk(evaluate(p.value, d.value, { env: expectOk(Bindings.of(pairs), "env"), gasLimit: MAX_GAS_LIMIT }), "evaluates");
+  return expectOk(evaluate(p, d, { env: expectOk(Bindings.of(pairs), "env"), gasLimit: MAX_GAS_LIMIT }), "evaluates");
 }
 
 describe("section 6 operations on containers the machine built", { timeout: 600_000 }, () => {
   it("give every reaching case's outcome", () => {
+    expect(vectors.cases).toHaveLength(3363);
+    const excluded = { refusal: 0, scope: 0, longNumber: 0 };
     let checked = 0;
     const failures: string[] = [];
     for (const c of vectors.cases) {
       const o = c.outcome;
       // a case decided by its gas limit, or a limit the rebuilding can reach first, says nothing here
-      if ("error" in o && (o.error === "OutOfGas" || o.error === "Limit" || o.error === "Malformed")) continue;
-      if (c.gasLimit !== undefined || !CONTAINERS.some((op) => c.program.includes(`"${op}"`))) continue;
+      if ("error" in o && (o.error === "OutOfGas" || o.error === "Limit" || o.error === "Malformed")) {
+        excluded.refusal++;
+        continue;
+      }
+      if (c.gasLimit !== undefined || !CONTAINERS.some((op) => c.program.includes(`"${op}"`))) {
+        excluded.scope++;
+        continue;
+      }
       // JSON.parse reads numbers as doubles: a program with a long integer is not round-tripped here
-      if (/\d{16,}/.test(c.program)) continue;
+      if (/\d{16,}/.test(c.program)) {
+        excluded.longNumber++;
+        continue;
+      }
       const original = run(c, c.program);
-      if (original === undefined || outcome(original) !== expected(c)) continue;
+      expect(outcome(original), `${c.name}: original`).toBe(expected(c));
       const again = run(c, JSON.stringify(rewrite(JSON.parse(c.program) as Json)));
-      if (again === undefined) continue;
       if (outcome(again) !== expected(c)) failures.push(`${c.name}: want ${expected(c)}, got ${outcome(again)}`);
       checked++;
     }
     expect(failures).toEqual([]);
-    expect(checked, "cases rerun on machine-built arguments").toBeGreaterThan(200);
+    expect(excluded).toEqual({ refusal: 237, scope: 2706, longNumber: 36 });
+    expect(checked, "cases rerun on machine-built arguments").toBe(384);
   });
 });

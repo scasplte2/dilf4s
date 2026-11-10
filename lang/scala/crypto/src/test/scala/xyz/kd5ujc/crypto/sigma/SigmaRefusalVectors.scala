@@ -134,7 +134,7 @@ object SigmaRefusalVectorsSuite extends SimpleIOSuite {
     (IO(new String(Files.readAllBytes(SigmaRefusalVectors.path), UTF_8)), SigmaRefusalVectors.render).mapN { (committed, rendered) =>
       expect(
         committed == rendered,
-        s"${SigmaRefusalVectors.path} is stale; regenerate with: sbt \"crypto/Test/runMain xyz.kd5ujc.crypto.sigma.SigmaRefusalVectorGen\""
+        s"${SigmaRefusalVectors.path} is stale; regenerate with: tools/sbt \"crypto/Test/runMain xyz.kd5ujc.crypto.sigma.SigmaRefusalVectorGen\""
       )
     }
   }

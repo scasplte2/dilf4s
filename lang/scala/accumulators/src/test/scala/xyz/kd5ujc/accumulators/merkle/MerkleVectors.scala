@@ -134,7 +134,7 @@ object MerkleVectorsSuite extends SimpleIOSuite {
     IO(new String(Files.readAllBytes(MerkleVectors.path), UTF_8)).map { committed =>
       expect(
         committed == MerkleVectors.render,
-        s"${MerkleVectors.path} is stale; regenerate with: sbt \"accumulators/Test/runMain xyz.kd5ujc.accumulators.merkle.MerkleVectorGen\""
+        s"${MerkleVectors.path} is stale; regenerate with: tools/sbt \"accumulators/Test/runMain xyz.kd5ujc.accumulators.merkle.MerkleVectorGen\""
       )
     }
   }

@@ -30,5 +30,5 @@
 // StateKeyError or HashError), a DecodeFailure, a TooLarge or a DivisionByZero, checkable with errors.As.
 //
 // Regenerate the generated files with
-// sbt "modelsGen/runMain xyz.kd5ujc.modelsgen.SdkMain shared/schemas lang/ts/packages/core/src/generated lang/rust/core/src/generated lang/go".
+// tools/sbt "modelsGen/runMain xyz.kd5ujc.modelsgen.SdkMain shared/schemas lang/ts/packages/core/src/generated lang/rust/core/src/generated lang/go".
 package core

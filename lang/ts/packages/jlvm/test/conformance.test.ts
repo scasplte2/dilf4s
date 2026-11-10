@@ -67,6 +67,7 @@ function actual(o: Outcome): string {
 
 describe("jlvm_v1.json", { timeout: 600_000 }, () => {
   it("every case gives the vector's outcome, gas and warnings", () => {
+    expect(vectors.cases).toHaveLength(3363);
     const filter = process.env["JLVM_CASE"];
     let passed = 0;
     const failures: string[] = [];
@@ -83,7 +84,9 @@ describe("jlvm_v1.json", { timeout: 600_000 }, () => {
     console.log(`jlvm_v1.json: ${passed.toString()} of ${vectors.cases.length.toString()} cases pass`);
     for (const f of failures.slice(0, 60)) console.log(`  ${f}`);
     expect(failures, `${failures.length.toString()} cases differ`).toEqual([]);
-    if (filter === undefined) expect(passed).toBe(vectors.cases.length);
+    const selected = vectors.cases.filter(c => filter === undefined || c.name.includes(filter)).length;
+    expect(selected, "JLVM_CASE matched no cases").not.toBe(0);
+    expect(passed).toBe(selected);
   });
 
   it("every canonical form is read as its row says, its refusals in the normative order (jlvm.md section 1)", () => {

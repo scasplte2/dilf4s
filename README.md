@@ -49,6 +49,9 @@ repository source root to Scalafix; direct Scalafix invocations need `--sourcero
 
 Conformance tests pin exact coverage and check every row's expected result or refusal. Adding vectors requires
 updating those expectations after rebasing; a merge conflict is not a reason to replace them with lower bounds.
+The canonical round-trip suites also check `shared/vectors/jlvm_parse_refusals_v1.tsv`: one case name and error kind
+per tab-separated row, naming every program that cannot be parsed. `JlvmVectorGen` regenerates it with the main
+JLVM corpus, and the Scala staleness suite checks it against the reference parser.
 
 ## Scala modules
 

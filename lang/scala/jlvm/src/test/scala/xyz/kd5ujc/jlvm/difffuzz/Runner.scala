@@ -119,7 +119,7 @@ object Evaluate {
 }
 
 /**
- * `sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.difffuzz.Runner [cases.jsonl]"`: reads transport lines (from the file, or
+ * `tools/sbt "jlvm/Test/runMain xyz.kd5ujc.jlvm.difffuzz.Runner [cases.jsonl]"`: reads transport lines (from the file, or
  * standard input), writes one record line per case to standard output as UTF-8, flushed per record, so a driver can
  * stream to it. A line it cannot read or run ends the run with a non-zero exit.
  */

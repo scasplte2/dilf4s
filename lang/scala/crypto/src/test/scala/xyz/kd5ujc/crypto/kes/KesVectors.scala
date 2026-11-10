@@ -270,7 +270,7 @@ object KesVectorsSuite extends SimpleIOSuite {
     IO(new String(Files.readAllBytes(KesVectors.path), UTF_8)).map { committed =>
       expect(
         committed == KesVectors.render,
-        s"${KesVectors.path} is stale; regenerate with: sbt \"crypto/Test/runMain xyz.kd5ujc.crypto.kes.KesVectorGen\""
+        s"${KesVectors.path} is stale; regenerate with: tools/sbt \"crypto/Test/runMain xyz.kd5ujc.crypto.kes.KesVectorGen\""
       )
     }
   }

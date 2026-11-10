@@ -6,24 +6,30 @@ import { models, Value } from "@kd5ujc/dilf4s-core";
 import { describe, expect, it } from "vitest";
 
 import { fromCanonical, parse, render } from "../src/index.js";
-import { expectErr, expectOk, hex, loadVectors } from "./vectors.js";
+import { expectErr, expectOk, hex, loadVectors, readRepoFile } from "./vectors.js";
 
 const vectors = loadVectors("jlvm_v1.json", models.jlvmVectors.JlvmVectors);
 
 describe("rendering", { timeout: 120_000 }, () => {
   it("reads back as the same program, for every program of the vectors that parses", () => {
+    expect(vectors.cases).toHaveLength(3363);
+    expect(vectors.aliases).toHaveLength(4);
+    const expected = readRepoFile("shared/vectors/jlvm_parse_refusals_v1.tsv").trimEnd().split("\n").map(line => line.split("\t"));
+    expect(expected).toHaveLength(67);
+    const parsed = vectors.cases.map(c => ({ name: c.name, result: parse(c.program) }));
+    expect(parsed.flatMap(c => c.result.ok ? [] : [[c.name, c.result.error.kind]])).toEqual(expected);
+    const accepted = parsed.flatMap(c => c.result.ok ? [{ name: c.name, program: c.result.value }] : []);
+    accepted.push(...vectors.aliases.flatMap(a => [a.program, a.own].map(text => ({ name: a.alias, program: expectOk(parse(text), a.alias) }))));
     let rendered = 0;
-    for (const text of [...vectors.cases.map((c) => c.program), ...vectors.aliases.flatMap((a) => [a.program, a.own])]) {
-      const p = parse(text);
-      if (!p.ok) continue;
-      const surface = expectOk(render(p.value), `renders ${text.slice(0, 60)}`);
+    for (const { name, program } of accepted) {
+      const surface = expectOk(render(program), `renders ${name}`);
       const back = expectOk(parse(surface), `re-parses ${surface.slice(0, 60)}`);
-      expect(hex(expectOk(back.encode(), "encodes")), text.slice(0, 80)).toBe(hex(expectOk(p.value.encode(), "encodes")));
+      expect(hex(expectOk(back.encode(), "encodes")), name).toBe(hex(expectOk(program.encode(), "encodes")));
       // and rendering is a fixed point
       expect(expectOk(render(back), "renders again")).toBe(surface);
       rendered++;
     }
-    expect(rendered).toBeGreaterThan(3000);
+    expect(rendered).toBe(3304);
   });
 
   it("writes single-key maps as object, quotes data headed by a call's name, and bytes as 0x text", () => {

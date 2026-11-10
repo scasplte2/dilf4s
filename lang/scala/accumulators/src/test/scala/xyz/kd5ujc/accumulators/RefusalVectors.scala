@@ -742,7 +742,7 @@ object RefusalVectorsSuite extends SimpleIOSuite {
     (IO.blocking(new String(Files.readAllBytes(RefusalVectors.path), UTF_8)), RefusalVectors.render).mapN { (committed, rendered) =>
       expect(
         committed == rendered,
-        s"${RefusalVectors.path} is stale; regenerate with: sbt \"accumulators/Test/runMain xyz.kd5ujc.accumulators.RefusalVectorGen\""
+        s"${RefusalVectors.path} is stale; regenerate with: tools/sbt \"accumulators/Test/runMain xyz.kd5ujc.accumulators.RefusalVectorGen\""
       )
     }
   }

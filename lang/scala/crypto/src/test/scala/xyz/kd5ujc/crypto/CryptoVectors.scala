@@ -322,7 +322,7 @@ object CryptoVectorsSuite extends SimpleIOSuite {
     (IO(new String(Files.readAllBytes(CryptoVectors.path), UTF_8)), CryptoVectors.render).mapN { (committed, rendered) =>
       expect(
         committed == rendered,
-        s"${CryptoVectors.path} is stale; regenerate with: sbt \"crypto/Test/runMain xyz.kd5ujc.crypto.CryptoVectorGen\""
+        s"${CryptoVectors.path} is stale; regenerate with: tools/sbt \"crypto/Test/runMain xyz.kd5ujc.crypto.CryptoVectorGen\""
       )
     }
   }

@@ -274,7 +274,7 @@ object TrieVectorsSuite extends SimpleIOSuite {
     IO(new String(Files.readAllBytes(TrieVectors.path), UTF_8)).map { committed =>
       expect(
         committed == TrieVectors.render,
-        s"${TrieVectors.path} is stale; regenerate with: sbt \"accumulators/Test/runMain xyz.kd5ujc.accumulators.trie.TrieVectorGen\""
+        s"${TrieVectors.path} is stale; regenerate with: tools/sbt \"accumulators/Test/runMain xyz.kd5ujc.accumulators.trie.TrieVectorGen\""
       )
     }
   }

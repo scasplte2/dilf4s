@@ -55,7 +55,7 @@ object VrfVectorsSuite extends SimpleIOSuite {
     IO(new String(Files.readAllBytes(VrfVectors.path), UTF_8)).map { committed =>
       expect(
         committed == VrfVectors.render,
-        s"${VrfVectors.path} is stale; regenerate with: sbt \"crypto/Test/runMain xyz.kd5ujc.crypto.vrf.VrfVectorGen\""
+        s"${VrfVectors.path} is stale; regenerate with: tools/sbt \"crypto/Test/runMain xyz.kd5ujc.crypto.vrf.VrfVectorGen\""
       )
     }
   }

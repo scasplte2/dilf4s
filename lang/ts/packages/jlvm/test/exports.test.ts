@@ -47,7 +47,7 @@ describe("the package's exports", () => {
   it("are frozen throughout: lists, tables, the schedule, the classes and their prototypes", () => {
     const exported: unknown[] = Object.values(jlvm);
     const objects = exported.flatMap((e): object[] => ((typeof e === "object" && e !== null) || typeof e === "function" ? reachable(e) : []));
-    expect(objects.length).toBeGreaterThan(100);
+    expect(objects.length).toBe(487);
     const mutable = objects.filter((o) => !Object.isFrozen(o));
     expect(mutable.map((o) => (Array.isArray(o) ? `array of ${o.length.toString()}` : `${Object.prototype.toString.call(o)} ${Reflect.ownKeys(o).map(String).slice(0, 4).join(",")} ${String((o as { constructor?: { name?: string } }).constructor?.name)}`))).toEqual([]);
     for (const c of [jlvm.Program, jlvm.Compiled, jlvm.Bindings]) {

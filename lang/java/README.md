@@ -102,10 +102,10 @@ Nothing is published to a remote repository. To use the jar from a Maven or Grad
 the Scala modules it depends on and the Java layer to a local Maven repository:
 
 ```
-tools/sbt "lang/scala/numerics/publishM2; lang/scala/core/publishM2; lang/scala/storage/publishM2; lang/scala/crypto/publishM2; lang/scala/accumulators/publishM2; lang/scala/jlvm/publishM2; javaApi/publishM2"
+tools/sbt "numerics/publishM2; core/publishM2; storage/publishM2; crypto/publishM2; accumulators/publishM2; jlvm/publishM2; javaApi/publishM2"
 ```
 
-(`publishLocal` writes the Ivy layout to `~/.ivy2/local` instead, for tools/sbt consumers.) The coordinates are
+(`publishLocal` writes the Ivy layout to `~/.ivy2/local` instead, for sbt consumers.) The coordinates are
 `xyz.kd5ujc:dilf4s-java:0.1.0-SNAPSHOT` (no Scala suffix); its dependencies carry `_3`.
 
 Two of its transitive dependencies, Hyperledger Besu's `gnark` and `besu-native-common`, are not on Maven Central: the

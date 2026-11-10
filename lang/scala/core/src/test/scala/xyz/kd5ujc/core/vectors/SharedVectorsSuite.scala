@@ -13,7 +13,7 @@ object SharedVectorsSuite extends SimpleIOSuite {
     IO(new String(Files.readAllBytes(CanonicalVectors.path), UTF_8)).map { committed =>
       expect(
         committed == CanonicalVectors.render,
-        s"${CanonicalVectors.path} is stale; regenerate with: sbt \"core/Test/runMain xyz.kd5ujc.core.vectors.CanonicalVectorGen\""
+        s"${CanonicalVectors.path} is stale; regenerate with: tools/sbt \"core/Test/runMain xyz.kd5ujc.core.vectors.CanonicalVectorGen\""
       )
     }
   }
