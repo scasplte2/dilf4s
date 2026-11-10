@@ -47,8 +47,8 @@ object VersionedTrie {
    * see [[valueBytes]].
    */
   def checkValue(key: StateKey, v: CanonicalValue): Either[VersionedTrieError, Unit] =
-    if (v.depth > MaxValueDepth) VersionedTrieError.TooDeep(s"the value of ${key.preview.short}", v.depth, MaxValueDepth).asLeft
-    else Either.cond(valueBytes(v) <= MaxValueBytes, (), VersionedTrieError.TooLarge(s"the value of ${key.preview.short}", MaxValueBytes))
+    if (v.depth > MaxValueDepth) VersionedTrieError.TooDeep(LimitSubject.StateValue(key.preview), v.depth, MaxValueDepth).asLeft
+    else Either.cond(valueBytes(v) <= MaxValueBytes, (), VersionedTrieError.TooLarge(LimitSubject.StateValue(key.preview), MaxValueBytes))
 
   /**
    * The length of a value's canonical CBOR, without encoding it; or, for a value whose weight is already over
@@ -75,7 +75,7 @@ object VersionedTrie {
    * ([[MaxValueBytes]]).
    */
   def valueHash[H](v: CanonicalValue)(implicit T: TrieHashing[H]): Either[VersionedTrieError, Digest[H]] =
-    ValueCommitment.source(v).bimap(e => VersionedTrieError.TooLarge("the value's commitment", e.limit), T.valueOf)
+    ValueCommitment.source(v).bimap(e => VersionedTrieError.TooLarge(LimitSubject.ValueCommitment, e.limit), T.valueOf)
 
   /**
    * The hash a trie commits for one of this store's own fixed-width byte strings: the top trie's slots (a version key

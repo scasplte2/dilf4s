@@ -462,7 +462,9 @@ object Proofs {
   )(using h: Hasher[H]): Either[VersionedTrieError, A] =
     for {
       v <- VersionKey.unsignedLong(width)
-      r <- Digest.fromBytes[H](bv(root)).leftMap(e => VersionedTrieError.Malformed(s"root: $e"): VersionedTrieError)
+      r <- Digest
+        .fromBytes[H](bv(root))
+        .leftMap(e => VersionedTrieError.Malformed(MalformedReason.Digest(e, DigestSubject.Root)): VersionedTrieError)
       p <- VersionedTrieWire.decodeProof[Long, H](proof)(using v, h)
       x <- f(v, r, p)
     } yield x
@@ -564,7 +566,10 @@ object Proofs {
           .traverse(e =>
             Digest
               .fromBytes[H](bv(e.getValue))
-              .bimap(x => VersionedTrieError.Malformed(s"a state root: $x"): VersionedTrieError, e.getKey.longValue -> _)
+              .bimap(
+                x => VersionedTrieError.Malformed(MalformedReason.Digest(x, DigestSubject.StateRoot)): VersionedTrieError,
+                e.getKey.longValue -> _
+              )
           )
           .flatMap(cs => VersionedTrieVerifier.verifyVersions[Long, H](r, p, from, upper, cs)(using v))
           .map(java.lang.Boolean.valueOf)

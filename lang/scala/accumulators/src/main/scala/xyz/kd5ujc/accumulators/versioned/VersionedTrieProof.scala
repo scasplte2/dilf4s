@@ -5,8 +5,8 @@ import cats.syntax.all._
 import xyz.kd5ujc.accumulators.ProofInput
 import xyz.kd5ujc.accumulators.trie.{TrieProof, TrieProofs}
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
-import xyz.kd5ujc.core.hash.{Digest, Hasher}
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalValue, Cbor, DecodeFailure}
+import xyz.kd5ujc.core.hash.{Digest, HashError, Hasher}
 import xyz.kd5ujc.models.{trie => WT, versioned_trie => W}
 
 import scodec.bits.ByteVector
@@ -47,9 +47,11 @@ final case class Delta[V, H](
 /** Wire forms through the codecs generated from shared/schemas/versioned-trie.cddl. */
 object VersionedTrieWire {
 
-  private def malformed(e: Any): VersionedTrieError = VersionedTrieError.Malformed(e.toString)
+  private def canonical(e: CanonicalError): VersionedTrieError = VersionedTrieError.Malformed(MalformedReason.Canonical(e))
+  private def decoded(e:   DecodeFailure): VersionedTrieError = VersionedTrieError.Malformed(MalformedReason.Decode(e))
+  private def hashed(e:    HashError): VersionedTrieError = VersionedTrieError.Malformed(MalformedReason.Digest(e))
 
-  private def digest[H: Hasher](b: ByteVector): Either[VersionedTrieError, Digest[H]] = Digest.fromBytes[H](b).leftMap(malformed)
+  private def digest[H: Hasher](b: ByteVector): Either[VersionedTrieError, Digest[H]] = Digest.fromBytes[H](b).leftMap(hashed)
 
   def head[V, H](h: Head[V, H])(implicit V: VersionKey[V]): Either[VersionedTrieError, W.VersionedTrieHead] =
     V.keyOf(h.version).map(W.VersionedTrieHead(_, h.stateRoot.bytes, h.historyRoot.bytes))
@@ -58,16 +60,16 @@ object VersionedTrieWire {
     (V.decode(w.v), digest[H](w.s), digest[H](w.h)).mapN(Head(_, _, _))
 
   private def trieProof[H](p: TrieProof[H]): Either[VersionedTrieError, WT.TrieProof] =
-    VersionedTrie.trie(TrieProofs.encode(p)).flatMap(WT.TrieProof.codec.decoder.decode(_).leftMap(malformed))
+    VersionedTrie.trie(TrieProofs.encode(p)).flatMap(WT.TrieProof.codec.decoder.decode(_).leftMap(decoded))
 
   private def fromTrieProof[H: Hasher](w: WT.TrieProof): Either[VersionedTrieError, TrieProof[H]] =
-    WT.TrieProof.codec.encode(w).leftMap(malformed).flatMap(v => VersionedTrie.trie(TrieProofs.decode[H](v)))
+    WT.TrieProof.codec.encode(w).leftMap(canonical).flatMap(v => VersionedTrie.trie(TrieProofs.decode[H](v)))
 
   /**
    * A record no verifier would decode is never produced: one heavier than `ProofInput.MaxProofWeight` is `TooLarge`
    * with that limit (docs/specs/conformance.md §5).
    */
-  private def producible(what: String)(v: CanonicalValue): Either[VersionedTrieError, CanonicalValue] =
+  private def producible(what: LimitSubject)(v: CanonicalValue): Either[VersionedTrieError, CanonicalValue] =
     Either.cond(v.weight <= ProofInput.MaxProofWeight, v, VersionedTrieError.TooLarge(what, ProofInput.MaxProofWeight))
 
   def encodeProof[V: VersionKey, H](p: VersionedTrieProof[V, H]): Either[VersionedTrieError, CanonicalValue] =
@@ -78,15 +80,19 @@ object VersionedTrieWire {
       p.history.traverse(trieProof),
       p.state.traverse(trieProof)
     ).mapN(W.VersionedTrieProof(_, _, _, _, _))
-      .flatMap(W.VersionedTrieProof.codec.encode(_).leftMap(malformed))
-      .flatMap(producible("the proof"))
+      .flatMap(W.VersionedTrieProof.codec.encode(_).leftMap(canonical))
+      .flatMap(producible(LimitSubject.Proof))
 
   /** A caller's input heavier than `ProofInput.MaxProofWeight` is `Malformed`, refused before it is decoded. */
   private def bounded(v: CanonicalValue): Either[VersionedTrieError, CanonicalValue] =
-    ProofInput.bounded(v)(VersionedTrieError.Malformed(_))
+    Either.cond(
+      v.weight <= ProofInput.MaxProofWeight,
+      v,
+      VersionedTrieError.Malformed(MalformedReason.ProofWeight(ProofInput.MaxProofWeight))
+    )
 
   def decodeProof[V: VersionKey, H: Hasher](v: CanonicalValue): Either[VersionedTrieError, VersionedTrieProof[V, H]] =
-    bounded(v).flatMap(W.VersionedTrieProof.codec.decoder.decode(_).leftMap(malformed)).flatMap { w =>
+    bounded(v).flatMap(W.VersionedTrieProof.codec.decoder.decode(_).leftMap(decoded)).flatMap { w =>
       (
         fromHead[V, H](w.head),
         fromTrieProof[H](w.top),
@@ -108,12 +114,12 @@ object VersionedTrieWire {
               d.removes.map(_.value).toVector
             )
           )
-          .leftMap(malformed)
-          .flatMap(producible("the delta"))
+          .leftMap(canonical)
+          .flatMap(producible(LimitSubject.Delta))
     }
 
   def decodeDelta[V: VersionKey, H: Hasher](v: CanonicalValue): Either[VersionedTrieError, Delta[V, H]] =
-    bounded(v).flatMap(W.VersionedTrieDelta.codec.decoder.decode(_).leftMap(malformed)).flatMap { w =>
+    bounded(v).flatMap(W.VersionedTrieDelta.codec.decoder.decode(_).leftMap(decoded)).flatMap { w =>
       def key(s: String) = StateKey.parse(s).leftMap(VersionedTrieError.Key(_))
       (
         w.parent.traverse(fromHead[V, H]),
@@ -137,18 +143,18 @@ object VersionedTrieWire {
           .map(W.VersionedTrieSnapshotHistory(_))
     }
     wire
-      .flatMap(W.VersionedTrieSnapshotChunk.codec.encode(_).leftMap(malformed))
+      .flatMap(W.VersionedTrieSnapshotChunk.codec.encode(_).leftMap(canonical))
       .flatMap(Cbor.encodeWithin(_, VersionedTrie.MaxChunkBytes).leftMap(_ => tooLargeChunk))
   }
 
-  private val tooLargeChunk: VersionedTrieError = VersionedTrieError.TooLarge("a snapshot chunk", VersionedTrie.MaxChunkBytes)
+  private val tooLargeChunk: VersionedTrieError = VersionedTrieError.TooLarge(LimitSubject.SnapshotChunk, VersionedTrie.MaxChunkBytes)
 
   /** A snapshot chunk from canonical CBOR, refused by size before it is decoded; order is the reader's to check. */
   def decodeChunk[V: VersionKey, H: Hasher](bytes: ByteVector): Either[VersionedTrieError, SnapshotChunk[V, H]] =
     for {
       _     <- Either.cond(bytes.size <= VersionedTrie.MaxChunkBytes, (), tooLargeChunk)
-      value <- Cbor.decode(bytes).leftMap(malformed)
-      wire  <- W.VersionedTrieSnapshotChunk.codec.decoder.decode(value).leftMap(malformed)
+      value <- Cbor.decode(bytes).leftMap(canonical)
+      wire  <- W.VersionedTrieSnapshotChunk.codec.decoder.decode(value).leftMap(decoded)
       chunk <- wire match {
         case W.VersionedTrieSnapshotHead(h) => fromHead[V, H](h).map(SnapshotChunk.Top[V, H](_): SnapshotChunk[V, H])
         case W.VersionedTrieSnapshotState(es) =>

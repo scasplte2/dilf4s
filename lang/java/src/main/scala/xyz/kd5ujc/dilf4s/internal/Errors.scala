@@ -296,39 +296,43 @@ object Errors {
       case xyz.kd5ujc.models.store_errors.StoreError.Corrupt(reason) => new xyz.kd5ujc.dilf4s.error.StoreError.Corrupt(reason)
     }
 
-  def versionedTrieError(e: xyz.kd5ujc.models.proofs_errors.VersionedTrieError): xyz.kd5ujc.dilf4s.error.VersionedTrieError =
+  def versionedTrieError(e: xyz.kd5ujc.accumulators.versioned.VersionedTrieError): xyz.kd5ujc.dilf4s.error.VersionedTrieError =
     e match {
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.Key(error) =>
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.Key(error) =>
         new xyz.kd5ujc.dilf4s.error.VersionedTrieError.Key(stateKeyError(error))
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.InvalidVersion(reason) =>
-        new xyz.kd5ujc.dilf4s.error.VersionedTrieError.InvalidVersion(reason)
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.Empty => new xyz.kd5ujc.dilf4s.error.VersionedTrieError.Empty()
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.VersionNotIncreasing(head, next) =>
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.InvalidVersion(reason) =>
+        new xyz.kd5ujc.dilf4s.error.VersionedTrieError.InvalidVersion(reason.message)
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.Empty => new xyz.kd5ujc.dilf4s.error.VersionedTrieError.Empty()
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.VersionNotIncreasing(head, next) =>
         new xyz.kd5ujc.dilf4s.error.VersionedTrieError.VersionNotIncreasing(head, next)
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.VersionConflict(expected, actual) =>
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.VersionConflict(expected, actual) =>
         new xyz.kd5ujc.dilf4s.error.VersionedTrieError.VersionConflict(
           expected.fold(java.util.Optional.empty[String]())(x => java.util.Optional.of(x)),
           actual.fold(java.util.Optional.empty[String]())(x => java.util.Optional.of(x))
         )
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.CommitRewrite(version) =>
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.CommitRewrite(version) =>
         new xyz.kd5ujc.dilf4s.error.VersionedTrieError.CommitRewrite(version)
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.NotRetained(version) =>
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.NotRetained(version) =>
         new xyz.kd5ujc.dilf4s.error.VersionedTrieError.NotRetained(version)
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.UnknownVersion(version) =>
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.UnknownVersion(version) =>
         new xyz.kd5ujc.dilf4s.error.VersionedTrieError.UnknownVersion(version)
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.RootMismatch(component, expected, computed) =>
-        new xyz.kd5ujc.dilf4s.error.VersionedTrieError.RootMismatch(rootComponent(component), expected, computed)
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.NotCovered(what) =>
-        new xyz.kd5ujc.dilf4s.error.VersionedTrieError.NotCovered(what)
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.Malformed(reason) =>
-        new xyz.kd5ujc.dilf4s.error.VersionedTrieError.Malformed(reason)
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.TooLarge(what, limit) =>
-        new xyz.kd5ujc.dilf4s.error.VersionedTrieError.TooLarge(what, limit)
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.TooDeep(what, depth, limit) =>
-        new xyz.kd5ujc.dilf4s.error.VersionedTrieError.TooDeep(what, depth, limit)
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.Store(error) =>
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.RootMismatch(component, expected, computed) =>
+        new xyz.kd5ujc.dilf4s.error.VersionedTrieError.RootMismatch(
+          rootComponent(component),
+          expected.fold("none")(_.toHex),
+          computed.fold("none")(_.toHex)
+        )
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.NotCovered(what) =>
+        new xyz.kd5ujc.dilf4s.error.VersionedTrieError.NotCovered(what.message)
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.Malformed(reason) =>
+        new xyz.kd5ujc.dilf4s.error.VersionedTrieError.Malformed(reason.message)
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.TooLarge(what, limit) =>
+        new xyz.kd5ujc.dilf4s.error.VersionedTrieError.TooLarge(what.message, limit)
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.TooDeep(what, depth, limit) =>
+        new xyz.kd5ujc.dilf4s.error.VersionedTrieError.TooDeep(what.message, depth, limit)
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.Store(error) =>
         new xyz.kd5ujc.dilf4s.error.VersionedTrieError.Store(storeError(error))
-      case xyz.kd5ujc.models.proofs_errors.VersionedTrieError.Trie(error) =>
+      case xyz.kd5ujc.accumulators.versioned.VersionedTrieError.Trie(error) =>
         new xyz.kd5ujc.dilf4s.error.VersionedTrieError.Trie(trieError(error))
     }
 

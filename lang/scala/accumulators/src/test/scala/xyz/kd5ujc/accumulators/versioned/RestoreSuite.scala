@@ -42,28 +42,40 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
       _      <- b._2.restoreFrom(heads.last, Stream.emits(chunks))
     } yield (a, b, heads.last)
 
-  /** Every read and proof a caller can ask of a store, each attempted, over every version and the gaps between. */
+  private final case class VersionObservation(
+    head:    Either[VersionedTrieError, Option[Head[Long, H]]],
+    version: Either[VersionedTrieError, VersionedTrieProof[Long, H]],
+    asOf:    Either[VersionedTrieError, VersionedTrieProof[Long, H]],
+    state:   Either[VersionedTrieError, VersionedTrieProof[Long, H]],
+    delta:   Either[VersionedTrieError, Delta[Long, H]],
+    values:  List[Either[VersionedTrieError, Option[CanonicalValue]]]
+  )
+
+  private final case class Observation(
+    head:       Option[Head[Long, H]],
+    entries:    List[(StateKey, CanonicalValue)],
+    headProof:  VersionedTrieProof[Long, H],
+    stateProof: VersionedTrieProof[Long, H],
+    versions:   List[VersionObservation]
+  )
+
+  /** Every read and proof, retaining typed results over every version and the gaps between. */
   private def observe(s: Store, versions: List[Long], keys: List[StateKey])(
     implicit h: Handle[IO, VersionedTrieError]
-  ): IO[List[String]] = {
+  ): IO[Observation] = {
     val probes = (0L to versions.max + 2L).toList
-    val whole = List(
-      s.head.map(_.toString),
-      s.scan().compile.toList.map(_.toString),
-      s.proveHead.map(_.toString),
-      s.proveState(StateQuery(keys, List(ns("a"), ns("b")), Nil)).map(_.toString)
-    ).sequence
-    val perVersion = probes.flatTraverse { u =>
-      List(
-        h.attempt(s.headAt(u)).map(_.toString),
-        h.attempt(s.proveVersion(u)).map(_.toString),
-        h.attempt(s.proveAsOf(u)).map(_.toString),
-        h.attempt(s.proveState(StateQuery.keys(keys*), Some(u))).map(_.toString),
-        h.attempt(s.delta(u)).map(_.toString),
-        keys.traverse(k => h.attempt(s.get(k, Some(u)))).map(_.toString)
-      ).sequence
+    val perVersion = probes.traverse { u =>
+      (
+        h.attempt(s.headAt(u)),
+        h.attempt(s.proveVersion(u)),
+        h.attempt(s.proveAsOf(u)),
+        h.attempt(s.proveState(StateQuery.keys(keys*), Some(u))),
+        h.attempt(s.delta(u)),
+        keys.traverse(k => h.attempt(s.get(k, Some(u))))
+      ).mapN(VersionObservation.apply)
     }
-    (whole, perVersion).mapN(_ ++ _)
+    (s.head, s.scan().compile.toList, s.proveHead, s.proveState(StateQuery(keys, List(ns("a"), ns("b")), Nil)), perVersion)
+      .mapN(Observation.apply)
   }
 
   private val laterGen: Gen[List[Batch[StateKey, CanonicalValue]]] = Gen.choose(0, 4).flatMap(Gen.listOfN(_, batchGen))
@@ -91,7 +103,15 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
             )
               .and(expect.same(Generations.of(atBase._1).keySet, Generations.of(atBase._2).keySet))
               .and(expect.same(seen._1, seen._2))
-              .and(expect(below.forall(b => b._1 == b._2 && b._2.left.exists(_.isInstanceOf[VersionedTrieError.NotRetained])), s"$below"))
+              .and(
+                expect.same(
+                  steps.init.lastOption.map { st =>
+                    val refused = Left(VersionedTrieError.NotRetained(versionHex(vk(st._1))))
+                    (refused, refused)
+                  },
+                  below
+                )
+              )
               .and(expect.same(headsA, headsB))
               .and(
                 expect(
@@ -172,27 +192,36 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
         val states = chunks.collect { case s: SnapshotChunk.State[Long, H] => s: SnapshotChunk[Long, H] }
         val hist = chunks.collect { case s: SnapshotChunk.History[Long, H] => s: SnapshotChunk[Long, H] }
         def readUpTo(cs: List[SnapshotChunk[Long, H]]) = cs.foldM(SnapshotReader.start(head))(_.feed(_))
-        val bad: List[(String, List[SnapshotChunk[Long, H]])] = List(
-          "another head first"  -> List(SnapshotChunk.Top(heads.head)),
-          "no head first"       -> states.take(1),
-          "keys out of order"   -> (top :: states.reverse),
-          "a repeated key"      -> (top :: states.head :: states.head :: Nil),
-          "state after history" -> (top :: hist.head :: states),
-          "a null value"        -> List(top, SnapshotChunk.State(Vector(key("a") -> CanonicalValue.CNull))),
-          "an empty chunk"      -> List(top, SnapshotChunk.State(Vector.empty)),
-          "too many entries" -> List(
+        def keyHex(k:    String) = xyz.kd5ujc.core.canonical.Preview.of(key(k).bytes.toHex)
+        val bad: List[(SnapshotRefusal, List[SnapshotChunk[Long, H]])] = List(
+          SnapshotRefusal.UntrustedHead                            -> List(SnapshotChunk.Top(heads.head)),
+          SnapshotRefusal.MissingInitialHead                       -> states.take(1),
+          SnapshotRefusal.RepeatedHead                             -> List(top, top),
+          SnapshotRefusal.KeysOutOfOrder(keyHex("c"), keyHex("b")) -> (top :: states.reverse),
+          SnapshotRefusal.KeysOutOfOrder(keyHex("a"), keyHex("a")) -> (top :: states.head :: states.head :: Nil),
+          SnapshotRefusal.StateAfterHistory                        -> (top :: hist.head :: states),
+          SnapshotRefusal.NullValue(key("a").preview) -> List(top, SnapshotChunk.State(Vector(key("a") -> CanonicalValue.CNull))),
+          SnapshotRefusal.ChunkSize(SnapshotPart.State, 0, VersionedTrie.MaxChunkEntries) -> List(top, SnapshotChunk.State(Vector.empty)),
+          SnapshotRefusal.ChunkSize(SnapshotPart.State, VersionedTrie.MaxChunkEntries + 1, VersionedTrie.MaxChunkEntries) -> List(
             top,
             SnapshotChunk.State(Vector.tabulate(VersionedTrie.MaxChunkEntries + 1)(i => key(s"k$i") -> int(i)))
           ),
-          "a version after the head" -> (top :: states ++ List(SnapshotChunk.History(Vector(3L -> head.stateRoot)))),
-          "the head with another state root" -> (top :: states ++ List(
+          SnapshotRefusal
+            .ChunkSize(SnapshotPart.History, 0, VersionedTrie.MaxChunkEntries) -> List(top, SnapshotChunk.History(Vector.empty)),
+          SnapshotRefusal.VersionAfterHead(vk(3L)) -> (top :: states ++ List(SnapshotChunk.History(Vector(3L -> head.stateRoot)))),
+          SnapshotRefusal.WrongHeadStateRoot -> (top :: states ++ List(
             SnapshotChunk.History(Vector(1L -> heads.head.stateRoot, 2L -> T.value(ByteVector(1))))
           )),
-          "a chunk after the head version" -> (chunks :+ states.head)
+          SnapshotRefusal.AfterHeadVersion -> (chunks :+ states.head)
         )
-        bad.foldMap { case (what, cs) => expect(readUpTo(cs).isLeft, what) }
+        bad.foldMap { case (reason, cs) => expect.same(Left(VersionedTrieError.Malformed(MalformedReason.Snapshot(reason))), readUpTo(cs)) }
           .and(expect(readUpTo(chunks).flatMap(_.finish).isRight, "the honest snapshot"))
-          .and(expect(readUpTo(chunks.init).flatMap(_.finish).isLeft, "a snapshot cut before the head version"))
+          .and(
+            expect.same(
+              Left(VersionedTrieError.Malformed(MalformedReason.Snapshot(SnapshotRefusal.IncompleteHistory))),
+              readUpTo(chunks.init).flatMap(_.finish)
+            )
+          )
     }
   }
 
@@ -211,7 +240,21 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
           )
         )
       } yield r
-    })(r => expect(r.left.exists(_.isInstanceOf[VersionedTrieError.Malformed]), s"$r"))
+    })(r =>
+      expect.same(
+        Left(
+          VersionedTrieError.Malformed(
+            MalformedReason.Snapshot(
+              SnapshotRefusal.KeysOutOfOrder(
+                xyz.kd5ujc.core.canonical.Preview.of(key("a").bytes.toHex),
+                xyz.kd5ujc.core.canonical.Preview.of(key("a").bytes.toHex)
+              )
+            )
+          )
+        ),
+        r
+      )
+    )
   }
 
   test("snapshot chunks round-trip through the generated codec; an oversized chunk is refused before decoding") {
@@ -228,7 +271,7 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
         .same(Right(chunks), again)
         .and(
           expect.same(
-            Left(VersionedTrieError.TooLarge("a snapshot chunk", VersionedTrie.MaxChunkBytes)),
+            Left(VersionedTrieError.TooLarge(LimitSubject.SnapshotChunk, VersionedTrie.MaxChunkBytes)),
             VersionedTrieWire.decodeChunk[Long, H](huge)
           )
         )
@@ -239,7 +282,7 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
     ok(attempt { implicit h =>
       fresh.flatMap(s => commitAll(s._2, List(1L -> Batch.put(key("a"), int(1)))) >> s._2.snapshot().compile.toList)
     }) { chunks =>
-      val historyChunk = get(chunks.collectFirst { case c: SnapshotChunk.History[Long, H] => c }.toRight("no history chunk"))
+      val historyChunk = get(chunks.collectFirst { case c: SnapshotChunk.History[Long, H] => c }.toRight(FixtureIssue.MissingHistoryChunk))
       val bytes = get(VersionedTrieWire.encodeChunk(historyChunk))
       // {"history": [{"s": h'..32..', "v": h'..8..'}]}: keys in canonical order are "s" then "v"
       val entry = bytes.drop(bytes.size - (1L + 2L + 2L + 32L + 2L + 1L + 8L))
@@ -263,7 +306,8 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
     val root = xyz.kd5ujc.core.hash.Hasher[H].digest(ByteVector.empty)
     val head = Head[Long, H](1L, root, root)
     val states = Snapshot.chunks(Snapshot(head, entries, Nil)).collect { case c: SnapshotChunk.State[Long, H] => c }
-    expect(states.size > 1, s"five 900 KiB values need more than one chunk, got ${states.size}")
+    expect
+      .same(2, states.size)
       .and(expect.same(entries, states.flatMap(_.entries)))
       .and(expect(states.forall(c => VersionedTrieWire.encodeChunk[Long, H](c).isRight), "every chunk encodes within the wire limit"))
   }
@@ -287,7 +331,7 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
             VersionedTrieWire
               .encodeChunk(c)
               .flatMap(VersionedTrieWire.decodeChunk[Long, H])
-              .leftMap(e => new IllegalStateException(e.toString))
+              .leftMap(FixtureFailure(_))
           )
         )
         _     <- b._2.restoreFrom(head, Stream.emits(copied))
@@ -295,7 +339,10 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
       } yield (copied == chunks, delta, tooDeep, preview, value)
     }) {
       case (sameChunks, delta, tooDeep, preview, value) =>
-        val refused = Left(VersionedTrieError.TooDeep("the value of deeper", VersionedTrie.MaxValueDepth + 1, VersionedTrie.MaxValueDepth))
+        val refused = Left(
+          VersionedTrieError
+            .TooDeep(LimitSubject.StateValue(key("deeper").preview), VersionedTrie.MaxValueDepth + 1, VersionedTrie.MaxValueDepth)
+        )
         val overWrapped =
           VersionedTrieWire.encodeChunk[Long, H](SnapshotChunk.State(Vector(key("x") -> nested(VersionedTrie.MaxValueDepth + 1))))
         expect
@@ -308,7 +355,9 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
               VersionedTrieWire
                 .encodeDelta(delta)
                 .map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded)
-                .flatMap(b => xyz.kd5ujc.core.canonical.Cbor.decode(b).leftMap(e => VersionedTrieError.Malformed(e.toString)))
+                .flatMap(b =>
+                  xyz.kd5ujc.core.canonical.Cbor.decode(b).leftMap(e => VersionedTrieError.Malformed(MalformedReason.Canonical(e)))
+                )
                 .flatMap(VersionedTrieWire.decodeDelta[Long, H])
             )
           )
@@ -330,9 +379,10 @@ object RestoreSuite extends SimpleIOSuite with Checkers {
     }) {
       case (over, chunks) =>
         val sizes = chunks.map(c => VersionedTrieWire.encodeChunk(c).map(_.size))
-        expect(over.left.exists(_.isInstanceOf[VersionedTrieError.TooLarge]), s"$over")
+        expect
+          .same(Left(VersionedTrieError.TooLarge(LimitSubject.StateValue(key("x").preview), VersionedTrie.MaxValueBytes)), over)
           .and(expect(sizes.forall(_.exists(_ <= VersionedTrie.MaxChunkBytes)), s"$sizes"))
-          .and(expect(chunks.count(_.isInstanceOf[SnapshotChunk.State[?, ?]]) >= 3, "nine 1 MiB values need at least three 4 MiB chunks"))
+          .and(expect.same(3, chunks.count(_.isInstanceOf[SnapshotChunk.State[?, ?]])))
     }
   }
 }

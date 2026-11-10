@@ -52,7 +52,7 @@ object GuardSuite extends SimpleIOSuite {
         s     <- open(raw)
         other <- open(base)
         _     <- commitAll(s, List(1L -> Batch.put(key("a"), int(1)), 2L -> Batch.put(key("a"), int(2))))
-        index <- IO.fromEither(Namespace("c/vidx/s").leftMap(e => new IllegalStateException(e.toString)))
+        index <- IO.fromEither(Namespace("c/vidx/s").leftMap(FixtureFailure(_)))
         // another writer commits version 3 while the rollback reads the index
         _      <- raw.beforeNextScanOf(index.prefix, other.commit(Some(2L), 3L, Batch.put(key("a"), int(3))).void)
         result <- h.attempt(s.rollback(1L))
@@ -78,7 +78,7 @@ object GuardSuite extends SimpleIOSuite {
         s     <- open(raw)
         other <- open(base)
         _     <- commitAll(s, List(1L -> Batch.put(key("a"), int(1)), 2L -> Batch.put(key("a"), int(2))))
-        index <- IO.fromEither(Namespace("c/vidx/s").leftMap(e => new IllegalStateException(e.toString)))
+        index <- IO.fromEither(Namespace("c/vidx/s").leftMap(FixtureFailure(_)))
         // between the entries and the versions, the store goes back to sequence 1 and forward to sequence 2 again
         _      <- raw.beforeNextScanOf(index.prefix, other.rollback(1L) >> other.commit(Some(1L), 5L, Batch.put(key("a"), int(5))).void)
         result <- h.attempt(s.snapshot().compile.toList)
@@ -94,7 +94,7 @@ object GuardSuite extends SimpleIOSuite {
         s     <- open(raw)
         other <- open(base)
         _     <- commitAll(s, List(1L -> Batch.put(key("a"), int(1)), 2L -> Batch.put(key("b"), int(2))))
-        log   <- IO.fromEither(Namespace("c/vals/log").leftMap(e => new IllegalStateException(e.toString)))
+        log   <- IO.fromEither(Namespace("c/vals/log").leftMap(FixtureFailure(_)))
         // the delta has read version 2's heads when version 2 is replaced by a different commit at the same sequence
         _      <- raw.beforeNextScanOf(log.prefix, other.rollback(1L) >> other.commit(Some(1L), 2L, Batch.put(key("c"), int(3))).void)
         result <- h.attempt(s.delta(2L))
@@ -110,7 +110,7 @@ object GuardSuite extends SimpleIOSuite {
         s     <- open(raw)
         other <- open(base)
         _     <- commitAll(s, List(1L -> Batch.put(key("a"), int(1)), 2L -> Batch.put(key("a"), int(2))))
-        index <- IO.fromEither(Namespace("c/vidx/s").leftMap(e => new IllegalStateException(e.toString)))
+        index <- IO.fromEither(Namespace("c/vidx/s").leftMap(FixtureFailure(_)))
         // the first index read finds sequence 2, then the rollback deletes its record before it is read
         _      <- raw.beforeNextGetOf(index.prefix, other.rollback(1L))
         result <- h.attempt(s.proveState(StateQuery.keys(key("a"))))

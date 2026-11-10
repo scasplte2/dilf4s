@@ -66,7 +66,7 @@ object VersionedTrieStoreSuite extends SimpleIOSuite with Checkers {
         val built = get(
           Trie.fromEntries[H](
             get(VersionedTrie.stateMode),
-            expected._2.toList.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v).fold(e => sys.error(e.toString), identity) }
+            expected._2.toList.map { case (k, v) => k.bytes -> get(VersionedTrie.valueHash[H](v)) }
           )
         )
         expect.same(built.nodeCount.toLong, nodes)
@@ -255,7 +255,7 @@ object VersionedTrieStoreSuite extends SimpleIOSuite with Checkers {
       case (gap, neg, first) =>
         expect
           .same(1000L, gap.version)
-          .and(expect(neg.left.exists(_.isInstanceOf[VersionedTrieError.InvalidVersion]), s"$neg"))
+          .and(expect.same(Left(VersionedTrieError.InvalidVersion(VersionRefusal.ValueRange(-1, Long.MaxValue))), neg))
           .and(expect.same(Left(VersionedTrieError.VersionConflict(Some(versionHex(vk(3L))), None)), first))
     }
   }
