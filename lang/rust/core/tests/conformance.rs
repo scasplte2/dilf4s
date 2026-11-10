@@ -121,9 +121,15 @@ fn render_rejections() {
 
 /// The budgeted calls (canonical-encoding.md sections 2 and 3): `encode_within` or `render_within` of each value at
 /// each row's limit gives the row's outcome, by kind and limit, and the row's output exactly when it is accepted.
+/// CBOR length measurement must give the exact same refusal or the accepted output's length.
 #[test]
 fn limits() {
     let (v, _, _) = vectors();
+    assert_eq!(
+        v.limits.iter().filter(|c| c.encoding == CanonicalLimitEncoding::Cbor).count(),
+        9,
+        "CBOR measurement rows"
+    );
     let n = run(&v.limits, |c| {
         let value = cbor::decode(&bytes(&c.value)).map_err(|e| format!("{}: {e}", c.name))?;
         let max = usize::try_from(c.max_bytes).map_err(|e| format!("{}: {e}", c.name))?;
@@ -132,10 +138,18 @@ fn limits() {
             limit: Some(u64::try_from(limit).unwrap_or(u64::MAX)),
         };
         let (outcome, output) = match c.encoding {
-            CanonicalLimitEncoding::Cbor => match cbor::encode_within(&value, max) {
-                Ok(b) => (CanonicalLimitOutcome::Accepted, Some(hex::encode(&b))),
-                Err(e) => (CanonicalLimitOutcome::CanonicalLimitRefusal(too_large(e.limit)), None),
-            },
+            CanonicalLimitEncoding::Cbor => {
+                let encoded = cbor::encode_within(&value, max);
+                let measured = cbor::encoded_len_within(&value, max);
+                let expected = encoded.as_ref().map(Vec::len).map_err(|e| *e);
+                if measured != expected {
+                    return Err(format!("{}: measured length expected {expected:?}, got {measured:?}", c.name));
+                }
+                match encoded {
+                    Ok(b) => (CanonicalLimitOutcome::Accepted, Some(hex::encode(&b))),
+                    Err(e) => (CanonicalLimitOutcome::CanonicalLimitRefusal(too_large(e.limit)), None),
+                }
+            }
             CanonicalLimitEncoding::Json => match json::render_within(&value, max) {
                 Ok(text) => (CanonicalLimitOutcome::Accepted, Some(text)),
                 Err(json::RenderError::TooLarge(e)) => {
