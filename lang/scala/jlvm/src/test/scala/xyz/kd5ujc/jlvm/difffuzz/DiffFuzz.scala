@@ -36,7 +36,12 @@ final case class Options(
 
 object Options {
 
-  private def num[A](name: String, v: String, f: String => Option[A]): Either[String, A] = f(v).toRight(s"$name: not a number: $v")
+  enum Error {
+    case InvalidNumber(option: String, input: String)
+    case UnknownOption(input: String)
+  }
+
+  private def num[A](name: String, v: String, f: String => Option[A]): Either[Error, A] = f(v).toRight(Error.InvalidNumber(name, v))
 
   /**
    * The file a run writes its findings to, emptied when the run starts: `findings.jsonl`, or for a replay `replayed-`
@@ -46,7 +51,7 @@ object Options {
     o.out.resolve(o.replay.fold("findings.jsonl")(r => s"replayed-${Option(r.getFileName).fold("cases")(_.toString)}"))
 
   @scala.annotation.tailrec
-  def parse(args: List[String], o: Options = Options()): Either[String, Options] = args match {
+  def parse(args: List[String], o: Options = Options()): Either[Error, Options] = args match {
     case Nil => Right(o)
     case "--seed" :: v :: rest =>
       num("--seed", v, _.toLongOption) match { case Right(s) => parse(rest, o.copy(seed = Some(s))); case Left(e) => Left(e) }
@@ -78,8 +83,21 @@ object Options {
     case "--ts" :: f :: rest        => parse(rest, o.copy(ts = Some(f)))
     case "--node" :: f :: rest      => parse(rest, o.copy(node = f))
     case "--out" :: f :: rest       => parse(rest, o.copy(out = Paths.get(f)))
-    case other :: _                 => Left(s"unknown option $other")
+    case other :: _                 => Left(Error.UnknownOption(other))
   }
+}
+
+enum Fault {
+  case Wire(cause: WireError)
+  case Evaluation(cause: Evaluate.Error)
+  case Transport(cause: Child.Error)
+  case ReferenceThrew(cause: Throwable)
+  case NameMismatch(expected: String, actual: String)
+  case MissingReply
+}
+
+object Fault {
+  final case class Failure(error: Fault) extends RuntimeException(error.toString)
 }
 
 /** Where a runner's record differs from the reference's: one of the record's fields, or the runner's own fault. */
@@ -95,8 +113,8 @@ final case class Diff(lang: String, field: Field) {
  * Every runner's reply for one case: the reference's first. `late` when the run's deadline cut a runner off before it
  * answered: such a case is neither judged nor counted, and never keeps a signature while shrinking.
  */
-final case class Replies(scala: Either[String, Record], others: Vector[(String, Either[String, Record])]) {
-  def late: Boolean = others.exists(_._2 == Left(Child.Late))
+final case class Replies(scala: Either[Fault, Record], others: Vector[(String, Either[Fault, Record])]) {
+  def late: Boolean = others.exists(_._2 == Left(Fault.Transport(Child.Error.Deadline)))
 }
 
 /** A case's outcome at its root operation, for the coverage table. */
@@ -130,7 +148,7 @@ object DiffFuzz extends IOApp {
 
   private def say(s: String): IO[Unit] = IO.blocking(System.out.println(s))
 
-  private def compare(lang: String, ref: Either[String, Record], other: Either[String, Record]): Set[Diff] =
+  private def compare(lang: String, ref: Either[Fault, Record], other: Either[Fault, Record]): Set[Diff] =
     (ref, other) match {
       case (Left(_), _) => Set(Diff("scala", Field.Fault))
       case (_, Left(_)) => Set(Diff(lang, Field.Fault))
@@ -153,22 +171,24 @@ object DiffFuzz extends IOApp {
 
     def message(c: FuzzCase): Option[String] = Evaluate.message(jlvm, c)
 
-    def invariant(c: FuzzCase, ref: Either[String, Record]): Set[Diff] =
-      if (ref.forall(Evaluate.metered(reference, c, _))) Set.empty else Set(Diff("scala", Field.Invariant))
+    def invariant(c: FuzzCase, ref: Either[Fault, Record]): Set[Diff] =
+      ref.flatMap(Evaluate.metered(attempt, c, _)) match {
+        case Left(_)      => Set(Diff("scala", Field.Fault))
+        case Right(true)  => Set.empty
+        case Right(false) => Set(Diff("scala", Field.Invariant))
+      }
 
     /** Every difference: between the runners, and of the reference from its own rules. */
     def diffs(c: FuzzCase, r: Replies): Set[Diff] = signature(r) ++ invariant(c, r.scala)
 
     /** The reference's record, or its fault: a case it cannot run, or an exception, which would be a bug of its own. */
-    def attempt(c: FuzzCase): Either[String, Record] =
-      Either.catchNonFatal(Evaluate.record(jlvm, c)).leftMap(e => s"the reference threw ${e.getClass.getName}").flatten
+    def attempt(c: FuzzCase): Either[Fault, Record] =
+      Either.catchNonFatal(Evaluate.record(jlvm, c)).leftMap(Fault.ReferenceThrew(_)).flatMap(_.leftMap(Fault.Evaluation(_)))
 
-    /** [[attempt]], a fault as a record that matches no runner's. */
-    def reference(c: FuzzCase): Record =
-      attempt(c).fold(e => Record(c.name, None, Record.Outcome.Error(s"fault: $e", None, None), None, 0L, Vector.empty), identity)
-
-    private def parsed(c: FuzzCase, reply: Either[String, String]): Either[String, Record] =
-      reply.flatMap(Record.fromLine).flatMap(r => Either.cond(r.name == c.name, r, s"a record for ${r.name}, not ${c.name}"))
+    private def parsed(c: FuzzCase, reply: Either[Fault, String]): Either[Fault, Record] =
+      reply
+        .flatMap(Record.fromLine(_).leftMap(Fault.Wire(_)))
+        .flatMap(r => Either.cond(r.name == c.name, r, Fault.NameMismatch(c.name, r.name)))
 
     private def split[A](xs: Vector[A], n: Int): Vector[Vector[A]] = {
       val size = (xs.size + n - 1) / n.max(1)
@@ -187,7 +207,12 @@ object DiffFuzz extends IOApp {
       }
       (ref, others).parMapN { (rs, os) =>
         cases.indices.toVector.map(i =>
-          Replies(rs(i), os.map { case (lang, xs) => lang -> parsed(cases(i), xs.lift(i).toRight("no reply").flatten) })
+          Replies(
+            rs(i),
+            os.map {
+              case (lang, xs) => lang -> parsed(cases(i), xs.lift(i).toRight(Fault.MissingReply).flatMap(_.leftMap(Fault.Transport(_))))
+            }
+          )
         )
       }
     }
@@ -221,7 +246,7 @@ object DiffFuzz extends IOApp {
       case _                  => None
     })
 
-  private def count(s: Stats, g: Generated, r: Either[String, Record]): Stats = {
+  private def count(s: Stats, g: Generated, r: Either[Fault, Record]): Stats = {
     val rec = r.toOption
     val kind = rec.map(_.outcome).fold("fault") {
       case Record.Outcome.Value(_)       => "value"
@@ -332,12 +357,12 @@ object DiffFuzz extends IOApp {
       start = reprinted.filter(_ => asTree).getOrElse(c)
       small   <- step(start, asTree, budget)
       replies <- runners.batch(Vector(small), deadline).map(_.headOption)
-    } yield small -> replies.getOrElse(Replies(Left("lost"), Vector.empty))
+    } yield small -> replies.getOrElse(Replies(Left(Fault.MissingReply), Vector.empty))
   }
 
   // ─── output ───
 
-  private def recordJson(r: Either[String, Record]): Json = r.fold(e => Json.obj("fault" -> e.asJson), Record.json)
+  private def recordJson(r: Either[Fault, Record]): Json = r.fold(e => Json.obj("fault" -> e.toString.asJson), Record.json)
 
   /** A finding's line: `stage` is `found` for the case as generated (written before shrinking starts), then `shrunk`. */
   private def findingJson(f: Finding, stage: String): Json =
@@ -360,7 +385,7 @@ object DiffFuzz extends IOApp {
 
   // ─── a batch, its findings, and the run ───
 
-  private def judge(
+  private[difffuzz] def judge(
     o:        Options,
     runners:  Runners,
     deadline: FiniteDuration,
@@ -399,7 +424,7 @@ object DiffFuzz extends IOApp {
           // the case as generated is saved first, so a run cut short while shrinking still keeps it
           val saved = append(Options.findings(o), findingJson(found, "found").noSpaces)
           val shrunk =
-            if (seen >= o.perSignature || o.shrinkBudget <= 0) say(label).as(found)
+            if (g.referenceFault.nonEmpty || seen >= o.perSignature || o.shrinkBudget <= 0) say(label).as(found)
             else
               shrink(runners, o.shrinkBudget, deadline, g.c, sig).flatMap {
                 case (small, replies) =>
@@ -427,6 +452,7 @@ object DiffFuzz extends IOApp {
           idx.traverse(i => IO(gen(seed, i))).flatMap { gs =>
             runners
               .batch(gs.map(_.c), deadline(o, started))
+              .map(rs => gs.zip(rs).map { case (g, r) => g.replies(r) })
               .flatTap { rs =>
                 // one case alone (`--case`): the case and every runner's record
                 o.only.fold(IO.unit) { _ =>
@@ -493,11 +519,11 @@ object DiffFuzz extends IOApp {
         .toOption
         .flatMap(_.hcursor.downField("cases").values)
         .fold {
-          text.linesIterator.filter(_.trim.nonEmpty).toVector.traverse(l => io.circe.parser.parse(l).leftMap(_.message))
+          text.linesIterator.filter(_.trim.nonEmpty).toVector.traverse(l => io.circe.parser.parse(l).leftMap(WireError.Json(_)))
         }(xs => Right(xs.toVector))
       rows
         .flatMap(_.traverse(j => j.hcursor.downField("shrunk").success.fold(FuzzCase.fromRow(j.hcursor))(FuzzCase.fromRow)))
-        .leftMap(new IllegalArgumentException(_))
+        .leftMap(WireError.Failure(_))
         .liftTo[IO]
         .flatMap { cases =>
           val gs = cases.map(Generated(_, "replay", false))
@@ -531,7 +557,7 @@ object DiffFuzz extends IOApp {
                 case (_, Some(p)) => replay(o, rs, p)
                 case (false, None) =>
                   Corpus.load.flatMap { corpus =>
-                    val gen = new Generator(corpus, rs.reference, o.source)
+                    val gen = new Generator(corpus, rs.attempt, o.source)
                     o.source.filterNot(gen.names.contains).fold(campaign(o, rs, gen, seed)) { s =>
                       IO.raiseError(new IllegalArgumentException(s"--source $s: one of ${gen.names.mkString(", ")}"))
                     }

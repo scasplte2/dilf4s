@@ -20,6 +20,11 @@ import xyz.kd5ujc.jlvm._
  */
 object Evaluate {
 
+  enum Error {
+    case ResultEncoding(cause: Cbor.TooLarge)
+    case Binding(name: String, cause: BuiltValues.ReadError)
+  }
+
   private def error(e: JlvmError): Record.Outcome =
     Record.Outcome.Error(
       e.kind,
@@ -29,14 +34,18 @@ object Evaluate {
       }
     )
 
-  private def value(v: CanonicalValue): Either[String, Record.Outcome] =
-    Cbor.encode(v).bimap(e => s"a result with no encoding: $e", b => Record.Outcome.Value(b.toHex))
+  private def value(v: CanonicalValue): Either[Error, Record.Outcome] =
+    Cbor.encode(v).bimap(Error.ResultEncoding(_), b => Record.Outcome.Value(b.toHex))
 
   /** A recipe that does not build is a broken case file, never an outcome: `Left`, as a runner fault. */
-  private def built(name: String, recipe: io.circe.Json): Either[String, (String, CanonicalValue)] =
-    CanonicalCirce.fromCirce(recipe).leftMap(_.toString).flatMap(BuiltValues.built).bimap(e => s"binding $name: $e", name -> _)
+  private def built(name: String, recipe: io.circe.Json): Either[Error, (String, CanonicalValue)] =
+    CanonicalCirce
+      .fromCirce(recipe)
+      .leftMap(BuiltValues.ReadError.Canonical(_))
+      .flatMap(BuiltValues.built)
+      .bimap(Error.Binding(name, _), name -> _)
 
-  def record(jlvm: Jlvm, c: FuzzCase): Either[String, Record] = {
+  def record(jlvm: Jlvm, c: FuzzCase): Either[Error, Record] = {
     val failed = (program: Option[String], e: JlvmError) => Record(c.name, program, error(e), None, 0L, Vector.empty)
     val parsed = c.source match {
       case FuzzCase.Source.Surface(text) => Parser.parse(text)
@@ -45,7 +54,9 @@ object Evaluate {
     parsed.fold(
       e => Right(failed(None, e)),
       program => {
-        val form = Parser.encode(program).toOption.map(_.toHex)
+        val encoded = Parser.encode(program)
+        // The wire record's identity is optional; an encoding refusal does not prevent evaluation.
+        val form = encoded.toOption.map(_.toHex)
         val inputs = (JsonSurface.parse(c.data), c.env.traverse { case (k, v) => JsonSurface.parse(v).map(k -> _) }).tupled
         inputs.fold(
           e => Right(failed(form, e)),
@@ -101,7 +112,7 @@ object Evaluate {
    * limit; otherwise the gas used is within it; and below the default limit, the default gives the same record, or
    * runs past the limit if this one ran out. A limit at the exact cost or one below it is where these are sharpest.
    */
-  def metered(reference: FuzzCase => Record, c: FuzzCase, r: Record): Boolean = {
+  def metered(reference: FuzzCase => Either[Fault, Record], c: FuzzCase, r: Record): Either[Fault, Boolean] = {
     val default = GasLimit.Default.amount.value
     val limit = c.gasLimit.getOrElse(default)
     val starved = r.outcome match {
@@ -109,13 +120,14 @@ object Evaluate {
       case _                                            => false
     }
     lazy val free = reference(c.copy(gasLimit = None))
-    if (starved) r.gasUsed == limit && r.available.contains(limit) && (limit >= default || free.gasUsed > limit)
-    else r.gasUsed <= limit && r.available.isEmpty && (limit >= default || free.copy(name = r.name) == r)
+    val local = if (starved) r.gasUsed == limit && r.available.contains(limit) else r.gasUsed <= limit && r.available.isEmpty
+    if (!local || limit >= default) Right(local)
+    else free.map(f => if (starved) f.gasUsed > limit else f.copy(name = r.name) == r)
   }
 
   /** One transport line to one record line; a line that cannot be read or run is a runner fault, `Left`. */
-  def line(jlvm: Jlvm, l: String): Either[String, String] =
-    FuzzCase.fromTransport(l).flatMap(record(jlvm, _)).map(r => Record.json(r).noSpaces)
+  def line(jlvm: Jlvm, l: String): Either[Fault, String] =
+    FuzzCase.fromTransport(l).leftMap(Fault.Wire(_)).flatMap(record(jlvm, _).leftMap(Fault.Evaluation(_))).map(r => Record.json(r).noSpaces)
 }
 
 /**
