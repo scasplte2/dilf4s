@@ -429,14 +429,14 @@ object PureOps {
       case (a, b) =>
         (arr(op, a), arr(op, b)).tupled.flatMap { (xs, ys) =>
           ys.traverse(keyOf(op, kernels))
-            .flatMap(kernels.dedup.subset(xs.iterator.map(keyOf(op, kernels)), _)(using kernels.values))
-            .map(bool)
+            .flatMap(kernels.dedup.subset(xs, keyOf(op, kernels), _))
+            .map { case (found, _) => bool(found) }
         }
     }
 
-  /** `vs` without repeats, keeping each value's first occurrence, in order, compared in the canonical value order. */
+  /** `vs` without repeats, keeping each value's first occurrence, in order, indexed by typed byte keys. */
   private def distinct(op: Op, vs: Vector[CanonicalValue], kernels: Kernels): Either[JlvmError, Vector[CanonicalValue]] =
-    vs.traverse(keyOf(op, kernels)).map(keys => kernels.dedup.distinct(keys)(using kernels.values).map(_.value))
+    vs.traverse(keyOf(op, kernels)).map(keys => kernels.dedup.distinct(keys)._1.map(_.value))
 
   /** A value's sort key; an encoding past the JVM's largest array is a [[JlvmError.Limit]] (`Values.sortKey`). */
   private def keyOf(op: Op, kernels: Kernels)(v: CanonicalValue): Either[JlvmError, Values.SortKey] =

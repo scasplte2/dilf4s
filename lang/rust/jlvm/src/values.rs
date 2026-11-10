@@ -310,11 +310,8 @@ pub(crate) fn contains_slice(haystack: &[u8], needle: &[u8]) -> bool {
     false
 }
 
-// ---- an order for deduplicating
+// ---- typed byte keys for deduplicating
 
-/// A sort key for deduplicating: kinds first; scalars then compare structurally, and arrays and maps by their canonical
-/// encoding, computed once. Total and consistent with equality; nothing is hashed, so values a program chooses cannot
-/// be made to collide.
 /// An upper bound on a canonical encoding's bytes per unit of the value's weight: a head is at most 9 bytes for a node
 /// of weight at least 1, a text or byte string adds its length (which its weight counts), and a number of `l` whole
 /// limbs takes at most `8 (l + 1)` bytes and a tag besides, for weight at least `1 + l`.
@@ -324,13 +321,13 @@ const ENCODING_PER_WEIGHT: u64 = 32;
 /// largest array). A longer key is a `Limit` on every backend (docs/specs/jlvm.md section 7), never an allocation.
 const MAX_KEY_BYTES: u64 = (1 << 31) - 9;
 
-struct SortKey<'v> {
+struct EqualityKey<'v> {
     rank: u8,
     value: &'v Value,
     encoding: Vec<u8>,
 }
 
-impl<'v> SortKey<'v> {
+impl<'v> EqualityKey<'v> {
     /// A collection's encoding is budgeted by its weight, which the operation has paid for: no encoding is longer than
     /// [`ENCODING_PER_WEIGHT`] bytes per unit of weight, so that budget only bounds the walk locally and is never hit.
     /// It is capped at [`MAX_KEY_BYTES`], as the reference caps it: a value heavier than the cap is refused from its
@@ -344,8 +341,8 @@ impl<'v> SortKey<'v> {
         let (rank, encoding) = match value {
             Value::Null => (0, Vec::new()),
             Value::Bool(_) => (1, Vec::new()),
-            Value::Int(_) => (2, Vec::new()),
-            Value::Rational(_) => (3, Vec::new()),
+            Value::Int(_) => (2, encoded(value)?),
+            Value::Rational(_) => (3, encoded(value)?),
             Value::Text(_) => (4, Vec::new()),
             // a byte string is its own key: one past the cap is refused, as the reference refuses it
             Value::Bytes(b) if u64::try_from(b.len()).map_or(true, |n| n > MAX_KEY_BYTES) => {
@@ -360,55 +357,72 @@ impl<'v> SortKey<'v> {
         };
         Ok(Self { rank, value, encoding })
     }
-
-    fn compare(&self, other: &Self) -> Ordering {
-        self.rank.cmp(&other.rank).then_with(|| match (self.value, other.value) {
-            (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
-            (Value::Int(x), Value::Int(y)) => x.cmp(y),
-            (Value::Rational(x), Value::Rational(y)) => {
-                x.numerator().cmp(y.numerator()).then_with(|| x.denominator().cmp(y.denominator()))
-            }
-            (Value::Text(x), Value::Text(y)) => x.cmp(y),
-            (Value::Bytes(x), Value::Bytes(y)) => x.cmp(y),
-            _ => self.encoding.cmp(&other.encoding),
-        })
-    }
 }
 
-/// `vs` without repeats, keeping each value's first occurrence, in order: a stable sort and a scan, O(n log n).
-pub(crate) fn distinct(op: Op, vs: Vec<Value>) -> Result<Vec<Value>, JlvmError> {
-    let mut keyed: Vec<(SortKey<'_>, usize)> = vs
-        .iter()
-        .map(|v| SortKey::of(op, v))
-        .zip(0usize..)
-        .map(|(k, i)| k.map(|k| (k, i)))
-        .collect::<Result<_, _>>()?;
-    keyed.sort_by(|a, b| a.0.compare(&b.0));
-    let mut firsts: Vec<usize> = Vec::new();
-    let mut previous: Option<&SortKey<'_>> = None;
-    for (key, i) in &keyed {
-        if previous.is_none_or(|p| p.compare(key) != Ordering::Equal) {
-            firsts.push(*i);
+impl EqualityKey<'_> {
+    fn payload(&self) -> &[u8] {
+        match self.value {
+            Value::Text(s) => s.as_bytes(),
+            Value::Bytes(b) => b,
+            _ => &self.encoding,
         }
-        previous = Some(key);
     }
-    firsts.sort_unstable();
-    drop(keyed);
-    let mut keep = firsts.into_iter().peekable();
-    Ok(vs.into_iter().zip(0usize..).filter(|(_, i)| keep.next_if_eq(i).is_some()).map(|(v, _)| v).collect())
+
+    fn payload_len(&self) -> usize {
+        if matches!(self.value, Value::Bool(_)) { 1 } else { self.payload().len() }
+    }
 }
 
-/// Whether every element of `xs` is in `ys`: a binary search of `ys` in that order, O((m + n) log n).
+impl crate::radix::Key for EqualityKey<'_> {
+    fn len(&self) -> usize {
+        self.payload_len().saturating_add(9)
+    }
+
+    fn byte(&self, index: usize) -> u8 {
+        if index < 8 {
+            let length = u64::try_from(self.payload_len()).unwrap_or(u64::MAX);
+            length.to_be_bytes().get(index).copied().unwrap_or(0)
+        } else if index == 8 {
+            self.rank
+        } else if let Value::Bool(value) = self.value {
+            u8::from(*value)
+        } else {
+            self.payload().get(index.saturating_sub(9)).copied().unwrap_or(0)
+        }
+    }
+}
+
+fn invalid_radix(_: crate::radix::InvalidIndex) -> JlvmError {
+    JlvmError::limit("invalid internal radix index")
+}
+
+/// First occurrences, in input order, with work linear in the typed keys' total length.
+pub(crate) fn distinct(op: Op, vs: Vec<Value>) -> Result<Vec<Value>, JlvmError> {
+    let keyed: Vec<EqualityKey<'_>> = vs.iter().map(|v| EqualityKey::of(op, v)).collect::<Result<_, _>>()?;
+    let mut index = crate::radix::Index::new();
+    let mut firsts = Vec::new();
+    for key in &keyed {
+        firsts.push(index.add(key).map_err(invalid_radix)?.0);
+    }
+    drop(index);
+    drop(keyed);
+    Ok(vs.into_iter().zip(firsts).filter_map(|(v, first)| first.then_some(v)).collect())
+}
+
+/// Builds all of `ys` before probing `xs`, stopping at its first absent value or refusal.
 pub(crate) fn subset(op: Op, xs: &[Value], ys: &[Value]) -> Result<bool, JlvmError> {
-    let mut sorted: Vec<SortKey<'_>> = ys.iter().map(|y| SortKey::of(op, y)).collect::<Result<_, _>>()?;
-    sorted.sort_by(SortKey::compare);
-    xs.iter().try_fold(true, |all, x| {
-        if !all {
+    let keyed: Vec<EqualityKey<'_>> = ys.iter().map(|y| EqualityKey::of(op, y)).collect::<Result<_, _>>()?;
+    let mut index = crate::radix::Index::new();
+    for key in &keyed {
+        index.add(key).map_err(invalid_radix)?;
+    }
+    for x in xs {
+        let key = EqualityKey::of(op, x)?;
+        if !index.contains(&key).map_err(invalid_radix)?.0 {
             return Ok(false);
         }
-        let k = SortKey::of(op, x)?;
-        Ok(sorted.binary_search_by(|y| y.compare(&k)).is_ok())
-    })
+    }
+    Ok(true)
 }
 
 // ---- the JSON surface's bytes

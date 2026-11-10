@@ -35,6 +35,15 @@ const colliding = (k: number): string[] => combinations(k, "Aa", "BB");
 const control = (k: number): string[] => combinations(k, "Aa", "Ac");
 
 describe("metering", { timeout: 120_000 }, () => {
+  it("production dedup keys preserve unsigned bytes, Unicode and first occurrences", () => {
+    const values = [json('"0x00"'), json('"0x7f"'), json('"0x80"'), json('"0xff"'), t("\u0000"), t("\u00ff"), t("\u0100"), t("\u{10000}")];
+    const data = obj([["xs", arr([...values, ...[...values].reverse()])], ["ys", arr(values)]]);
+    expect(evaluated('{"unique":{"var":"xs"}}', data).result).toEqual({ ok: true, value: arr(values) });
+    expect(evaluated('{"intersect":[{"var":"xs"},{"var":"ys"}]}', data).result).toEqual({ ok: true, value: json("true") });
+    expect(evaluated('{"intersect":[["0x00"],["0x80"]]}').result).toEqual({ ok: true, value: json("false") });
+    expect(evaluated('{"intersect":[["ÿ"],["Ā"]]}').result).toEqual({ ok: true, value: json("false") });
+  });
+
   it("join charges its output before building it", () => {
     const p = '{"join": [{"var": "xs"}, {"var": "sep"}]}';
     const fits = evaluated(p, obj([["xs", arr(repeat(Value.null, 1000))], ["sep", t("x".repeat(1000))]]));
