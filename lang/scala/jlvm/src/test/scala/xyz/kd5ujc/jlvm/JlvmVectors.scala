@@ -320,7 +320,13 @@ object JlvmVectorsSuite extends IOSuite {
     expected.productIterator
       .zip(actual.productIterator)
       .foldLeft(
-        expect.same(expected.getClass, actual.getClass).and(expect.same(expected.productArity, actual.productArity))
+        expect
+          .same(expected.getClass, actual.getClass)
+          .and(expect.same(expected.productArity, actual.productArity))
+          .and((expected, actual) match {
+            case (left: scala.reflect.Enum, right: scala.reflect.Enum) => expect.same(left.ordinal, right.ordinal)
+            case _                                                     => success
+          })
       ) { case (acc, (left, right)) => acc.and(sameObservedValue(left, right)) }
 
   private final case class ObservedFailure(width: Long) extends RuntimeException
@@ -348,7 +354,7 @@ object JlvmVectorsSuite extends IOSuite {
   test("observed-value comparison checks exact domain payloads and foreign diagnostics") { _ =>
     IO {
       import xyz.kd5ujc.crypto.signing.CryptoError
-      import CryptoError.{EncodingReason, Operation, Subject}
+      import CryptoError.{DecodeFailure, EncodingReason, KeyReason, Operation, Scheme, Subject}
       val expected = Left(CryptoError.BackendFailure(Operation.Verify, new IllegalArgumentException("foreign diagnostic")))
       val repeated = Left(CryptoError.BackendFailure(Operation.Verify, new IllegalArgumentException("foreign diagnostic")))
       val changedOperation = Left(CryptoError.BackendFailure(Operation.SignSchnorr, new IllegalArgumentException("foreign diagnostic")))
@@ -370,6 +376,16 @@ object JlvmVectorsSuite extends IOSuite {
         .and(expect.same(false, sameObservedValue(expected, changedSuppressed).run.isValid))
         .and(expect.same(false, sameObservedValue(ObservedFailure(1), ObservedFailure(2)).run.isValid))
         .and(expect.same(false, sameObservedValue(width, otherWidth).run.isValid))
+        .and(expect.same(false, sameObservedValue(EncodingReason.OutsideG2, EncodingReason.EmptyAggregate).run.isValid))
+        .and(
+          expect.same(
+            false,
+            sameObservedValue(
+              CryptoError.InvalidKey(KeyReason.Decode(Scheme.Ristretto255, DecodeFailure.Identity)),
+              CryptoError.InvalidKey(KeyReason.Decode(Scheme.Ristretto255, DecodeFailure.ZeroScalar))
+            ).run.isValid
+          )
+        )
         .and(expect.same(false, sameObservedValue(Vector(width), Vector(width, width)).run.isValid))
         .and(
           expect
