@@ -239,7 +239,7 @@ Its `required` is informative: it is more than `available`, but an implementatio
 the sum is past what is left (a spread's per-element sizing, §7), so two conforming implementations can report
 different values.
 
-The errors are generated from `shared/schemas/jlvm-errors.cddl` in every language, and `op` is typed: an operation
+The protocol kinds and sites are generated from `shared/schemas/jlvm-errors.cddl`. Scala uses native error and cause ADTs with structured refusal payloads; its diagnostic messages are rendered at presentation boundaries. The other implementations retain their generated error models. `op` is typed: an operation
 of the closed list in `jlvm.cddl` (below), or `var`. A `Crypto` error also carries, as its **`cause`**, the typed
 refusal of the cryptographic family the operation called (`jlvm-crypto-cause`): a signature scheme's `CryptoError`
 (`Signing`), a `SigmaError`, a BN254 `ZkError`, a `Groth16Error`, a `VrfError`, a `HashError` (a root or a Merkle

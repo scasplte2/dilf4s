@@ -7,6 +7,7 @@ import scala.collection.immutable.TreeMap
 
 import xyz.kd5ujc.core.canonical.{CanonicalEntries, CanonicalError, CanonicalJson, CanonicalValue, Cbor, Preview}
 import xyz.kd5ujc.core.hash.{Digest, DomainTag, Hasher, TaggedHash}
+import xyz.kd5ujc.jlvm.JlvmError._
 import xyz.kd5ujc.jlvm.SurfaceTree.{Kind, Source}
 import xyz.kd5ujc.models.{jlvm => W}
 
@@ -48,19 +49,12 @@ object Parser {
    * Names that are not operations although they read like one, each with what to write instead: the parse error
    * names it.
    */
-  val Removed: scala.collection.immutable.Map[String, String] = scala.collection.immutable.Map(
-    "prove_dlog_verify"    -> "use a one-leaf sigma_verify over {\"type\": \"dlog\"} (docs/specs/sigma.md)",
-    "prove_dhtuple_verify" -> "use a one-leaf sigma_verify over {\"type\": \"dhtuple\"} (docs/specs/sigma.md)",
-    "mpt_verify"           -> "use trie_verify (docs/specs/trie.md)",
-    "mpt_prefix_verify"    -> "use trie_prefix_verify (docs/specs/trie.md)",
-    "smt_verify"           -> "use trie_verify (docs/specs/trie.md)",
-    "noop"                 -> "omit it: it does nothing"
-  )
+  val Removed: scala.collection.immutable.Map[String, String] = RemovedOp.values.map(op => op.wire -> op.hint).toMap
 
-  /** Names that may not head an array, which would read as a call: `["+", 1, 2]`, `["var", "a"]`. */
-  def callName(s: String): Boolean = s == Variable || Ops.named(s).isDefined || Removed.contains(s)
+  /** Names that may not head an array, which would read as a call. */
+  def callName(s: String): Boolean = CallName.parse(s).isDefined
 
-  private def malformed[A](m: String): Either[JlvmError, A] = JlvmError.Malformed(m).asLeft
+  private def malformed[A](reason: MalformedReason): Either[JlvmError, A] = JlvmError.Malformed(reason).asLeft
 
   def parse(json: String): Either[JlvmError, Program] = parse(json, Kernels.Default)
 
@@ -71,14 +65,14 @@ object Parser {
   private[jlvm] def parse(json: String, kernels: Kernels): Either[JlvmError, Program] =
     for {
       read <- SurfaceTree.read(json, kernels.steps.spanned).leftMap(canonicalError)
-      src  <- read.toRight(JlvmError.Malformed("not JSON"))
+      src  <- read.toRight(JlvmError.Malformed(MalformedReason.NotJson))
       expr <- expression(src.root)(using src, kernels)
       prog <- Program.from(expr, kernels)
     } yield prog
 
   /** A scalar, a literal or a default: its span through the strict parser, then `0x`-hex strings as bytes. */
   private def value(j: SurfaceTree)(using src: Source): Either[JlvmError, CanonicalValue] =
-    src.value(j).bimap(e => JlvmError.Malformed(e.toString), JsonSurface.fromCanonicalJson)
+    src.value(j).bimap(e => JlvmError.Malformed(MalformedReason.Canonical(e)), JsonSurface.fromCanonicalJson)
 
   /** The program's expression, read from the surface tree by [[run]]: an explicit stack, so no depth overflows it. */
   private def expression(j: SurfaceTree)(using src: Source, kernels: Kernels): Either[JlvmError, Expr] = run(node(j), Nil)
@@ -172,15 +166,8 @@ object Parser {
 
   /** An array headed by a call's name is rejected, so text shaped like a call is never read as data by accident. */
   private def array(items: Vector[SurfaceTree])(using src: Source): Read =
-    items.headOption.flatMap(src.string).filter(callName) match {
-      case Some(name) =>
-        val call = Removed.get(name).fold(s"write the call as {\"$name\": [...]}")(hint => s"\"$name\" is not an operation: $hint")
-        Read.Done(
-          malformed(
-            s"an array may not start with \"$name\", which reads as a call: $call; quote data as {\"literal\": [...]}, or " +
-            s"start it with {\"literal\": \"$name\"}"
-          )
-        )
+    items.headOption.flatMap(src.string).flatMap(CallName.parse) match {
+      case Some(call) => Read.Done(malformed(MalformedReason.ArrayCall(call)))
       case scala.None => elements(items)
     }
 
@@ -201,18 +188,18 @@ object Parser {
       case ObjectKey =>
         arg.kind match {
           case Kind.Obj(fields) => mapExpr(fields)
-          case _                => Read.Done(malformed("object takes an object: {\"object\": {key: expression, ...}}"))
+          case _                => Read.Done(malformed(MalformedReason.ObjectShape))
         }
       case data if data.startsWith(DataPrefix) => mapExpr(Vector(data -> arg))
-      case removed if Removed.contains(removed) =>
-        Read.Done(malformed(s"\"$removed\" is not an operation: ${Removed.getOrElse(removed, "")}"))
+      case RemovedOp(removed) =>
+        Read.Done(malformed(MalformedReason.RemovedOperation(removed)))
       case name =>
         Ops
           .named(name)
           .fold(
             Read.Done(
               malformed[Expr](
-                s"unknown operation ${Preview.of(name)}: write single-key data as {\"object\": {...}} or {\"literal\": {...}}"
+                MalformedReason.UnknownOperation(Preview.of(name))
               )
             )
           )(operation(_, arg))
@@ -240,7 +227,7 @@ object Parser {
           case Kind.Obj(_) => Read.One(Part.Expression(j), Expr.VarAt(_, default))
           // a literal array here is the path's segments, not code, so it is exempt from the array check
           case Kind.Arr(items) => Read.One(Part.Elements(items), Expr.VarAt(_, default))
-          case _               => Read.Done(malformed("a var path is text, an integer, or an expression computing one"))
+          case _               => Read.Done(malformed(MalformedReason.VarPathShape))
         }
     }
 
@@ -249,7 +236,7 @@ object Parser {
       case Kind.Arr(Vector(p)) => path(p, None)
       case Kind.Arr(Vector(p, default)) =>
         defaultValue(default).fold(e => Read.Done(e.asLeft), d => path(p, Some(d).filter(_ != CanonicalValue.CNull)))
-      case Kind.Arr(_) => Read.Done(malformed("var takes a path, or [path, default]"))
+      case Kind.Arr(_) => Read.Done(malformed(MalformedReason.VarArguments))
       case _           => path(arg, None)
     }
 
@@ -261,7 +248,7 @@ object Parser {
     j.kind match {
       case Kind.Obj(Vector((Literal, x))) => value(x)
       case Kind.Obj(_) | Kind.Arr(_) =>
-        malformed("a var default is a literal value: quote an object or array default with {\"literal\": ...}")
+        malformed(MalformedReason.UnquotedDefault)
       case _ => value(j)
     }
 
@@ -312,7 +299,10 @@ object Parser {
   }
 
   private def text(s: String): Either[JlvmError, String] =
-    CanonicalValue.text(s).flatMap(CanonicalJson.render).leftMap(e => JlvmError.Malformed(e.toString))
+    CanonicalValue
+      .text(s)
+      .leftMap(e => JlvmError.Malformed(MalformedReason.Canonical(e)))
+      .flatMap(v => CanonicalJson.render(v).leftMap(e => JlvmError.Malformed(MalformedReason.Render(e))))
 
   private def member(name: String, arg: Out): Either[JlvmError, Out] = text(name).map(k => Out.Obj(Vector(k -> arg)))
 
@@ -476,7 +466,7 @@ object Parser {
   /** The expression a wire tree denotes, built bottom-up on an explicit stack: the first `var` path that does not parse is the error. */
   def fromWire(w: W.JlvmExpr): Either[JlvmError, Expr] =
     CanonicalForm.fold[W.JlvmExpr, W.JlvmExpr, Expr, JlvmError](w)(x => (x, CanonicalForm.parts(x)).asRight) { (x, es) =>
-      def one(make: Expr => Expr) = es.headOption.toRight(JlvmError.Malformed("a node without its sub-expression")).map(make)
+      def one(make: Expr => Expr) = es.headOption.toRight(JlvmError.Malformed(MalformedReason.MissingSubexpression)).map(make)
       x match {
         case W.JlvmNull()        => Expr.Lit(CanonicalValue.CNull).asRight
         case W.JlvmLit(v)        => Expr.Lit(v).asRight
@@ -493,8 +483,8 @@ object Parser {
 
   /** A depth bound is a [[JlvmError.Limit]], however it is reached; anything else malformed is [[JlvmError.Malformed]]. */
   private def canonicalError(e: CanonicalError): JlvmError = e match {
-    case CanonicalError.DepthExceeded(n) => JlvmError.Limit(s"the program nests deeper than its canonical form allows ($n levels)")
-    case other                           => JlvmError.Malformed(other.toString)
+    case CanonicalError.DepthExceeded(n) => JlvmError.Limit(LimitReason.CanonicalDepth(n))
+    case other                           => JlvmError.Malformed(MalformedReason.Canonical(other))
   }
 
   /**
@@ -510,16 +500,16 @@ object Parser {
    * errors, then `var` paths that do not parse ([[JlvmError.Malformed]]); then [[Program.from]]'s bounds and checks.
    */
   def fromCanonical(v: CanonicalValue): Either[JlvmError, Program] =
-    if (v.weight > MaxCanonicalWeight) Left(JlvmError.Limit(s"the form weighs more than any program's, $MaxCanonicalWeight"))
+    if (v.weight > MaxCanonicalWeight) Left(JlvmError.Limit(LimitReason.CanonicalWeight(MaxCanonicalWeight)))
     else
       CanonicalForm
         .read(v)
-        .leftMap(e => JlvmError.Malformed(e.message))
+        .leftMap(e => JlvmError.Malformed(MalformedReason.Decode(e)))
         .flatMap(w => fromWire(w).flatMap(Program.from))
 
   /** A program's canonical CBOR; one past `Cbor.MaxEncodedBytes` is a [[JlvmError.Limit]], never a throw. */
   def encode(p: Program): Either[JlvmError, ByteVector] =
-    canonical(p).flatMap(Cbor.encode(_).leftMap(e => JlvmError.Limit(s"the program's encoding is over ${e.limit} bytes")))
+    canonical(p).flatMap(Cbor.encode(_).leftMap(e => JlvmError.Limit(LimitReason.ProgramEncoding(e.limit))))
 
   def decode(bytes: ByteVector): Either[JlvmError, Program] =
     Cbor.decode(bytes).leftMap(canonicalError).flatMap(fromCanonical)

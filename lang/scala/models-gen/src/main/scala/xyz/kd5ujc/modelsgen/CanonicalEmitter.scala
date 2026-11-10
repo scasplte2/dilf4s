@@ -295,12 +295,13 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     case ModelRule.Record(fs)                  => record(q, fs).map(Some(_))
     case ModelRule.Enumeration(cs)             => enumeration(q, cs).map(Some(_))
     case ModelRule.Union(alts, texts, choices) => union(q, alts, texts, choices).map(Some(_))
-    case ModelRule.ErrorFamily(kinds, cases)   => errorFamily(q, kinds, cases).map(Some(_))
-    case ModelRule.Alias(t)                    => Some(alias(q, t)).asRight
-    case ModelRule.Constant(v)                 => Some(constant(q, v)).asRight
-    case ModelRule.PreviewType                 => None.asRight
-    case ModelRule.NamedTexts(members)         => namedTexts(q, members).map(Some(_))
-    case ModelRule.TextMember(_)               => None.asRight
+    case ModelRule.ErrorFamily(kinds, cases) =>
+      NativeErrorFamily.fromRule(q).fold(errorFamily(q, kinds, cases).map(Some(_)))(_ => None.asRight)
+    case ModelRule.Alias(t)            => Some(alias(q, t)).asRight
+    case ModelRule.Constant(v)         => Some(constant(q, v)).asRight
+    case ModelRule.PreviewType         => None.asRight
+    case ModelRule.NamedTexts(members) => namedTexts(q, members).map(Some(_))
+    case ModelRule.TextMember(_)       => None.asRight
   }
 
   /** A rule's documentation (its CDDL comment) as a Scaladoc comment, or nothing. */
@@ -338,6 +339,16 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
 }
 
 object CanonicalEmitter {
+  enum NativeErrorFamily(val rule: QName) {
+    case Jlvm extends NativeErrorFamily(QName("jlvm-errors", "jlvm-error"))
+    case JlvmCause extends NativeErrorFamily(QName("jlvm-errors", "jlvm-crypto-cause"))
+    case Sigma extends NativeErrorFamily(QName("crypto-errors", "sigma-error"))
+  }
+
+  object NativeErrorFamily {
+    private val byRule = NativeErrorFamily.values.map(f => f.rule -> f).toMap
+    def fromRule(rule: QName): Option[NativeErrorFamily] = byRule.get(rule)
+  }
 
   /** Scala 3 reserved words, escaped with backticks when a key maps to one (the syntax lint reads them as code). */
   // scalafix:off DisableSyntax.noTry, DisableSyntax.noCatch, DisableSyntax.noFinally

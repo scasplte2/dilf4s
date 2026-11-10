@@ -3,12 +3,13 @@ package xyz.kd5ujc.jlvm
 import cats.effect.Sync
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.canonical.{CanonicalValue, ValueKind}
 import xyz.kd5ujc.crypto.bls.Bls12381
-import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, Sigma, SigmaError, SigmaProp, message}
+import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, Sigma, SigmaError, SigmaProp}
 import xyz.kd5ujc.crypto.signing._
 import xyz.kd5ujc.crypto.zk.Bn254Engine
+import xyz.kd5ujc.jlvm.JlvmError._
 
 import scodec.bits.ByteVector
 
@@ -38,12 +39,12 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
       case _                     => ProofOps(op, args).orElse(zk(op, args))
     }
 
-  private def crypto[A](op: Op)(e: CryptoError): JlvmError = JlvmError.Crypto(op, e.toString, Some(CryptoCause.Signing(e)))
+  private def crypto[A](op: Op)(e: CryptoError): JlvmError = JlvmError.Crypto(op, CryptoReason.Refused(CryptoCause.Signing(e)))
 
   private def raw(op: Op, v: CanonicalValue): Either[JlvmError, ByteVector] =
     v match {
       case CBytes(b) => b.asRight
-      case other     => JlvmError.Type(op, s"expected bytes, got ${Values.kind(other)}").asLeft
+      case other     => JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Bytes), ValueKind.of(other))).asLeft
     }
 
   /** Bytes charged by weight, flattened ([[FlatBytes]]): the charge pays for the copy when they are not already flat. */
@@ -59,7 +60,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
   private def triple(op: Op, args: Vector[CanonicalValue]): Either[JlvmError, (FlatBytes, FlatBytes, FlatBytes)] =
     args match {
       case Vector(k, m, s) => (bytes(op, k), bytes(op, m), bytes(op, s)).tupled
-      case _               => JlvmError.Arity(op, s"takes [key, message, signature], got ${args.size} arguments").asLeft
+      case _               => JlvmError.Arity(op, ArgumentCount.Exactly(3), args.size).asLeft
     }
 
   /** `[key, message, signature]`, all bytes. */
@@ -96,12 +97,12 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
               .leftMap(e => crypto(op)(e.toCryptoError))
               .flatMap(
                 _.toRight(
-                  JlvmError.Crypto(op, "the signature recovers no key (r or s out of range, high s, or r not an x-coordinate)", None)
+                  JlvmError.Crypto(op, CryptoReason.NoRecoveredKey)
                 )
               )
               .map(address => Values.bytes(FlatBytes(address)))
         }
-      case _ => JlvmError.Arity(op, s"takes [digest, signature], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Exactly(2), args.size).asLeft
     }
 
   /** `[proposition, proof, message]` (docs/specs/sigma.md): the proposition is the tagged-map form. */
@@ -111,11 +112,11 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
         (SigmaProp.decode(p).leftMap(sigmaRefusal(op)), bytes(op, proof), bytes(op, message)).tupled.flatMap {
           case (prop, pf, m) => Sigma.check(prop, pf, m).bimap(sigmaRefusal(op), Values.bool)
         }
-      case _ => JlvmError.Arity(op, s"takes [proposition, proof, message], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Exactly(3), args.size).asLeft
     }
 
-  /** A sigma refusal is the JLVM's `Crypto`, its message the refusal's and its cause the refusal (jlvm.md section 3). */
-  private def sigmaRefusal(op: Site)(e: SigmaError): JlvmError = JlvmError.Crypto(op, e.message, Some(CryptoCause.Sigma(e)))
+  /** A sigma refusal retains its typed cause inside the JLVM's `Crypto` (jlvm.md section 3). */
+  private def sigmaRefusal(op: Site)(e: SigmaError): JlvmError = JlvmError.Crypto(op, CryptoReason.Refused(CryptoCause.Sigma(e)))
 
   /** `[key33, message, proof56]`: a single-key sigma proof, Ergo's P2PK signature. */
   private def schnorr(op: Op, args: Vector[CanonicalValue]): Result =
@@ -123,7 +124,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
       case (k, m, s) =>
         Secp256k1Group
           .decode(k)
-          .leftMap(reason => sigmaRefusal(op)(SigmaError.InvalidPoint("pk", reason.message)))
+          .leftMap(reason => sigmaRefusal(op)(SigmaError.InvalidPoint(SigmaError.PointRole.PublicKey, reason)))
           .flatMap(SigmaProp.dlog(_).flatMap(Sigma.check(_, s, m)).bimap(sigmaRefusal(op), Values.bool))
     }
 
@@ -140,8 +141,8 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
               .leftMap(crypto(op))
               .map { case (vks, signature) => Values.bool(bls.fastAggregateVerify(vks.toList, msg, signature)) }
         }
-      case Vector(other, _, _) => JlvmError.Type(op, s"expected an array of keys, got ${Values.kind(other)}").asLeft
-      case _                   => JlvmError.Arity(op, s"takes [[key, ...], message, signature], got ${args.size} arguments").asLeft
+      case Vector(other, _, _) => JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Array), ValueKind.of(other), Role.Keys)).asLeft
+      case _                   => JlvmError.Arity(op, ArgumentCount.Exactly(3), args.size).asLeft
     }
 }
 

@@ -10,6 +10,7 @@ import scala.compiletime.constValueTuple
 import scala.deriving.Mirror
 
 import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalJson, DecodeFailure}
+import xyz.kd5ujc.jlvm.JlvmError._
 import xyz.kd5ujc.models.{jlvm_vectors => model}
 
 import weaver.SimpleIOSuite
@@ -96,13 +97,14 @@ object JlvmErrorCoverageSuite extends SimpleIOSuite {
   test("an op is recorded exactly for the kinds whose errors carry a site") {
     val withSite = Set(JlvmErrorKind.Type, JlvmErrorKind.Arity, JlvmErrorKind.Arithmetic, JlvmErrorKind.Domain, JlvmErrorKind.Crypto)
     val sample: List[JlvmError] = List(
-      JlvmError.Malformed(""),
-      JlvmError.Type(Op.Add, ""),
-      JlvmError.Arity(Op.Add, ""),
-      JlvmError.Arithmetic(Op.Add, ""),
-      JlvmError.Domain(Site.Var, ""),
-      JlvmError.Crypto(Op.Add, "", None),
-      JlvmError.Limit(""),
+      JlvmError.Malformed(MalformedReason.NotJson),
+      JlvmError
+        .Type(Op.Add, TypeReason.Expected(Vector(xyz.kd5ujc.core.canonical.ValueKind.Int), xyz.kd5ujc.core.canonical.ValueKind.Null)),
+      JlvmError.Arity(Op.Add, ArgumentCount.Exactly(2), 0),
+      JlvmError.Arithmetic(Op.Add, ArithmeticReason.DivisionByZero),
+      JlvmError.Domain(Site.Var, DomainReason.PathSegmentWidth),
+      JlvmError.Crypto(Op.Add, CryptoReason.Unavailable),
+      JlvmError.Limit(LimitReason.ProgramSize(Program.MaxSize)),
       JlvmError.OutOfGas(1, 0)
     )
     errors.map { es =>

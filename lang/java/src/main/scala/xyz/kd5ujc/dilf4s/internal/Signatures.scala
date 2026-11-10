@@ -440,7 +440,7 @@ object Signatures {
     sigma(
       Secp256k1Group
         .decode(bv(key))
-        .leftMap(reason => SigmaError.InvalidPoint("pk", reason.message): SigmaError)
+        .leftMap(reason => SigmaError.InvalidPoint(SigmaError.PointRole.PublicKey, reason): SigmaError)
         .flatMap(SigmaProp.dlog(_).flatMap(Sigma.check(_, bv(proof), bv(message))))
         .map(java.lang.Boolean.valueOf)
     )

@@ -41,8 +41,8 @@ object VersionedTrieProgramsSuite extends IOSuite {
     jlvm.evaluate(get(Parser.parse(program)), m(data*), Map.empty, Config()).result
 
   private def isCrypto(r: Either[JlvmError, CanonicalValue]): Boolean = r match {
-    case Left(JlvmError.Crypto(_, _, _)) => true
-    case _                               => false
+    case Left(JlvmError.Crypto(_, _)) => true
+    case _                            => false
   }
 
   // ---- programs: the slot check binds an intermediate root to the trusted root, then the inner check uses it

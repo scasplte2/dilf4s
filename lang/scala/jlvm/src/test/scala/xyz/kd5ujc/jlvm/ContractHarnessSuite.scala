@@ -11,7 +11,14 @@ object ContractHarnessSuite extends SimpleIOSuite {
 
     expect
       .same(true, ContractHarness.rejected(Left(StepError.Rejected(CanonicalValue.CNull))))
-      .and(expect.same(false, ContractHarness.rejected(Left(StepError.Evaluation(JlvmError.Malformed("reject: forged"))))))
+      .and(
+        expect.same(
+          false,
+          ContractHarness.rejected(
+            Parser.parse("""{"reject: forged":0}""").left.map(StepError.Evaluation(_)).map(_ => CanonicalValue.CNull)
+          )
+        )
+      )
       .and(expect.same(false, ContractHarness.rejected(Left(StepError.MissingResult))))
       .and(expect.same(false, ContractHarness.rejected(Right(CanonicalValue.CNull))))
   }

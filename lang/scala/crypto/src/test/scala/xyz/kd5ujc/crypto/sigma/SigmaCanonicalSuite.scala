@@ -2,6 +2,7 @@ package xyz.kd5ujc.crypto.sigma
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.crypto.sigma.SigmaError.{PointRole, PropositionKind, PropositionReason}
 
 import scodec.bits.ByteVector
 import weaver.SimpleIOSuite
@@ -29,17 +30,9 @@ object SigmaCanonicalSuite extends SimpleIOSuite {
   private def threshold(k: Int, children: Vector[CanonicalValue]): CanonicalValue =
     map("type" -> text("threshold"), "k" -> CInt(k), "children" -> array(children))
 
-  /** The error, `InvalidPoint` for a point that does not decode (its kind), or `Ok`. */
-  private def reason(v: CanonicalValue): String =
-    SigmaProp
-      .decode(v)
-      .fold(
-        {
-          case SigmaError.InvalidPoint(_, _) => "InvalidPoint"
-          case e                             => e.message
-        },
-        _ => "Ok"
-      )
+  private def reason(v: CanonicalValue): Either[SigmaError, Unit] = SigmaProp.decode(v).map(_ => ())
+
+  private val invalidPoint = Left(SigmaError.InvalidPoint(PointRole.PublicKey, Secp256k1Group.DecodeError.InvalidPoint))
 
   /** `n` children, the first `bad` of them with an off-curve point. */
   private def withBadFirst(n: Int, bad: Int): Vector[CanonicalValue] =
@@ -51,9 +44,9 @@ object SigmaCanonicalSuite extends SimpleIOSuite {
     connective("and", leaves.grouped(each).map(connective("or", _)).toVector)
   }
 
-  private val tooWide = "a connective has at most 255 children"
-  private val tooMany = "a proposition has at most 4096 leaves"
-  private val tooHeavy = "a proposition weighs at most 7900416"
+  private val tooWide = Left(SigmaError.InvalidProposition(PropositionReason.Children(255)))
+  private val tooMany = Left(SigmaError.InvalidProposition(PropositionReason.Leaves(4096)))
+  private val tooHeavy = Left(SigmaError.InvalidProposition(PropositionReason.Weight(7900416L)))
 
   pureTest("a connective wider than 255 is refused before its children are decoded") {
     expect
@@ -62,27 +55,32 @@ object SigmaCanonicalSuite extends SimpleIOSuite {
       .and(expect.same(tooWide, reason(threshold(0, withBadFirst(256, 1)))))
       .and(expect.same(tooWide, reason(threshold(1, withBadFirst(256, 1)))))
       // within the width, the children are decoded before the connective's other checks
-      .and(expect.same("InvalidPoint", reason(connective("and", withBadFirst(255, 1)))))
-      .and(expect.same("InvalidPoint", reason(threshold(0, withBadFirst(2, 1)))))
-      .and(expect.same("a connective needs at least one child: an empty one holds for anyone", reason(connective("and", Vector.empty))))
+      .and(expect.same(invalidPoint, reason(connective("and", withBadFirst(255, 1)))))
+      .and(expect.same(invalidPoint, reason(threshold(0, withBadFirst(2, 1)))))
+      .and(expect.same(Left(SigmaError.InvalidProposition(PropositionReason.EmptyChildren)), reason(connective("and", Vector.empty))))
   }
 
   pureTest("the 4097th leaf is refused before its points are decoded") {
     expect
-      .same("Ok", reason(grouped(16, 255, dlog(generator))))
-      .and(expect.same("InvalidPoint", reason(grouped(32, 128, dlog(offCurve)))))
-      .and(expect.same("Ok", reason(grouped(32, 128, dlog(generator)))))
+      .same(Right(()), reason(grouped(16, 255, dlog(generator))))
+      .and(expect.same(invalidPoint, reason(grouped(32, 128, dlog(offCurve)))))
+      .and(expect.same(Right(()), reason(grouped(32, 128, dlog(generator)))))
       .and(expect.same(tooMany, reason(grouped(17, 241, dlog(generator)))))
       .and(expect.same(tooMany, reason(grouped(17, 241, dlog(offCurve)))))
       // a leaf's own fields are checked before the bound
-      .and(expect.same("dlog takes exactly the fields pk", reason(grouped(17, 241, map("type" -> text("dlog"))))))
+      .and(
+        expect.same(
+          Left(SigmaError.InvalidProposition(PropositionReason.Fields(PropositionKind.Dlog, 1))),
+          reason(grouped(17, 241, map("type" -> text("dlog"))))
+        )
+      )
   }
 
   pureTest("depth is checked once the children are decoded") {
     def chain(leaf: CanonicalValue) = (1 to SigmaProp.MaxDepth).foldLeft(leaf)((c, _) => connective("and", Vector(c)))
     expect
-      .same("a proposition nests at most 64 deep", reason(chain(dlog(generator))))
-      .and(expect.same("InvalidPoint", reason(chain(dlog(offCurve)))))
+      .same(Left(SigmaError.InvalidProposition(PropositionReason.Depth(64))), reason(chain(dlog(generator))))
+      .and(expect.same(invalidPoint, reason(chain(dlog(offCurve)))))
   }
 
   /**
@@ -104,11 +102,16 @@ object SigmaCanonicalSuite extends SimpleIOSuite {
       .same(SigmaProp.MaxWeight, heaviest.weight)
       .and(expect.same(Right((SigmaProp.MaxDepth, SigmaProp.MaxLeaves)), decoded.map(p => (p.depth, p.leaves))))
       .and(expect.same(SigmaProp.MaxWeight, at(SigmaProp.MaxWeight - 15).weight))
-      .and(expect.same("InvalidPoint", reason(at(SigmaProp.MaxWeight - 15))))
+      .and(
+        expect.same(
+          Left(SigmaError.InvalidPoint(PointRole.PublicKey, Secp256k1Group.DecodeError.WrongSize(SigmaProp.MaxWeight - 15, 33))),
+          reason(at(SigmaProp.MaxWeight - 15))
+        )
+      )
       .and(expect.same(tooHeavy, reason(at(SigmaProp.MaxWeight - 14))))
       .and(expect.same(tooHeavy, reason(connective("and", Vector(dlog(offCurve), dlog(ByteVector.fill(7900400L)(2)))))))
       .and(expect.same(tooHeavy, reason(text("x" * 7900416))))
-      .and(expect.same("a proposition is an object", reason(text("x" * 7900415))))
+      .and(expect.same(Left(SigmaError.InvalidProposition(PropositionReason.ExpectedObject)), reason(text("x" * 7900415))))
   }
 
   pureTest("a shared value of exponential size is refused at once, whether too wide, too many leaves or too deep") {

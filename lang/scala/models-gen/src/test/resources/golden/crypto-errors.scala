@@ -238,35 +238,6 @@ object PathRefusal {
   )
 }
 
-/**
- * `sigma-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[SigmaErrorKind]]).
- *
- * Malformed sigma input (sigma.md section 6). A well-formed proof that fails is a result (false), never one of these.
- */
-sealed trait SigmaError extends Product with Serializable {
-
-  /** This error's kind. */
-  def kind: SigmaErrorKind
-}
-
-object SigmaError {
-  final case class InvalidProposition(reason: String) extends SigmaError {
-    def kind: SigmaErrorKind = SigmaErrorKind.InvalidProposition
-  }
-
-  final case class InvalidPoint(what: String, reason: String) extends SigmaError {
-    def kind: SigmaErrorKind = SigmaErrorKind.InvalidPoint
-  }
-
-  final case class ProofLength(expected: Long, actual: Long) extends SigmaError {
-    def kind: SigmaErrorKind = SigmaErrorKind.ProofLength
-  }
-
-  case object ResponseOutOfRange extends SigmaError {
-    def kind: SigmaErrorKind = SigmaErrorKind.ResponseOutOfRange
-  }
-}
-
 enum SigmaErrorKind(val wire: String) {
   case InvalidProposition extends SigmaErrorKind("InvalidProposition")
   case InvalidPoint extends SigmaErrorKind("InvalidPoint")

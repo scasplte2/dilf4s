@@ -7,7 +7,8 @@ import cats.syntax.all._
 import scala.collection.immutable.SortedMap
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Preview}
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Preview, ValueKind}
+import xyz.kd5ujc.jlvm.JlvmError._
 import xyz.kd5ujc.numerics.Ratio
 
 /** Gas used so far, against the limit; and the lint warnings so far, distinct, at most [[Warning.Max]]. */
@@ -133,24 +134,27 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
             case t @ CText(text) =>
               Charge(
                 schedule.pathText(t),
-                () => VarRef.parse(text).fold(e => Fail(JlvmError.Domain(Site.Var, e.message)), read(_, default, scope))
+                () => VarRef.parse(text).fold(e => Fail(JlvmError.Domain(Site.Var, DomainReason.ComputedPath(e))), read(_, default, scope))
               )
             case CArray(ss) =>
               Charge(
                 readCost(ss.foldLeft(0L)((n, s) => n + segments(s))) + frameCost(scope, ss.headOption.fold(0L)(segments)),
                 () => ss.traverse(segment).fold(Fail(_), p => lookup(VarRef.Data(p), default, scope))
               )
-            case other => Fail(JlvmError.Type(Site.Var, s"a computed path is text or an array of segments, got ${Values.kind(other)}"))
+            case other => Fail(JlvmError.Type(Site.Var, TypeReason.Expected(Vector(ValueKind.Text, ValueKind.Array), ValueKind.of(other))))
           }
         )
 
       case ArrayOf(items) =>
-        Charge(schedule.literal + schedule.element * items.size.toLong, () => all(items, scope)(vs => result(Values.array("array", vs))))
+        Charge(
+          schedule.literal + schedule.element * items.size.toLong,
+          () => all(items, scope)(vs => result(Values.array(Construct.ArrayLiteral, vs)))
+        )
 
       case ObjectOf(fields) =>
         Charge(
           schedule.literal + schedule.element * fields.size.toLong,
-          () => all(fields.map(_._2), scope)(vs => result(Values.textKeyed("object", fields.map(_._1).zip(vs))))
+          () => all(fields.map(_._2), scope)(vs => result(Values.textKeyed(Construct.ObjectLiteral, fields.map(_._1).zip(vs))))
         )
 
       case Strict(op, args) =>
@@ -169,7 +173,7 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
               {
                 // each element is an argument: it pays `element` first, so sizing a long spread is paid for
                 case CArray(vs) => Charge(schedule.element * vs.size.toLong, () => Charge(sized(op, vs), () => operate(op, vs)))
-                case other      => Fail(JlvmError.Type(op, s"a spread argument is an array, got ${Values.kind(other)}"))
+                case other      => Fail(JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Array), ValueKind.of(other))))
               }
             )
         )
@@ -236,7 +240,7 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
           base(op),
           () =>
             all(args, scope) { vs =>
-              Charge(sized(op, vs), () => crypto(op, vs).fold(Fail(JlvmError.Crypto(op, "not available yet", None)))(result))
+              Charge(sized(op, vs), () => crypto(op, vs).fold(Fail(JlvmError.Crypto(op, CryptoReason.Unavailable)))(result))
             }
         )
     }
@@ -282,7 +286,7 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
       case VarRef.Bound(name, path) =>
         scope.bindings.get(name) match {
           case scala.Some(v) => Done(orDefault(Values.at(v, path)))
-          case scala.None    => default.fold(Fail(JlvmError.Malformed(s"the binding ${Preview.of(name)} is not bound")))(Done(_))
+          case scala.None    => default.fold(Fail(JlvmError.Malformed(MalformedReason.UnboundBinding(Preview.of(name)))))(Done(_))
         }
     }
   }
@@ -295,8 +299,8 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
     v match {
       case CText(t)                 => t.asRight
       case CInt(i) if i.isValidLong => i.toLong.toString.asRight
-      case CInt(_)                  => JlvmError.Domain(Site.Var, "an integer path segment must fit in 64 bits").asLeft
-      case other                    => JlvmError.Type(Site.Var, s"a path segment is text or an integer, got ${Values.kind(other)}").asLeft
+      case CInt(_)                  => JlvmError.Domain(Site.Var, DomainReason.PathSegmentWidth).asLeft
+      case other => JlvmError.Type(Site.Var, TypeReason.Expected(Vector(ValueKind.Text, ValueKind.Int), ValueKind.of(other))).asLeft
     }
 
   // ---- operations
@@ -328,7 +332,7 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
     }
 
   private def strict(op: Op, vs: Vector[CanonicalValue]): Step =
-    PureOps(op, vs, kernels).fold(Fail(JlvmError.Malformed(s"${op.wire} has no strict form")))(result)
+    PureOps(op, vs, kernels).fold(Fail(JlvmError.Malformed(MalformedReason.UnsupportedOperation(op, OperationForm.Strict))))(result)
 
   /**
    * `+` or `*`, left to right. Each step is the binary operation on the accumulator and the next operand: the operands
@@ -390,7 +394,7 @@ final class Semantics private[jlvm] (schedule: GasSchedule, crypto: CryptoOps, k
       {
         case CArray(vs) => Charge(schedule.cost(op).perUnit * vs.size.toLong, () => k(vs))
         case CNull      => k(Vector.empty)
-        case other      => Fail(JlvmError.Type(op, s"expected an array, got ${Values.kind(other)}"))
+        case other      => Fail(JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Array), ValueKind.of(other))))
       }
     )
 

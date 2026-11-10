@@ -194,15 +194,15 @@ object Errors {
       case xyz.kd5ujc.models.crypto_errors.KesError.InconsistentKey(reason) => new xyz.kd5ujc.dilf4s.error.KesError.InconsistentKey(reason)
     }
 
-  def sigmaError(e: xyz.kd5ujc.models.crypto_errors.SigmaError): xyz.kd5ujc.dilf4s.error.SigmaError =
+  def sigmaError(e: xyz.kd5ujc.crypto.sigma.SigmaError): xyz.kd5ujc.dilf4s.error.SigmaError =
     e match {
-      case xyz.kd5ujc.models.crypto_errors.SigmaError.InvalidProposition(reason) =>
-        new xyz.kd5ujc.dilf4s.error.SigmaError.InvalidProposition(reason)
-      case xyz.kd5ujc.models.crypto_errors.SigmaError.InvalidPoint(what, reason) =>
-        new xyz.kd5ujc.dilf4s.error.SigmaError.InvalidPoint(what, reason)
-      case xyz.kd5ujc.models.crypto_errors.SigmaError.ProofLength(expected, actual) =>
+      case xyz.kd5ujc.crypto.sigma.SigmaError.InvalidProposition(reason) =>
+        new xyz.kd5ujc.dilf4s.error.SigmaError.InvalidProposition(reason.message)
+      case xyz.kd5ujc.crypto.sigma.SigmaError.InvalidPoint(what, reason) =>
+        new xyz.kd5ujc.dilf4s.error.SigmaError.InvalidPoint(what.wire, reason.message)
+      case xyz.kd5ujc.crypto.sigma.SigmaError.ProofLength(expected, actual) =>
         new xyz.kd5ujc.dilf4s.error.SigmaError.ProofLength(expected, actual)
-      case xyz.kd5ujc.models.crypto_errors.SigmaError.ResponseOutOfRange => new xyz.kd5ujc.dilf4s.error.SigmaError.ResponseOutOfRange()
+      case xyz.kd5ujc.crypto.sigma.SigmaError.ResponseOutOfRange => new xyz.kd5ujc.dilf4s.error.SigmaError.ResponseOutOfRange()
     }
 
   def zkError(e: xyz.kd5ujc.models.crypto_errors.ZkError): xyz.kd5ujc.dilf4s.error.ZkError =
@@ -336,40 +336,40 @@ object Errors {
         new xyz.kd5ujc.dilf4s.error.VersionedTrieError.Trie(trieError(error))
     }
 
-  def cryptoCause(e: xyz.kd5ujc.models.jlvm_errors.JlvmCryptoCause): xyz.kd5ujc.dilf4s.error.CryptoCause =
+  def cryptoCause(e: xyz.kd5ujc.jlvm.CryptoCause): xyz.kd5ujc.dilf4s.error.CryptoCause =
     e match {
-      case xyz.kd5ujc.models.jlvm_errors.JlvmCryptoCause.Signing(error) =>
+      case xyz.kd5ujc.jlvm.CryptoCause.Signing(error) =>
         new xyz.kd5ujc.dilf4s.error.CryptoCause.Signing(cryptoError(error))
-      case xyz.kd5ujc.models.jlvm_errors.JlvmCryptoCause.Sigma(error) => new xyz.kd5ujc.dilf4s.error.CryptoCause.Sigma(sigmaError(error))
-      case xyz.kd5ujc.models.jlvm_errors.JlvmCryptoCause.Zk(error)    => new xyz.kd5ujc.dilf4s.error.CryptoCause.Zk(zkError(error))
-      case xyz.kd5ujc.models.jlvm_errors.JlvmCryptoCause.Groth16(error) =>
+      case xyz.kd5ujc.jlvm.CryptoCause.Sigma(error) => new xyz.kd5ujc.dilf4s.error.CryptoCause.Sigma(sigmaError(error))
+      case xyz.kd5ujc.jlvm.CryptoCause.Zk(error)    => new xyz.kd5ujc.dilf4s.error.CryptoCause.Zk(zkError(error))
+      case xyz.kd5ujc.jlvm.CryptoCause.Groth16(error) =>
         new xyz.kd5ujc.dilf4s.error.CryptoCause.Groth16(groth16Error(error))
-      case xyz.kd5ujc.models.jlvm_errors.JlvmCryptoCause.Vrf(error)    => new xyz.kd5ujc.dilf4s.error.CryptoCause.Vrf(vrfError(error))
-      case xyz.kd5ujc.models.jlvm_errors.JlvmCryptoCause.Hash(error)   => new xyz.kd5ujc.dilf4s.error.CryptoCause.Hash(hashError(error))
-      case xyz.kd5ujc.models.jlvm_errors.JlvmCryptoCause.Merkle(error) => new xyz.kd5ujc.dilf4s.error.CryptoCause.Merkle(merkleError(error))
-      case xyz.kd5ujc.models.jlvm_errors.JlvmCryptoCause.Trie(error)   => new xyz.kd5ujc.dilf4s.error.CryptoCause.Trie(trieError(error))
-      case xyz.kd5ujc.models.jlvm_errors.JlvmCryptoCause.Poseidon(error) =>
+      case xyz.kd5ujc.jlvm.CryptoCause.Vrf(error)    => new xyz.kd5ujc.dilf4s.error.CryptoCause.Vrf(vrfError(error))
+      case xyz.kd5ujc.jlvm.CryptoCause.Hash(error)   => new xyz.kd5ujc.dilf4s.error.CryptoCause.Hash(hashError(error))
+      case xyz.kd5ujc.jlvm.CryptoCause.Merkle(error) => new xyz.kd5ujc.dilf4s.error.CryptoCause.Merkle(merkleError(error))
+      case xyz.kd5ujc.jlvm.CryptoCause.Trie(error)   => new xyz.kd5ujc.dilf4s.error.CryptoCause.Trie(trieError(error))
+      case xyz.kd5ujc.jlvm.CryptoCause.Poseidon(error) =>
         new xyz.kd5ujc.dilf4s.error.CryptoCause.Poseidon(poseidonError(error))
-      case xyz.kd5ujc.models.jlvm_errors.JlvmCryptoCause.PoseidonMerkle(error) =>
+      case xyz.kd5ujc.jlvm.CryptoCause.PoseidonMerkle(error) =>
         new xyz.kd5ujc.dilf4s.error.CryptoCause.PoseidonMerkle(poseidonMerkleError(error))
     }
 
-  def jlvmError(e: xyz.kd5ujc.models.jlvm_errors.JlvmError): xyz.kd5ujc.dilf4s.error.JlvmError =
+  def jlvmError(e: xyz.kd5ujc.jlvm.JlvmError): xyz.kd5ujc.dilf4s.error.JlvmError =
     e match {
-      case xyz.kd5ujc.models.jlvm_errors.JlvmError.Malformed(message) => new xyz.kd5ujc.dilf4s.error.JlvmError.Malformed(message)
-      case xyz.kd5ujc.models.jlvm_errors.JlvmError.Type(op, message)  => new xyz.kd5ujc.dilf4s.error.JlvmError.Type(op.wire, message)
-      case xyz.kd5ujc.models.jlvm_errors.JlvmError.Arity(op, message) => new xyz.kd5ujc.dilf4s.error.JlvmError.Arity(op.wire, message)
-      case xyz.kd5ujc.models.jlvm_errors.JlvmError.Arithmetic(op, message) =>
-        new xyz.kd5ujc.dilf4s.error.JlvmError.Arithmetic(op.wire, message)
-      case xyz.kd5ujc.models.jlvm_errors.JlvmError.Domain(op, message) => new xyz.kd5ujc.dilf4s.error.JlvmError.Domain(op.wire, message)
-      case xyz.kd5ujc.models.jlvm_errors.JlvmError.Crypto(op, message, cause) =>
+      case xyz.kd5ujc.jlvm.JlvmError.Malformed(_)    => new xyz.kd5ujc.dilf4s.error.JlvmError.Malformed(e.message)
+      case xyz.kd5ujc.jlvm.JlvmError.Type(op, _)     => new xyz.kd5ujc.dilf4s.error.JlvmError.Type(op.wire, e.message)
+      case xyz.kd5ujc.jlvm.JlvmError.Arity(op, _, _) => new xyz.kd5ujc.dilf4s.error.JlvmError.Arity(op.wire, e.message)
+      case xyz.kd5ujc.jlvm.JlvmError.Arithmetic(op, _) =>
+        new xyz.kd5ujc.dilf4s.error.JlvmError.Arithmetic(op.wire, e.message)
+      case xyz.kd5ujc.jlvm.JlvmError.Domain(op, _) => new xyz.kd5ujc.dilf4s.error.JlvmError.Domain(op.wire, e.message)
+      case xyz.kd5ujc.jlvm.JlvmError.Crypto(op, _) =>
         new xyz.kd5ujc.dilf4s.error.JlvmError.Crypto(
           op.wire,
-          message,
-          cause.fold(java.util.Optional.empty[xyz.kd5ujc.dilf4s.error.CryptoCause]())(x => java.util.Optional.of(cryptoCause(x)))
+          e.message,
+          e.cause.fold(java.util.Optional.empty[xyz.kd5ujc.dilf4s.error.CryptoCause]())(x => java.util.Optional.of(cryptoCause(x)))
         )
-      case xyz.kd5ujc.models.jlvm_errors.JlvmError.Limit(message) => new xyz.kd5ujc.dilf4s.error.JlvmError.Limit(message)
-      case xyz.kd5ujc.models.jlvm_errors.JlvmError.OutOfGas(required, available) =>
+      case xyz.kd5ujc.jlvm.JlvmError.Limit(_) => new xyz.kd5ujc.dilf4s.error.JlvmError.Limit(e.message)
+      case xyz.kd5ujc.jlvm.JlvmError.OutOfGas(required, available) =>
         new xyz.kd5ujc.dilf4s.error.JlvmError.OutOfGas(required, available)
     }
 }

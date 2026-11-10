@@ -6,8 +6,9 @@ import xyz.kd5ujc.accumulators.merkle.{MerkleCodec, MerkleError, MerkleHashing, 
 import xyz.kd5ujc.accumulators.trie.{KeyMode, TrieError, TrieHashing, TrieProofs, VerifiedProof}
 import xyz.kd5ujc.accumulators.{ProofInput, ValueCommitment}
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{ByteSource, CanonicalValue}
+import xyz.kd5ujc.core.canonical.{ByteSource, CanonicalValue, ValueKind}
 import xyz.kd5ujc.core.hash.{Digest, Sha256}
+import xyz.kd5ujc.jlvm.JlvmError._
 
 import scodec.bits.{BitVector, ByteVector}
 
@@ -39,13 +40,13 @@ object ProofOps {
       case _                          => scala.None
     }
 
-  private def crypto(op: Op)(message: String): JlvmError = JlvmError.Crypto(op, message, None)
+  private def crypto(op: Op)(reason: CryptoReason): JlvmError = JlvmError.Crypto(op, reason)
 
   /** A Merkle refusal, as the `Crypto` error's cause (jlvm.md §3). */
-  private def merkleFailure(op: Op)(e: MerkleError): JlvmError = JlvmError.Crypto(op, e.toString, Some(CryptoCause.Merkle(e)))
+  private def merkleFailure(op: Op)(e: MerkleError): JlvmError = JlvmError.Crypto(op, CryptoReason.Refused(CryptoCause.Merkle(e)))
 
   /** A trie refusal, as the `Crypto` error's cause (jlvm.md §3). */
-  private def trieFailure(op: Op)(e: TrieError): JlvmError = JlvmError.Crypto(op, e.toString, Some(CryptoCause.Trie(e)))
+  private def trieFailure(op: Op)(e: TrieError): JlvmError = JlvmError.Crypto(op, CryptoReason.Refused(CryptoCause.Trie(e)))
 
   /** How each structure refuses claims over a limit: its own `TooLarge`, as its verifiers do (conformance.md §3). */
   private def merkleTooLarge(op: Op)(limit: Long): JlvmError = merkleFailure(op)(MerkleError.TooLarge(limit))
@@ -60,14 +61,14 @@ object ProofOps {
     ProofInput.claimed(values)(tooLarge)
 
   /** Every proof operation charges its arguments by weight, which pays for flattening bytes that are not ([[FlatBytes]]). */
-  private def bytes(op: Op, what: String)(v: CanonicalValue): Either[JlvmError, FlatBytes] =
+  private def bytes(op: Op, what: Role)(v: CanonicalValue): Either[JlvmError, FlatBytes] =
     v match {
       case CBytes(b) => FlatBytes(b).asRight
-      case other     => JlvmError.Type(op, s"$what is bytes, got ${Values.kind(other)}").asLeft
+      case other     => JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Bytes), ValueKind.of(other), what)).asLeft
     }
 
-  private def digest(op: Op, what: String)(v: CanonicalValue): Either[JlvmError, Digest[H]] =
-    bytes(op, what)(v).flatMap(Digest.fromBytes[H](_).leftMap(e => JlvmError.Crypto(op, s"$what: $e", Some(CryptoCause.Hash(e)))))
+  private def digest(op: Op, what: Role)(v: CanonicalValue): Either[JlvmError, Digest[H]] =
+    bytes(op, what)(v).flatMap(Digest.fromBytes[H](_).leftMap(e => JlvmError.Crypto(op, CryptoReason.Refused(CryptoCause.Hash(e), what))))
 
   /**
    * The bytes a leaf or value commits to: tagged, so bytes and a value whose CBOR equals them never coincide. A
@@ -79,17 +80,17 @@ object ProofOps {
 
   // ---- Merkle trees (merkle.md)
 
-  private def head(op: Op, what: String)(v: CanonicalValue): Either[JlvmError, (Digest[H], Long)] =
+  private def head(op: Op, what: Role)(v: CanonicalValue): Either[JlvmError, (Digest[H], Long)] =
     v match {
       case CMap(m) if m.size == 2 && m.contains("root") && m.contains("size") =>
         (
-          m.get("root").toRight(crypto(op)(s"$what.root")).flatMap(digest(op, s"$what.root")),
+          m.get("root").toRight(crypto(op)(CryptoReason.MissingHeadRoot(what))).flatMap(digest(op, Role.HeadRoot(what))),
           m.get("size") match {
             case scala.Some(CInt(n)) if n >= 0 && n.isValidLong => n.toLong.asRight
-            case _                                              => crypto(op)(s"$what.size is a tree size").asLeft
+            case _                                              => crypto(op)(CryptoReason.TreeSize(what)).asLeft
           }
         ).tupled
-      case _ => crypto(op)(s"$what is a tree head {root, size}").asLeft
+      case _ => crypto(op)(CryptoReason.TreeHead(what)).asLeft
     }
 
   /**
@@ -104,8 +105,8 @@ object ProofOps {
     rest match {
       case Vector() => (MerkleHashing.tagged[H], committed(merkleTooLarge(op))).asRight
       case Vector(CText("rfc6962")) =>
-        (MerkleHashing.rfc6962[H], (v: CanonicalValue) => bytes(op, "an rfc6962 leaf")(v).map(ByteSource.bytes)).asRight
-      case _ => JlvmError.Domain(op, "the only optional profile is \"rfc6962\"").asLeft
+        (MerkleHashing.rfc6962[H], (v: CanonicalValue) => bytes(op, Role.Rfc6962Leaf)(v).map(ByteSource.bytes)).asRight
+      case _ => JlvmError.Domain(op, DomainReason.MerkleProfile).asLeft
     }
 
   /** A proof that verifies is true; one that is well formed but proves something else is false. */
@@ -120,7 +121,7 @@ object ProofOps {
     args match {
       case h +: leaf +: proof +: rest =>
         (
-          head(op, "head")(h),
+          head(op, Role.Head)(h),
           profile(op, rest)
         ).tupled.flatMap {
           case (hd, pr) =>
@@ -133,15 +134,15 @@ object ProofOps {
               if (p.size != size) False.asRight else outcome(op)(MerkleVerifier.inclusion(root, m.leafOf(d), p)(using m))
             )
         }
-      case _ => JlvmError.Arity(op, "takes [head, leaf, proof] or [head, leaf, proof, profile]").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Between(3, 4), args.size).asLeft
     }
 
   private def consistency(op: Op, args: Vector[CanonicalValue]): Result =
     args match {
       case o +: n +: proof +: rest =>
         (
-          head(op, "oldHead")(o),
-          head(op, "newHead")(n),
+          head(op, Role.OldHead)(o),
+          head(op, Role.NewHead)(n),
           profile(op, rest),
           MerkleCodec.decodeConsistency[H](proof).leftMap(merkleFailure(op))
         ).tupled.flatMap {
@@ -149,7 +150,7 @@ object ProofOps {
             if (p.oldSize != oldSize || p.newSize != newSize) False.asRight
             else outcome(op)(MerkleVerifier.consistency(oldRoot, newRoot, p)(using m))
         }
-      case _ => JlvmError.Arity(op, "takes [oldHead, newHead, proof] or [oldHead, newHead, proof, profile]").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Between(3, 4), args.size).asLeft
     }
 
   // ---- binary Patricia tries (trie.md)
@@ -160,23 +161,25 @@ object ProofOps {
     v match {
       case CMap(m) =>
         m.toList match {
-          case List(("fixed", CInt(n))) if n.isValidInt    => KeyMode.fixed(n.toInt).leftMap(e => JlvmError.Domain(op, e.toString))
-          case List(("variable", CInt(n))) if n.isValidInt => KeyMode.variable(n.toInt).leftMap(e => JlvmError.Domain(op, e.toString))
-          case _                                           => JlvmError.Domain(op, "a mode is {\"fixed\": n} or {\"variable\": max}").asLeft
+          case List(("fixed", CInt(n))) if n.isValidInt =>
+            KeyMode.fixed(n.toInt).leftMap(e => JlvmError.Domain(op, DomainReason.TrieMode(e)))
+          case List(("variable", CInt(n))) if n.isValidInt =>
+            KeyMode.variable(n.toInt).leftMap(e => JlvmError.Domain(op, DomainReason.TrieMode(e)))
+          case _ => JlvmError.Domain(op, DomainReason.TrieModeShape).asLeft
         }
-      case other => JlvmError.Type(op, s"a mode is an object, got ${Values.kind(other)}").asLeft
+      case other => JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Map), ValueKind.of(other), Role.Mode)).asLeft
     }
 
   /** A claimed value's hash, by its [[ValueCommitment]] bytes: bytes and a value whose CBOR equals them differ. */
   private def valueHash(op: Op)(v: CanonicalValue): Either[JlvmError, Digest[H]] = committed(trieTooLarge(op))(v).map(T.valueOf)
 
   private def path(op: Op, m: KeyMode)(key: CanonicalValue): Either[JlvmError, BitVector] =
-    bytes(op, "a key")(key).flatMap(m.path(_).leftMap(trieFailure(op)))
+    bytes(op, Role.Key)(key).flatMap(m.path(_).leftMap(trieFailure(op)))
 
   /** Checks the proof against the root: a mismatch is a well-formed proof of another trie, so `None`. */
   private def verified(op: Op, m: KeyMode, root: CanonicalValue, proof: CanonicalValue): Either[JlvmError, Option[VerifiedProof[H]]] =
     // the root first, and the proof decoded only once it is valid
-    digest(op, "root")(root).flatMap(r => TrieProofs.decode[H](proof).bimap(trieFailure(op), r -> _)).flatMap {
+    digest(op, Role.Root)(root).flatMap(r => TrieProofs.decode[H](proof).bimap(trieFailure(op), r -> _)).flatMap {
       case (r, p) =>
         TrieProofs.verify(m, r, p)(using T) match {
           case Right(v)                           => Option(v).asRight
@@ -204,7 +207,7 @@ object ProofOps {
                 .traverse(valueHash(op))
                 .flatMap(claim => v.holds(p, claim).bimap(trieFailure(op), Values.bool))
           }
-      case _ => JlvmError.Arity(op, "takes [mode, root, key, value, proof]").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Exactly(5), args.size).asLeft
     }
 
   private def entries(op: Op, m: KeyMode)(v: CanonicalValue): Either[JlvmError, List[(BitVector, Digest[H])]] =
@@ -212,11 +215,11 @@ object ProofOps {
       case CArray(es) =>
         es.toList.traverse {
           case CArray(Vector(k, x)) if x != CNull => path(op, m)(k).map(_ -> x)
-          case _                                  => JlvmError.Type(op, "an entry is [key, value], with a value").asLeft
+          case _                                  => JlvmError.Type(op, TypeReason.Entry).asLeft
         }
           .flatTap(pxs => claims(trieTooLarge(op))(pxs.map(_._2)))
           .flatMap(_.traverse { case (p, x) => valueHash(op)(x).map(p -> _) })
-      case other => JlvmError.Type(op, s"entries is an array, got ${Values.kind(other)}").asLeft
+      case other => JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Array), ValueKind.of(other), Role.Entries)).asLeft
     }
 
   /** Whether the claimed entries, in key order, are exactly the proven listing; one that reaches a stub is no answer. */
@@ -227,7 +230,7 @@ object ProofOps {
       case Vector(md, root, prefix, es, proof) =>
         mode(op)(md).flatMap { m =>
           (for {
-            pre     <- bytes(op, "a prefix")(prefix)
+            pre     <- bytes(op, Role.Prefix)(prefix)
             claimed <- entries(op, m)(es)
             v       <- verified(op, m, root, proof)
           } yield (pre, claimed, v)).flatMap {
@@ -235,7 +238,7 @@ object ProofOps {
             case (pre, claimed, scala.Some(v)) => listing(op)(v.listsPrefix(pre.bits, claimed))
           }
         }
-      case _ => JlvmError.Arity(op, "takes [mode, root, prefix, entries, proof]").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Exactly(5), args.size).asLeft
     }
 
   private def trieRange(op: Op, args: Vector[CanonicalValue]): Result =
@@ -243,11 +246,11 @@ object ProofOps {
       case Vector(md, root, from, until, es, proof) =>
         val upper = until match {
           case CNull => scala.None.asRight[JlvmError]
-          case other => bytes(op, "until")(other).map(b => Option(b.bits))
+          case other => bytes(op, Role.Until)(other).map(b => Option(b.bits))
         }
         mode(op)(md).flatMap { m =>
           (for {
-            lo      <- bytes(op, "from")(from)
+            lo      <- bytes(op, Role.From)(from)
             hi      <- upper
             claimed <- entries(op, m)(es)
             v       <- verified(op, m, root, proof)
@@ -256,6 +259,6 @@ object ProofOps {
             case (lo, hi, claimed, scala.Some(v)) => listing(op)(v.listsRange(lo.bits, hi, claimed))
           }
         }
-      case _ => JlvmError.Arity(op, "takes [mode, root, from, until, entries, proof]").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Exactly(6), args.size).asLeft
     }
 }

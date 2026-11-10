@@ -2,6 +2,7 @@ package xyz.kd5ujc.jlvm
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue}
+import xyz.kd5ujc.jlvm.JlvmError._
 
 import scodec.bits.hex
 import weaver.SimpleIOSuite
@@ -34,7 +35,10 @@ object JsonSurfaceSuite extends SimpleIOSuite {
     val asBytes = deep(CBytes(hex"0102"), CBytes(hex"ff"), CanonicalValue.MaxDepth)
     val rendered = JsonSurface.render(asBytes)
     expect
-      .same(rendered, CanonicalJson.render(get(JsonSurface.toCanonicalJson(asBytes))).left.map(e => JlvmError.Malformed(e.toString)))
+      .same(
+        rendered,
+        CanonicalJson.render(get(JsonSurface.toCanonicalJson(asBytes))).left.map(e => JlvmError.Malformed(MalformedReason.Render(e)))
+      )
       .and(expect.same(Right(asBytes), rendered.flatMap(JsonSurface.parse)))
   }
 

@@ -10,7 +10,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.crypto.bls.Bls12381
-import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, SigmaError, SigmaProp, SigmaProver, message}
+import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, SigmaError, SigmaProp, SigmaProver}
 import xyz.kd5ujc.crypto.signing._
 
 import io.circe.{Json, parser}
@@ -40,8 +40,8 @@ object CryptoOpsSuite extends IOSuite with Checkers {
   }
 
   private def crypto(r: Either[JlvmError, CanonicalValue]): Boolean = r match {
-    case Left(JlvmError.Crypto(_, _, _)) => true
-    case _                               => false
+    case Left(JlvmError.Crypto(_, _)) => true
+    case _                            => false
   }
 
   /** A good signature verifies; another message gives false; a truncated signature is malformed input. */
@@ -55,8 +55,8 @@ object CryptoOpsSuite extends IOSuite with Checkers {
   test("a Crypto error names the typed refusal it wraps; the operation's own shape checks name none") { b =>
     IO {
       def cause(r: Either[JlvmError, CanonicalValue]): Option[CryptoCause] = r match {
-        case Left(JlvmError.Crypto(_, _, c)) => c
-        case _                               => None
+        case Left(e: JlvmError.Crypto) => e.cause
+        case _                         => None
       }
       val shortKey = verify(b.jlvm, Op.Ed25519Verify, CBytes(ByteVector.fill(31)(1)), message, ByteVector.fill(64)(0))
       val badPoint = verify(b.jlvm, Op.SchnorrVerify, CBytes(ByteVector.fill(33)(9)), message, ByteVector.fill(56)(0))
@@ -72,11 +72,9 @@ object CryptoOpsSuite extends IOSuite with Checkers {
           )
         )
         .and(
-          expect(
-            cause(badPoint).exists {
-              case CryptoCause.Sigma(e) => e.kind == xyz.kd5ujc.models.crypto_errors.SigmaErrorKind.InvalidPoint; case _ => false
-            },
-            s"$badPoint"
+          expect.same(
+            Some(CryptoCause.Sigma(SigmaError.InvalidPoint(SigmaError.PointRole.PublicKey, Secp256k1Group.DecodeError.InvalidPrefix(9)))),
+            cause(badPoint)
           )
         )
         .and(expect(badG1.flatMap(r => cause(r)).exists(_.kind == CryptoCauseKind.Zk), s"$badG1"))
