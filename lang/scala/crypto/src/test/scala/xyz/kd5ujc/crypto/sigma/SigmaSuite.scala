@@ -17,9 +17,64 @@ import weaver.{Expectations, SimpleIOSuite}
 
 object SigmaSuite extends SimpleIOSuite with Checkers {
 
-  private def key(pk: GroupElement): SigmaProp = SigmaProp.dlog(pk).fold(e => sys.error(e.message), identity)
+  private enum FixtureError {
+    case Proposition(cause: SigmaError)
+    case Point(cause: Secp256k1Group.DecodeError)
+    case TupleArity(actual: Int)
+    case ExpectedConnective
+  }
+
+  private final case class FixtureFailure(error: FixtureError) extends RuntimeException(error.toString)
+
+  private def get[A](value: Either[SigmaError, A]): A =
+    value.fold(e => throw FixtureFailure(FixtureError.Proposition(e)), identity)
+
+  private def connective(value: Either[SigmaError, SigmaProp]): SigmaProp.Conjecture = get(value) match {
+    case c: SigmaProp.Conjecture                 => c
+    case _: (SigmaProp.Dlog | SigmaProp.DhTuple) => throw FixtureFailure(FixtureError.ExpectedConnective)
+  }
+
+  private def key(pk: GroupElement): SigmaProp = get(SigmaProp.dlog(pk))
   private def tuple(g: GroupElement, h: GroupElement, u: GroupElement, v: GroupElement): SigmaProp =
-    SigmaProp.dhTuple(g, h, u, v).fold(e => sys.error(e.message), identity)
+    get(SigmaProp.dhTuple(g, h, u, v))
+
+  pureTest("prover state guards retain exact invariant failures") {
+    import SigmaProver.{Error, Invariants}
+    val path = Vector(1, 2)
+    val child = key(Secp256k1Group.base(BigInt(7)))
+    val conjunction = connective(SigmaProp.and(Vector(child, child)))
+    val disjunction = connective(SigmaProp.or(Vector(child, child)))
+    val threshold = connective(SigmaProp.threshold(2, Vector(child, child, child)))
+    expect
+      .same(Left(Error.MissingWitness(path)), Invariants.witness(path, None))
+      .and(expect.same(Right(BigInt(7)), Invariants.witness(path, Some(BigInt(7)))))
+      .and(expect.same(Left(Error.ExpectedRealNode(path)), Invariants.realNode(disjunction, path, false, Vector(false, false))))
+      .and(expect.same(Left(Error.InvalidRealChildCount(path, 1, 0)), Invariants.realNode(disjunction, path, true, Vector(false, false))))
+      .and(expect.same(Left(Error.InvalidRealChildCount(path, 1, 2)), Invariants.realNode(disjunction, path, true, Vector(true, true))))
+      .and(
+        expect.same(Left(Error.InvalidRealChildCount(path, 2, 1)), Invariants.realNode(threshold, path, true, Vector(true, false, false)))
+      )
+      .and(expect.same(Left(Error.InvalidRealChildCount(path, 2, 3)), Invariants.realNode(threshold, path, true, Vector(true, true, true))))
+      .and(expect.same(Left(Error.InvalidRealChildCount(path, 2, 1)), Invariants.realNode(conjunction, path, true, Vector(true, false))))
+      .and(expect.same(Right(()), Invariants.realNode(disjunction, path, true, Vector(true, false))))
+      .and(expect.same(Right(()), Invariants.realNode(threshold, path, true, Vector(true, true, false))))
+      .and(expect.same(Left(Error.UnexpectedRealChild(3)), Invariants.simulatedChallenge(3, None)))
+  }
+
+  pureTest("prover challenges reject the exact invalid width instead of becoming zero") {
+    List(0L, 23L, 25L).foldMap { size =>
+      expect.same(Left(SigmaProver.Error.InvalidChallengeLength(size)), SigmaProver.Challenge.fromBytes(ByteVector.fill(size)(1)))
+    }.and(expect.same(Right(ByteVector.fill(24)(0)), SigmaProver.Challenge.fromBytes(ByteVector.fill(24)(0)).map(_.bytes)))
+  }
+
+  pureTest("typed prover challenges preserve bytes and split by XOR") {
+    val a = ByteVector.fill(24)(0x55)
+    val b = ByteVector.fill(24)(0x0f)
+    val actual = (SigmaProver.Challenge.fromBytes(a), SigmaProver.Challenge.fromBytes(b)).mapN { (x, y) =>
+      (x.bytes, y.bytes, x.xor(y).bytes, x.xor(y).xor(y).bytes)
+    }
+    expect.same(Right((a, b, ByteVector.fill(24)(0x5a), a)), actual)
+  }
 
   // ---- GF(2^192)
 
@@ -187,7 +242,8 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
   private def dht(b: ByteVector): SigmaProp =
     b.grouped(33).toVector.traverse(Secp256k1Group.decode) match {
       case Right(Vector(g, h, u, v)) => tuple(g, h, u, v)
-      case other                     => sys.error(s"bad DH tuple: $other")
+      case Left(cause)               => throw FixtureFailure(FixtureError.Point(cause))
+      case Right(points)             => throw FixtureFailure(FixtureError.TupleArity(points.size))
     }
 
   private val dht1 = dht(
@@ -197,7 +253,7 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
     hex"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f817980214487635ebffa60b13a166bd0721c5f0ab603fc74168d7764d7ec5ef2107f5d40334c5b7efa5a4a22b83d102d2e6521eaa660fa911c5a213af63c8460f2327513b026a0be2a277291d42daad3830cb16a4ef20e4f1f7c36384f3fee065f0f143a355"
   )
 
-  private def p(e: Either[SigmaError, SigmaProp]): SigmaProp = e.fold(e => sys.error(e.message), identity)
+  private def p(e: Either[SigmaError, SigmaProp]): SigmaProp = get(e)
 
   private val vectors: List[(String, SigmaProp, ByteVector)] = List(
     (

@@ -31,17 +31,58 @@ object SigmaProver {
     case InvalidProposition(cause: SigmaError)
     case InvalidChildren(cause: ChildPoint.Error)
     case UnsatisfiedProposition
+    case InvalidChallengeLength(actual: Long)
+    case MissingWitness(path: Vector[Int])
+    case ExpectedRealNode(path: Vector[Int])
+    case UnexpectedRealChild(index: Int)
+    case InvalidRealChildCount(path: Vector[Int], expected: Int, actual: Int)
 
     def message: String = this match {
-      case InvalidProposition(cause) => cause.message
-      case InvalidChildren(cause)    => cause.message
-      case UnsatisfiedProposition    => "the secrets do not satisfy the proposition"
+      case InvalidProposition(cause)                     => cause.message
+      case InvalidChildren(cause)                        => cause.message
+      case UnsatisfiedProposition                        => "the secrets do not satisfy the proposition"
+      case InvalidChallengeLength(actual)                => s"expected ${Gf2_192.Size} challenge bytes, got $actual"
+      case MissingWitness(path)                          => s"a real leaf at $path has no witness"
+      case ExpectedRealNode(path)                        => s"a simulated node at $path reached real commitment construction"
+      case UnexpectedRealChild(index)                    => s"simulated node child $index has no simulated challenge"
+      case InvalidRealChildCount(path, expected, actual) => s"a real node at $path needs $expected real children, got $actual"
     }
   }
 
   final case class Failure(error: Error) extends RuntimeException(error.message)
 
+  private[sigma] final case class Challenge private (val field: Gf2_192) {
+    def bytes: ByteVector = field.bytes
+    def xor(other: Challenge): Challenge = Challenge.of(field + other.field)
+  }
+
+  private[sigma] object Challenge {
+    def fromBytes(bytes: ByteVector): Either[Error, Challenge] =
+      Gf2_192.fromBytes(bytes).map(of).toRight(Error.InvalidChallengeLength(bytes.size))
+
+    def of(field: Gf2_192): Challenge = new Challenge(field)
+  }
+
   import SigmaProp._
+
+  private[sigma] object Invariants {
+    def witness(path: Vector[Int], value: Option[BigInt]): Either[Error, BigInt] =
+      value.toRight(Error.MissingWitness(path))
+
+    def realNode(prop: Conjecture, path: Vector[Int], satisfied: Boolean, realChildren: Vector[Boolean]): Either[Error, Unit] = {
+      val expected = prop match {
+        case And(_)          => realChildren.size
+        case Or(_)           => 1
+        case Threshold(k, _) => k
+      }
+      val actual = realChildren.count(identity)
+      Either.cond(satisfied, (), Error.ExpectedRealNode(path)) >>
+      Either.cond(actual == expected, (), Error.InvalidRealChildCount(path, expected, actual))
+    }
+
+    def simulatedChallenge(index: Int, value: Option[Challenge]): Either[Error, Challenge] =
+      value.toRight(Error.UnexpectedRealChild(index))
+  }
 
   private val q = Secp256k1Group.Order
   private val hasher = Hasher[Blake2b256]
@@ -62,7 +103,8 @@ object SigmaProver {
     def scalar(path: Vector[Int], purpose: Int): BigInt =
       BigInt(1, (bytes(path, purpose, 0) ++ bytes(path, purpose, 1)).toArray).mod(q - 1) + 1
 
-    def challenge(path: Vector[Int], purpose: Int): ByteVector = bytes(path, purpose, 0).take(Sigma.ChallengeSize.toLong)
+    def challenge(path: Vector[Int], purpose: Int): Either[Error, Challenge] =
+      Challenge.fromBytes(bytes(path, purpose, 0).take(Sigma.ChallengeSize.toLong))
   }
 
   private val Nonce = 0
@@ -74,7 +116,7 @@ object SigmaProver {
 
   private enum Plan {
     case Leaf(prop: Dlog | DhTuple, path: Vector[Int], witness: Option[BigInt])
-    case Node(prop: SigmaProp, path: Vector[Int], satisfied: Boolean, children: Vector[Plan])
+    case Node(prop: Conjecture, path: Vector[Int], satisfied: Boolean, children: Vector[Plan])
 
     def real: Boolean = this match {
       case Leaf(_, _, w)    => w.isDefined
@@ -92,7 +134,7 @@ object SigmaProver {
           case Or(_)           => cs.exists(_.real)
           case Threshold(k, _) => cs.count(_.real) >= k
         }
-        Plan.Node(prop, path, real, cs)
+        Plan.Node(node, path, real, cs)
     }
 
   /** Step 1, top-down: under a real OR keep one real child, under a real threshold `k`; everything else simulates. */
@@ -104,7 +146,7 @@ object SigmaProver {
         val keep = prop match {
           case Or(_)           => 1
           case Threshold(k, _) => k
-          case _               => cs.size
+          case And(_)          => cs.size
         }
         val kept = cs.zipWithIndex.filter(_._1.real).map(_._2).take(keep).toSet
         Plan.Node(prop, path, true, cs.zipWithIndex.map { case (c, i) => if (kept.contains(i)) prune(c) else simulated(c) })
@@ -120,11 +162,11 @@ object SigmaProver {
 
   private enum Draft {
     case RealLeaf(prop: Dlog | DhTuple, w: BigInt, r: BigInt, commitment: ByteVector)
-    case SimLeaf(prop: Dlog | DhTuple, e: ByteVector, z: BigInt, commitment: ByteVector)
-    case RealNode(prop: SigmaProp, children: Vector[Draft])
-    case SimNode(prop: SigmaProp, e: ByteVector, poly: Option[Gf2Poly], children: Vector[Draft])
+    case SimLeaf(prop: Dlog | DhTuple, e: Challenge, z: BigInt, commitment: ByteVector)
+    case RealNode(prop: Conjecture, children: Vector[Draft])
+    case SimNode(prop: Conjecture, e: Challenge, poly: Option[Gf2Poly], children: Vector[Draft])
 
-    def challenge: Option[ByteVector] = this match {
+    def challenge: Option[Challenge] = this match {
       case SimLeaf(_, e, _, _)                   => Option(e)
       case SimNode(_, e, _, _)                   => Option(e)
       case RealLeaf(_, _, _, _) | RealNode(_, _) => scala.None
@@ -133,18 +175,18 @@ object SigmaProver {
 
   private def real(p: Plan, coins: Coins): Either[Error, Draft] =
     p match {
-      case Plan.Leaf(leaf, path, scala.Some(w)) =>
-        val r = coins.scalar(path, Nonce)
-        val a = leaf match {
-          case Dlog(_)             => Secp256k1Group.base(r).bytes
-          case DhTuple(g, h, _, _) => (g * r).bytes ++ (h * r).bytes
+      case Plan.Leaf(leaf, path, witness) =>
+        Invariants.witness(path, witness).map { w =>
+          val r = coins.scalar(path, Nonce)
+          val a = leaf match {
+            case Dlog(_)             => Secp256k1Group.base(r).bytes
+            case DhTuple(g, h, _, _) => (g * r).bytes ++ (h * r).bytes
+          }
+          Draft.RealLeaf(leaf, w, r, a)
         }
-        Draft.RealLeaf(leaf, w, r, a).asRight
-      // not reached: only real nodes come here, and a leaf is real exactly when it has a witness
-      case unproven @ Plan.Leaf(_, path, scala.None) => simulate(unproven, coins.challenge(path, ChildChallenge), coins)
-      case Plan.Node(prop, _, _, cs)                 =>
-        // a simulated child of a real node gets a fresh random challenge here
-        cs.traverse(c => if (c.real) real(c, coins) else simulate(c, coins.challenge(pathOf(c), ChildChallenge), coins))
+      case Plan.Node(prop, path, satisfied, cs) =>
+        Invariants.realNode(prop, path, satisfied, cs.map(_.real)) >>
+        cs.traverse(c => if (c.real) real(c, coins) else coins.challenge(pathOf(c), ChildChallenge).flatMap(simulate(c, _, coins)))
           .map(Draft.RealNode(prop, _))
     }
 
@@ -154,39 +196,38 @@ object SigmaProver {
   }
 
   /** A simulated subtree whose challenge is `e`. */
-  private def simulate(p: Plan, e: ByteVector, coins: Coins): Either[Error, Draft] =
+  private def simulate(p: Plan, e: Challenge, coins: Coins): Either[Error, Draft] =
     p match {
       case Plan.Leaf(leaf, path, _) =>
         val z = coins.scalar(path, Response)
-        Draft.SimLeaf(leaf, e, z, Sigma.commitment(leaf, e, z)).asRight
+        Draft.SimLeaf(leaf, e, z, Sigma.commitment(leaf, e.bytes, z)).asRight
       case Plan.Node(prop, path, _, cs) =>
         prop match {
           case Or(_) =>
-            val firsts = cs.dropRight(1).map(c => coins.challenge(pathOf(c), ChildChallenge))
-            val last = firsts.foldLeft(e)(_ ^ _)
-            val es = firsts :+ last
-            cs.zip(es).traverse { case (c, ce) => simulate(c, ce, coins) }.map(Draft.SimNode(prop, e, scala.None, _))
+            cs.dropRight(1).traverse(c => coins.challenge(pathOf(c), ChildChallenge)).flatMap { firsts =>
+              val last = firsts.foldLeft(e)(_.xor(_))
+              cs.zip(firsts :+ last)
+                .traverse { case (c, ce) => simulate(c, ce, coins) }
+                .map(Draft.SimNode(prop, e, scala.None, _))
+            }
           case Threshold(k, _) =>
-            val e0 = Gf2_192.fromBytes(e).getOrElse(Gf2_192.Zero)
-            val higher =
-              (1 to cs.size - k).toVector.map(d => Gf2_192.fromBytes(coins.challenge(path :+ d, Coefficient)).getOrElse(Gf2_192.Zero))
-            val poly = Gf2Poly(e0 +: higher)
-            ChildPoint
-              .number(cs)
-              .leftMap(Error.InvalidChildren(_))
-              .flatMap(_.traverse { case (c, x) => simulate(c, poly(x).bytes, coins) })
-              .map(Draft.SimNode(prop, e, Option(poly), _))
-          case _ => cs.traverse(simulate(_, e, coins)).map(Draft.SimNode(prop, e, scala.None, _))
+            for {
+              higher <- (1 to cs.size - k).toVector.traverse(d => coins.challenge(path :+ d, Coefficient).map(_.field))
+              poly = Gf2Poly(e.field +: higher)
+              numbered <- ChildPoint.number(cs).leftMap(Error.InvalidChildren(_))
+              children <- numbered.traverse { case (c, x) => simulate(c, Challenge.of(poly(x)), coins) }
+            } yield Draft.SimNode(prop, e, Option(poly), children)
+          case And(_) => cs.traverse(simulate(_, e, coins)).map(Draft.SimNode(prop, e, scala.None, _))
         }
     }
 
   // ---- step 3 and 4: the root challenge, real challenges top-down, responses
 
   private enum Proved {
-    case Leaf(e: ByteVector, z: BigInt)
-    case Node(prop: SigmaProp, e: ByteVector, poly: Option[Gf2Poly], children: Vector[Proved])
+    case Leaf(e: Challenge, z: BigInt)
+    case Node(prop: Conjecture, e: Challenge, poly: Option[Gf2Poly], children: Vector[Proved])
 
-    def challenge: ByteVector = this match {
+    def challenge: Challenge = this match {
       case Leaf(e, _)       => e
       case Node(_, e, _, _) => e
     }
@@ -200,29 +241,33 @@ object SigmaProver {
       case Draft.SimNode(_, _, _, cs) => cs.flatMap(commitments)
     }
 
-  private def settle(d: Draft, e: ByteVector): Either[Error, Proved] =
+  private def settle(d: Draft, e: Challenge): Either[Error, Proved] =
     d match {
-      case Draft.SimLeaf(_, se, z, _)        => Proved.Leaf(se, z).asRight
-      case Draft.SimNode(prop, se, poly, cs) => cs.traverse(c => settle(c, c.challenge.getOrElse(se))).map(Proved.Node(prop, se, poly, _))
-      case Draft.RealLeaf(_, w, r, _)        => Proved.Leaf(e, (r + BigInt(1, e.toArray) * w).mod(q)).asRight
+      case Draft.SimLeaf(_, se, z, _) => Proved.Leaf(se, z).asRight
+      case Draft.SimNode(prop, se, poly, cs) =>
+        cs.zipWithIndex.traverse {
+          case (c, index) =>
+            Invariants.simulatedChallenge(index, c.challenge).flatMap(settle(c, _))
+        }.map(Proved.Node(prop, se, poly, _))
+      case Draft.RealLeaf(_, w, r, _) => Proved.Leaf(e, (r + BigInt(1, e.bytes.toArray) * w).mod(q)).asRight
       case Draft.RealNode(prop, cs) =>
         prop match {
           case Or(_) =>
-            val others = cs.flatMap(_.challenge.toList).foldLeft(e)(_ ^ _)
+            val others = cs.flatMap(_.challenge.toList).foldLeft(e)(_.xor(_))
             cs.traverse(c => settle(c, c.challenge.getOrElse(others))).map(Proved.Node(prop, e, scala.None, _))
           case Threshold(_, _) =>
             ChildPoint.number(cs).leftMap(Error.InvalidChildren(_)).flatMap { numbered =>
-              val simulated = numbered.flatMap { case (c, x) => c.challenge.flatMap(Gf2_192.fromBytes).map(x -> _).toList }.toMap
-              val poly = Gf2Poly.interpolate(Gf2_192.fromBytes(e).getOrElse(Gf2_192.Zero), simulated)
-              numbered.traverse { case (c, x) => settle(c, poly(x).bytes) }.map(Proved.Node(prop, e, Option(poly), _))
+              val simulated = numbered.flatMap { case (c, x) => c.challenge.map(v => x -> v.field).toList }.toMap
+              val poly = Gf2Poly.interpolate(e.field, simulated)
+              numbered.traverse { case (c, x) => settle(c, Challenge.of(poly(x))) }.map(Proved.Node(prop, e, Option(poly), _))
             }
-          case _ => cs.traverse(settle(_, e)).map(Proved.Node(prop, e, scala.None, _))
+          case And(_) => cs.traverse(settle(_, e)).map(Proved.Node(prop, e, scala.None, _))
         }
     }
 
   /** Ergo's proof layout ([[Sigma]]): what the verifier cannot compute, in pre-order. */
   private def body(p: Proved, withChallenge: Boolean): ByteVector = {
-    val own = if (withChallenge) p.challenge else ByteVector.empty
+    val own = if (withChallenge) p.challenge.bytes else ByteVector.empty
     p match {
       case Proved.Leaf(_, z) => own ++ Secp256k1Group.scalarBytes(z)
       case Proved.Node(Or(_), _, _, cs) =>
@@ -267,9 +312,9 @@ object SigmaProver {
         .bytes
     )
     for {
-      _     <- Either.cond(planned.real, (), Error.UnsatisfiedProposition)
-      draft <- real(planned, coins)
-      e0 = Sigma.challenge(Sigma.fiatShamir(prop, commitments(draft)), message)
+      _      <- Either.cond(planned.real, (), Error.UnsatisfiedProposition)
+      draft  <- real(planned, coins)
+      e0     <- Challenge.fromBytes(Sigma.challenge(Sigma.fiatShamir(prop, commitments(draft)), message))
       proved <- settle(draft, e0)
     } yield body(proved, withChallenge = true)
   }
