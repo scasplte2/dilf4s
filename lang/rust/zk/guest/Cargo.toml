@@ -1,0 +1,37 @@
+[package]
+name = "dilf4s-zk-guest"
+description = "The SP1 guest that runs dilf4s-zk-cases over the shared vectors on riscv64im-succinct-zkvm-elf"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0"
+publish = false
+# The workspace root is lang/rust/ (lang/rust/Cargo.toml): it holds the SP1 patches, so they reach only the guest, and the guest's
+# Cargo.lock. It contains every path dependency, so cargo hashes them by their paths relative to it and the ELF (and
+# the JLVM call's verifying key) does not depend on where the checkout is.
+workspace = "../.."
+
+# the harness the host tests execute over the shared vectors
+[[bin]]
+name = "dilf4s-zk-guest"
+path = "src/main.rs"
+
+# one JLVM call and its statement (docs/specs/zk-jlvm.md): the program that is proved
+[[bin]]
+name = "dilf4s-zk-jlvm-call"
+path = "src/bin/jlvm_call.rs"
+
+[dependencies]
+dilf4s-zk-cases = { path = "../cases" }
+sp1-zkvm = "=6.10.0"
+
+[lints.rust]
+missing_docs = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+expect_used = "deny"
+indexing_slicing = "deny"
+panic = "deny"
+unwrap_used = "deny"

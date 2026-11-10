@@ -14,10 +14,10 @@ cd "$root"
 if [[ "${DIFFFUZZ_PREBUILT:-0}" == 1 ]]; then
   classpath=$(tr ':' '\n' < target/difffuzz-bundle/classpath | sed "s#^#$root/target/difffuzz-bundle/#" | paste -sd ':' -)
 else
-  cargo build --release --quiet --manifest-path sdk/rust/Cargo.toml -p dilf4s-difffuzz
-  [[ -d sdk/ts/node_modules ]] || npm ci --prefix sdk/ts --silent
-  npm run build --prefix sdk/ts --silent
-  classpath=$(sbt -batch -error "export jlvm/Test/fullClasspath" | tail -n 1)
+  (cd lang/rust/native && cargo build --locked --release --quiet -p dilf4s-difffuzz)
+  [[ -d node_modules ]] || npm ci --silent
+  npm run build --prefix lang/ts --silent
+  classpath=$(tools/sbt -batch -error "export jlvm/Test/fullClasspath" | tail -n 1)
 fi
 
 exec java -Xss8m -Xmx4g -cp "$classpath" xyz.kd5ujc.jlvm.difffuzz.DiffFuzz "$@"

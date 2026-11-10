@@ -147,7 +147,12 @@ def checkJlvm (path : String) : IO Bool := do
       | none => failures := failures.push s!"{(str? (field c "name")).getD "?"}: unreadable case"
   IO.println s!"jlvm_v1.json: {cases.length} cases, {inScopeCount} in scope ({inScopeCount - errors} values, {errors} errors, {outOfGas} of them OutOfGas), {passed} pass, {failures.size} fail"
   for f in failures.toList.take 40 do IO.println s!"  FAIL {f}"
-  pure (failures.isEmpty && inScopeCount > 0)
+  let counts := [("corpus", cases.length, 3363), ("in scope", inScopeCount, 854),
+    ("excluded", cases.length - inScopeCount, 2509), ("values", inScopeCount - errors, 458),
+    ("errors", errors, 396), ("OutOfGas", outOfGas, 10)]
+  for (label, got, want) in counts do
+    if got != want then IO.println s!"  FAIL {label}: got {got}, want {want}"
+  pure (failures.isEmpty && counts.all (fun (_, got, want) => got == want))
 
 /-- An accepted row's encoding, decoded: the value its JSON parses to, or a failure. -/
 def decodeBack (r : Json) (input : String) : Option (Except String Unit) :=
@@ -196,7 +201,8 @@ def checkEncoding (path : String) : IO Bool := do
     if got == want then ok := ok + 1 else failures := failures.push s!"cbor {h.take 40}: got {got}, want {want}"
   IO.println s!"canonical_encoding_v1.json: {ok} checks pass, {failures.size} fail"
   for f in failures.toList.take 40 do IO.println s!"  FAIL {f}"
-  pure failures.isEmpty
+  if ok != 269 then IO.println s!"  FAIL check count: got {ok}, want 269"
+  pure (failures.isEmpty && ok == 269)
 
 /-- Theorem 2 counts paid steps only: 50 computed paths around a literal enter 51 nodes, pay one step (the literal's 10
 gas) and fail at the innermost path, as the reference does (README). -/

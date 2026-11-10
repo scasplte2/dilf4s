@@ -1,0 +1,10 @@
+{
+  "extends": "../../lang/ts/tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "types": ["node"],
+    "customConditions": ["source"],
+    "noEmit": true
+  },
+  "include": ["src", "test", "vitest.smoke.config.ts"]
+}

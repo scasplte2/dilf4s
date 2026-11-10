@@ -1,0 +1,45 @@
+[package]
+workspace = "../native"
+name = "dilf4s-signing"
+description = "dilf4s signatures, key derivation, VRFs and key-evolving signatures"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["sign"]
+# Signing, proving and key derivation. Verification never needs it, so a verifier-only build (an SP1 guest) leaves
+# it off.
+sign = ["dep:hkdf", "dep:hmac", "dep:pbkdf2", "dep:unicode-normalization", "dep:rand_core"]
+
+[dependencies]
+dilf4s-core = { path = "../core" }
+# SP1's patch of 0.8.0 moved hashing to digest 0.10, so it differs from crates.io 0.8.0 (digest 0.9): depend on the
+# patched source itself, which builds as plain Rust off the zkVM, so native code and the guest compile the same crate.
+bls12_381 = { git = "https://github.com/sp1-patches/bls12_381", tag = "patch-0.8.0-sp1-6.10.0", default-features = false, features = ["groups", "pairings", "alloc", "experimental", "zeroize"] }
+curve25519-dalek = { version = "=4.1.3", default-features = false, features = ["alloc", "zeroize", "digest"] }
+k256 = { version = "=0.13.4", default-features = false, features = ["arithmetic", "ecdsa", "schnorr", "alloc"] }
+p256 = { version = "=0.13.2", default-features = false, features = ["arithmetic", "ecdsa", "alloc"] }
+sha2.workspace = true
+blake2.workspace = true
+# GF(2^255 - 19) for the VRF Elligator maps (draft-03 and RFC 9380), which curve25519-dalek keeps private: the formally
+# verified field curve25519-dalek's own `fiat` backend uses, at the version it resolves to
+fiat-crypto = { version = "=0.2.9", default-features = false }
+subtle = { version = "=2.6.1", default-features = false }
+zeroize = { version = "1.9", default-features = false, features = ["alloc", "zeroize_derive"] }
+hkdf = { version = "0.12", default-features = false, optional = true }
+hmac = { version = "0.12", optional = true }
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"], optional = true }
+unicode-normalization = { version = "0.1.26", default-features = false, optional = true }
+rand_core = { version = "0.6", default-features = false, optional = true }
+
+[dev-dependencies]
+# An independent RFC 8032 implementation to cross-check signing and the strict/ZIP-215 difference
+ed25519-dalek = { version = "2", default-features = false, features = ["alloc"] }
+# Big-integer test helpers, and the VRF field's previous BigUint implementation, kept as its reference
+num-bigint.workspace = true
+
+[lints]
+workspace = true

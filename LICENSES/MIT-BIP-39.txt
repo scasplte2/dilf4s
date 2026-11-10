@@ -1,5 +1,5 @@
-The BIP-39 word lists (crypto/src/main/resources/bip-0039, sdk/rust/signing/src/keys/bip39-english.txt and
-sdk/ts/packages/signing/src/wordlists/english.ts) are from BIP-39, "Mnemonic code for generating deterministic keys"
+The BIP-39 word lists (lang/scala/crypto/src/main/resources/bip-0039, lang/rust/signing/src/keys/bip39-english.txt and
+lang/ts/packages/signing/src/wordlists/english.ts) are from BIP-39, "Mnemonic code for generating deterministic keys"
 (https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki), by Marek Palatinus, Pavol Rusnak, Aaron Voisine and
 Sean Bowe, which is licensed under the MIT License:
 

@@ -1,0 +1,67 @@
+metakit gas vector 201	Malformed
+metakit gas vector 202	Malformed
+metakit zk_opcode vector 249	Malformed
+metakit zk_opcode vector 250	Malformed
+metakit zk_opcode vector 251	Malformed
+metakit zk_opcode vector 252	Malformed
+metakit zk_opcode vector 253	Malformed
+metakit zk_opcode vector 254	Malformed
+metakit zk_opcode vector 255	Malformed
+metakit zk_opcode vector 256	Malformed
+metakit zk_opcode vector 257	Malformed
+metakit zk_opcode vector 258	Malformed
+metakit zk_opcode vector 259	Malformed
+metakit zk_opcode vector 260	Malformed
+metakit zk_opcode vector 261	Malformed
+metakit zk_opcode vector 262	Malformed
+metakit zk_opcode vector 263	Malformed
+metakit zk_opcode vector 264	Malformed
+metakit zk_opcode vector 265	Malformed
+metakit zk_opcode vector 266	Malformed
+metakit zk_opcode vector 267	Malformed
+metakit zk_opcode vector 268	Malformed
+metakit zk_opcode vector 269	Malformed
+metakit zk_opcode vector 270	Malformed
+metakit zk_opcode vector 271	Malformed
+metakit zk_opcode vector 272	Malformed
+metakit zk_opcode vector 273	Malformed
+metakit zk_opcode vector 328	Malformed
+metakit zk_opcode vector 329	Malformed
+metakit zk_opcode vector 330	Malformed
+metakit zk_opcode vector 331	Malformed
+metakit zk_opcode vector 332	Malformed
+metakit zk_opcode vector 333	Malformed
+metakit zk_opcode vector 334	Malformed
+metakit zk_opcode vector 335	Malformed
+metakit zk_opcode vector 337	Malformed
+metakit zk_opcode vector 338	Malformed
+metakit zk_opcode vector 339	Malformed
+metakit zk_opcode vector 340	Malformed
+metakit zk_opcode vector 341	Malformed
+metakit zk_opcode vector 342	Malformed
+metakit zk_opcode vector 343	Malformed
+metakit zk_opcode vector 344	Malformed
+metakit zk_opcode vector 345	Malformed
+metakit zk_opcode vector 346	Malformed
+dilf4s surface: a repeated member name is refused	Malformed
+dilf4s surface: a repeated member name is refused when its first value is null	Malformed
+dilf4s surface: a repeated member name inside a literal is refused	Malformed
+dilf4s surface: a repeated operation name is refused	Malformed
+dilf4s surface: a repeated member name in an object expression is refused	Malformed
+dilf4s surface: an array headed by an escaped call name is refused	Malformed
+dilf4s surface: a member name with an unpaired surrogate is refused	Malformed
+dilf4s surface: trailing content is refused	Malformed
+dilf4s surface: a path written 0.5 is refused	Malformed
+dilf4s surface: a path written true is refused	Malformed
+dilf4s surface: a literal of 10,001 significant digits is refused	Malformed
+dilf4s surface: a path of 10,001 digits is refused	Malformed
+dilf4s surface: a literal with a 10,001-digit exponent is refused	Malformed
+dilf4s surface: a literal 9e9999, of 33220 bits, is refused	Malformed
+dilf4s surface: a literal -9e9999, of 33220 bits, is refused	Malformed
+dilf4s surface: a literal 1e10000 is refused	Malformed
+dilf4s surface: a literal of 10,000 nines, of 33220 bits, is refused	Malformed
+dilf4s surface: a literal of 10,000 digits times 10^10000 is refused	Malformed
+dilf4s surface: a path written 9e9999 is refused	Malformed
+dilf4s surface: text nested 257 levels deep is Limit	Limit
+dilf4s gas limit: a program that is not JSON is Malformed, even at 2^53	Malformed
+dilf4s JSON exponent budget: a program past it is refused	Malformed

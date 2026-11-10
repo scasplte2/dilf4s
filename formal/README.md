@@ -74,6 +74,6 @@ never its expected outcome. A program whose text is not JSON is in scope, since 
 
 Results on base `958dc34e`:
 - encoding: 263 of 263 checks pass;
-- `jlvm_v1.json`: 3339 cases, 847 in scope. Of those, 456 expect a value and 391 an error, 10 of them `OutOfGas`.
-  All 847 pass.
+- `jlvm_v1.json`: 3363 cases, 854 in scope, 2509 excluded by the operation/binding scope filter. Of those, 458 expect a value and 396 an error, 10 of them `OutOfGas`.
+  All 854 pass.
 - The run takes about 2 s of CPU.

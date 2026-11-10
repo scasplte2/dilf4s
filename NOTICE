@@ -10,9 +10,9 @@ Mozilla Public License 2.0 (see LICENSES/MPL-2.0.txt). The MPL applies file by f
 them, stay under it, while the rest of dilf4s is Apache-2.0.
 
 - Topl Bifrost BloomFilter (co.topl.modifier.block.BloomFilter, 2020, by James Aman):
-  core/src/main/scala/xyz/kd5ujc/core/bloom/BloomFilter.scala.
+  lang/scala/core/src/main/scala/xyz/kd5ujc/core/bloom/BloomFilter.scala.
 - Topl Bifrost (https://github.com/Topl/Bifrost) co.topl.models.utility.Ratio, by way of Constellation tessellation
-  and metakit: numerics/src/main/scala/xyz/kd5ujc/numerics/Ratio.scala.
+  and metakit: lang/scala/numerics/src/main/scala/xyz/kd5ujc/numerics/Ratio.scala.
 - Topl BramblSc (https://github.com/Topl/BramblSc): Ed25519, Extended Ed25519, BIP32-Ed25519 and BIP-39 test
   vectors: docs/test-vectors/Ed25519.json, ExtendedEd25519.json, Bip32Ed25519Ckd.json, Bip32Ed25519Icarus.json and
   Bip39MnemonicToEntropy.json.
@@ -20,10 +20,10 @@ them, stay under it, while the rest of dilf4s is Apache-2.0.
 Other licences:
 
 - Topl Bifrost (https://github.com/Topl/Bifrost), MPL-2.0: the KES sum and product composition design, which
-  crypto/src/main/scala/xyz/kd5ujc/crypto/kes/MerkleKes.scala implements.
+  lang/scala/crypto/src/main/scala/xyz/kd5ujc/crypto/kes/MerkleKes.scala implements.
 - BIP-39 word lists (https://github.com/bitcoin/bips/tree/master/bip-0039), MIT, with its notice in
-  LICENSES/MIT-BIP-39.txt: crypto/src/main/resources/bip-0039, sdk/rust/signing/src/keys/bip39-english.txt and
-  sdk/ts/packages/signing/src/wordlists/english.ts.
+  LICENSES/MIT-BIP-39.txt: lang/scala/crypto/src/main/resources/bip-0039, lang/rust/signing/src/keys/bip39-english.txt and
+  lang/ts/packages/signing/src/wordlists/english.ts.
 - go-ethereum (https://github.com/ethereum/go-ethereum) precompile test vectors (core/vm/testdata/precompiles),
   LGPL-3.0 (LICENSES/LGPL-3.0.txt, which supplements LICENSES/GPL-3.0.txt): docs/test-vectors/zk/bn256Add.json,
   bn256ScalarMul.json and bn256Pairing.json, and the rows of shared/vectors/zk_v1.json named "go-ethereum ..." that
@@ -31,6 +31,6 @@ Other licences:
   them.
 - metakit (https://github.com/Constellation-Labs/metakit), Apache-2.0:
   JLVM conformance programs adapted from its json_logic tests and shared vectors
-  (jlvm/src/test/resources/vectors/jlvm_cases.json, shared/vectors/jlvm_v1.json,
-  jlvm/src/test/resources/vectors/jlvm_zk_from_metakit.json), and its SP1 Groth16 proofs
+  (lang/scala/jlvm/src/test/resources/vectors/jlvm_cases.json, shared/vectors/jlvm_v1.json,
+  lang/scala/jlvm/src/test/resources/vectors/jlvm_zk_from_metakit.json), and its SP1 Groth16 proofs
   (docs/test-vectors/zk/sp1-groth16-premium.json and sp1-groth16-shielded.json).

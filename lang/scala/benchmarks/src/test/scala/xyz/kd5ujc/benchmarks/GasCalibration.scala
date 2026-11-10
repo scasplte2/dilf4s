@@ -1,0 +1,416 @@
+package xyz.kd5ujc.benchmarks
+
+import cats.effect.{ExitCode, IO, IOApp}
+import cats.syntax.all._
+
+import scala.concurrent.duration._
+
+import xyz.kd5ujc.core.canonical.CanonicalValue
+import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.hash.{Hasher, Sha256}
+import xyz.kd5ujc.jlvm._
+import xyz.kd5ujc.numerics.Ratio
+
+import scodec.bits.ByteVector
+
+/**
+ * A quick, single-process look at JLVM gas schedule v1 against wall-clock time, at a nominal [[Rate]] gas per
+ * microsecond. The schedule is priced by [[GasRatios]] instead (ratios to the `secp256k1_verify` anchor on both node
+ * backends, docs/specs/jlvm.md §7): absolute rates drift with the machine and its clock, ratios do not. What remains
+ * useful here is the shape of a fit (every operation timed through `Jlvm.evaluate` at a small and a large argument size,
+ * less a baseline that evaluates the same argument reads) and the metering shares ([[shares]]): the timed
+ * denial-of-service checks, kept out of the test gate.
+ *
+ * `tools/sbt "benchmarks/Test/runMain xyz.kd5ujc.benchmarks.GasCalibration"` (add `metering` for the metering charges alone).
+ */
+object GasCalibration extends IOApp {
+
+  val Rate: Double = 150.0
+
+  private val schedule = GasSchedule.V1
+  private val unlimited = Config(limit = GasLimit.Max)
+
+  private def get[A](e: Either[?, A]): A = e.fold(err => sys.error(err.toString), identity)
+  private def t(s:      String): CanonicalValue = get(CanonicalValue.text(s))
+  private def a(vs:     Vector[CanonicalValue]): CanonicalValue = get(CanonicalValue.array(vs))
+  private def m(kvs:    Vector[(String, CanonicalValue)]): CanonicalValue = get(CanonicalValue.map(kvs))
+
+  /** A `bits`-bit number with no structure (gcds take their typical time), derived from `seed` by hashing. */
+  private def word(bits: Int, seed: Int): BigInt = {
+    val stream = (0 to bits / 256).foldLeft(ByteVector.empty)((b, i) =>
+      b ++ Hasher[Sha256].digest(ByteVector.fromInt(seed) ++ ByteVector.fromInt(i)).bytes
+    )
+    (BigInt(1, stream.toArray) >> (stream.size.toInt * 8 - bits)).setBit(bits - 1)
+  }
+  private def int(bits: Int, seed: Int): CanonicalValue = CanonicalValue.int(word(bits, seed)).fold(e => sys.error(e.toString), identity)
+  private def rat(bits: Int, seed: Int): CanonicalValue =
+    CanonicalValue.number(get(Ratio.of(word(bits, seed), word(bits, seed + 7).setBit(0)))).fold(e => sys.error(e.toString), identity)
+  private def ints(n:  Int): CanonicalValue = a(Vector.tabulate(n)(i => CInt(i)))
+  private def texts(n: Int): CanonicalValue = a(Vector.tabulate(n)(i => t(s"t$i")))
+  private def map(n:   Int): CanonicalValue = m(Vector.tabulate(n)(i => s"k$i" -> CInt(i)))
+  private def text(n:  Int): CanonicalValue = t(("ab c" * (n / 4 + 1)).take(n))
+  private def bytes(n: Int): CanonicalValue = CBytes(ByteVector.fill(n.toLong)(0x5a))
+
+  /** A BN254 scalar-field element, 32 bytes big-endian: 250 bits, so below `r`. */
+  private def fe(seed: Int): CanonicalValue = CBytes(ByteVector(word(250, seed).toByteArray).padLeft(32))
+  private def fes(n:   Int): Vector[CanonicalValue] = Vector.tabulate(n)(i => fe(i + 1))
+
+  /** `ecrecover` that recovers a key: r = x(G), s = 1, so the full recovery runs. */
+  private val ecrecover: Vector[CanonicalValue] = Vector(
+    CBytes(ByteVector.fill(32)(0x42)),
+    CBytes(ByteVector.fromValidHex("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798" + "00" * 31 + "011b"))
+  )
+
+  /** `pmt_verify` with `depth` siblings: the root does not match, but every level is hashed regardless. */
+  private def pmt(depth: Int): Vector[CanonicalValue] = Vector(fe(1000), fe(1001), CInt(5), a(fes(depth)))
+
+  /** Microseconds per call, from batches of at least 200ms, after a warm-up batch. */
+  private def micros(f: () => Long): IO[Double] = {
+    def batch(k: Int): IO[(Int, FiniteDuration, Long)] =
+      IO.monotonic.flatMap(t0 => IO((1 to k).foldLeft(0L)((s, _) => s + f())).flatMap(sum => IO.monotonic.map(t1 => (k, t1 - t0, sum))))
+    def go(k: Int): IO[Double] =
+      batch(k).flatMap {
+        case (n, d, _) => if (d < 200.millis && k < (1 << 26)) go(k * 2) else IO.pure(d.toNanos.toDouble / 1000.0 / n.toDouble)
+      }
+    batch(4).flatMap(_ => go(1))
+  }
+
+  private def reads(n:   Int): Vector[Expr] = Vector.tabulate(n)(i => Expr.Var(VarRef.Data(Vector(s"a$i")), scala.None))
+  private def data(args: Vector[CanonicalValue]): CanonicalValue = m(args.zipWithIndex.map { case (v, i) => s"a$i" -> v })
+
+  private def run(jlvm: Jlvm, e: Expr, d: CanonicalValue, config: Config = unlimited): () => Long = {
+    val p = get(Program.from(e))
+    () => jlvm.evaluate(p, d, Map.empty, config).gasUsed.value
+  }
+
+  /** The op's own time: the call, less reading its arguments. */
+  private def opTime(jlvm: Jlvm, op: Op, args: Vector[CanonicalValue]): IO[Double] = {
+    val d = data(args)
+    (micros(run(jlvm, Expr.Apply(op, reads(args.size)), d)), micros(run(jlvm, Expr.Arr(reads(args.size)), d))).mapN((x, b) =>
+      math.max(x - b, 0.0)
+    )
+  }
+
+  private def units(op: Op, args: Vector[CanonicalValue]): Long =
+    args.zipWithIndex.foldLeft(0L) { case (n, (v, i)) => n + GasSchedule.units(schedule.cost(op).rate(i).unit, v) }
+
+  private def charged(op: Op, args: Vector[CanonicalValue]): Long = (schedule.cost(op).base + schedule.sized(op, args)).value
+
+  final case class Case(op: Op, small: Vector[CanonicalValue], large: Vector[CanonicalValue], note: String = "")
+
+  private def two(f:  Int => CanonicalValue, s:        Int, l: Int) = (Vector(f(s), f(s)), Vector(f(l), f(l)))
+  private def num2(f: (Int, Int) => CanonicalValue, s: Int, l: Int) = (Vector(f(s, 1), f(s, 2)), Vector(f(l, 1), f(l, 2)))
+  private def one(f:  Int => CanonicalValue, s:        Int, l: Int) = (Vector(f(s)), Vector(f(l)))
+  private def mk(op: Op, p: (Vector[CanonicalValue], Vector[CanonicalValue]), note: String = "") = Case(op, p._1, p._2, note)
+
+  private val cases: List[Case] = List(
+    mk(Op.Add, num2(int, 64, 4000), "integers"),
+    mk(Op.Sub, num2(int, 64, 4000), "integers"),
+    mk(Op.Mul, num2(int, 64, 2000), "integers"),
+    mk(Op.Div, num2(int, 64, 4000), "integers: the quotient is normalised"),
+    mk(Op.Mod, num2(int, 64, 4000), "integers"),
+    mk(Op.Min, num2(int, 64, 4000)),
+    mk(Op.Max, num2(int, 64, 4000)),
+    mk(Op.Lt, num2(int, 64, 4000)),
+    mk(Op.Eq, two(ints, 4, 8000), "equal arrays, distinct copies"),
+    mk(Op.Ne, two(ints, 4, 8000)),
+    mk(Op.Abs, (Vector(rat(64, 1)), Vector(rat(2000, 1)))),
+    mk(Op.Round, (Vector(rat(64, 1)), Vector(rat(2000, 1)))),
+    mk(Op.Floor, (Vector(rat(64, 1)), Vector(rat(2000, 1)))),
+    Case(Op.Pow, Vector(int(64, 1), CInt(2)), Vector(int(64, 1), CInt(60))),
+    mk(Op.Not, one(ints, 1, 1000)),
+    mk(Op.TypeOf, one(ints, 1, 1000)),
+    mk(Op.Exists, one(ints, 1, 1000)),
+    mk(Op.Length, one(text, 16, 64000), "text"),
+    mk(Op.Lower, one(text, 16, 64000)),
+    mk(Op.Upper, one(text, 16, 64000)),
+    mk(Op.Trim, one(text, 16, 64000)),
+    Case(Op.Substr, Vector(text(16), CInt(2), CInt(8)), Vector(text(64000), CInt(2), CInt(32000))),
+    Case(Op.StartsWith, Vector(text(16), text(4)), Vector(text(64000), text(32000))),
+    Case(Op.Split, Vector(text(16), t(" ")), Vector(text(64000), t(" "))),
+    Case(Op.In, Vector(t("zz"), text(16)), Vector(t("zz"), text(64000)), "substring"),
+    mk(Op.Cat, one(texts, 4, 4000), "a spread-free array is one argument: texts as elements"),
+    Case(Op.Join, Vector(texts(4), t(",")), Vector(texts(8000), t(","))),
+    Case(Op.In, Vector(CInt(-1), ints(4)), Vector(CInt(-1), ints(8000)), "array membership"),
+    mk(Op.Unique, one(ints, 4, 8000)),
+    mk(Op.Reverse, one(ints, 4, 8000)),
+    Case(Op.Slice, Vector(ints(4), CInt(1), CInt(3)), Vector(ints(8000), CInt(1), CInt(7000))),
+    mk(Op.Flatten, one(n => a(Vector.fill(n)(ints(4))), 2, 2000)),
+    mk(Op.Count, one(ints, 4, 8000)),
+    mk(Op.Intersect, two(ints, 4, 4000)),
+    mk(Op.Merge, two(map, 4, 8000), "maps"),
+    mk(Op.Keys, one(map, 4, 8000)),
+    mk(Op.Values, one(map, 4, 8000)),
+    mk(Op.Entries, one(map, 4, 8000)),
+    Case(Op.Get, Vector(map(4), t("k1")), Vector(map(8000), t("k1"))),
+    Case(Op.Has, Vector(map(4), t("k1")), Vector(map(8000), t("k1"))),
+    Case(Op.Set, Vector(map(4), t("x"), CInt(1)), Vector(map(8000), t("x"), CInt(1))),
+    Case(Op.Unset, Vector(map(4), t("k1")), Vector(map(8000), t("k1"))),
+    mk(Op.Hex, one(bytes, 32, 64000)),
+    mk(Op.Unhex, one(n => t("0x" + "ab" * n), 32, 32000)),
+    mk(Op.BytesToInt, one(bytes, 8, 512)),
+    Case(Op.IntToBytes, Vector(int(64, 1), CInt(8)), Vector(int(4000, 1), CInt(512))),
+    mk(Op.Sha256, one(bytes, 32, 64000)),
+    mk(Op.Sha3_256, one(bytes, 32, 64000)),
+    mk(Op.Blake2b256, one(bytes, 32, 64000)),
+    mk(Op.Keccak256, one(bytes, 32, 64000)),
+    Case(Op.Ecrecover, ecrecover, ecrecover, "flat: r is G's x-coordinate, so a key is always recovered"),
+    Case(Op.Poseidon, fes(1), fes(4), "1 and 4 inputs; the cost is convex in the width, so the fit bounds 2 and 3"),
+    Case(Op.PmtVerify, pmt(8), pmt(128), "8 and 128 siblings")
+  )
+
+  /** Rationals: the gcd that normalises them is quadratic in their size. */
+  private val rationals: List[Case] = List(
+    mk(Op.Add, num2(rat, 256, 2000), "rationals"),
+    mk(Op.Mul, num2(rat, 256, 1000), "rationals"),
+    mk(Op.Div, num2(rat, 256, 2000), "rationals"),
+    mk(Op.Div, num2(int, 256, 4000), "integers"),
+    mk(Op.Mod, num2(int, 256, 4000), "integers"),
+    mk(Op.Lt, num2(rat, 256, 2000), "rationals")
+  )
+
+  private def limbs2(args: Vector[CanonicalValue]): Long =
+    args.foldLeft(0L) { (n, v) =>
+      val l = v match {
+        case CInt(i)      => (i.bitLength / 64).toLong
+        case CRational(r) => (r.numerator.bitLength / 64 + r.denominator.bitLength / 64).toLong
+        case _            => 0L
+      }
+      n + l * l
+    }
+
+  private def fit(jlvm: Jlvm, c: Case): IO[String] =
+    (opTime(jlvm, c.op, c.small), opTime(jlvm, c.op, c.large)).mapN { (ts, tl) =>
+      val (us, ul) = (units(c.op, c.small), units(c.op, c.large))
+      val per = if (ul > us) math.max((tl - ts) * Rate / (ul - us), 0.0) else 0.0
+      val base = math.max(ts * Rate - per * us, 0.0)
+      val cost = schedule.cost(c.op)
+      f"${c.op.wire}%-12s suggest c(${math.round(base)}%7d, ${math.round(per)}%5d, ${cost.unit}%-8s) now c(${cost.base.value}%6d, ${cost.perUnit.value}%4d)" +
+      f"  ${ts}%9.2f us / ${tl}%10.2f us  charged ${charged(c.op, c.small)}%7d / ${charged(c.op, c.large)}%9d  ${c.note}"
+    }
+
+  private def quadratic(jlvm: Jlvm, c: Case): IO[String] =
+    (opTime(jlvm, c.op, c.small), opTime(jlvm, c.op, c.large)).mapN { (ts, tl) =>
+      val (qs, ql) = (limbs2(c.small), limbs2(c.large))
+      f"${c.op.wire}%-12s ${c.note}%-10s ${ts}%9.2f / ${tl}%10.2f us, limbs^2 $qs%6d / $ql%7d -> ${(tl - ts) * Rate / math.max(ql - qs, 1L)}%6.2f gas per limb^2"
+    }
+
+  /** A charge with a unit of its own: the measured gas per unit between two sizes, against the schedule's. */
+  private def extra(label: String, unit: String, charged: Long)(small: IO[Double], large: IO[Double], us: Long, ul: Long): IO[String] =
+    (small, large).mapN { (ts, tl) =>
+      f"$label%-34s ${(tl - ts) * Rate / (ul - us).toDouble}%8.2f gas per $unit%-14s now $charged%4d   $ts%9.2f / $tl%10.2f us"
+    }
+
+  /** `(6 + bits/64)^2` for a number's decimal expansion: the unit of the `rendering` charge. */
+  private def rendering(v: CanonicalValue): Long = {
+    val bits = v match {
+      case CInt(i)      => i.bitLength.toLong
+      case CRational(r) => r.numerator.bitLength.toLong + (7L * r.denominator.bitLength + 2) / 3
+      case _            => 0L
+    }
+    (GasSchedule.RenderLimbs + bits / 64) * (GasSchedule.RenderLimbs + bits / 64)
+  }
+
+  /**
+   * The charges added for metering: rendering numbers (`cat`, `join`), pieces of `cat` and `join`, comparing a long key,
+   * and parsing a path at run time (a computed `var` path, a `missing` key, charged at `split`'s rate per unit of weight).
+   */
+  private def extras(jlvm: Jlvm): IO[List[String]] = {
+    val r = schedule.rendering.value
+    val piece = schedule.cost(Op.Cat).extra.headOption.fold(0L)(_.perUnit.value)
+    val joinPiece = schedule.cost(Op.Join).extra.headOption.fold(0L)(_.perUnit.value)
+    val small = int(64, 1)
+    val wide = int(4000, 1)
+    val fraction = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(1) << 4000))).fold(e => sys.error(e.toString), identity)
+    val fifths = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(5).pow(1700)))).fold(e => sys.error(e.toString), identity)
+    def words(n: Int) = Vector.fill(n)(t("w"))
+    def path(n:  Int) = t(Vector.fill(n)("a").mkString("."))
+    // the map's key and the key looked up are equal but distinct strings, so the hit compares them
+    def keyed(n: Int) = Vector(m(Vector("k" * n -> CInt(1))), t("k" * n))
+    def parse(p: CanonicalValue): IO[Double] = {
+      val d = data(Vector(p))
+      (micros(run(jlvm, Expr.VarAt(reads(1)(0), scala.None), d)), micros(run(jlvm, reads(1)(0), d))).mapN((x, b) => math.max(x - b, 0.0))
+    }
+    List(
+      extra("cat: render a 4000-bit integer", "rendering unit", r)(
+        opTime(jlvm, Op.Cat, Vector(small)),
+        opTime(jlvm, Op.Cat, Vector(wide)),
+        rendering(small),
+        rendering(wide)
+      ),
+      extra("cat: render 1/2^4000", "rendering unit", r)(
+        opTime(jlvm, Op.Cat, Vector(small)),
+        opTime(jlvm, Op.Cat, Vector(fraction)),
+        rendering(small),
+        rendering(fraction)
+      ),
+      extra("cat: render 1/5^1700", "rendering unit", r)(
+        opTime(jlvm, Op.Cat, Vector(small)),
+        opTime(jlvm, Op.Cat, Vector(fifths)),
+        rendering(small),
+        rendering(fifths)
+      ),
+      extra("cat: pieces (one-letter texts)", "piece", piece + schedule.cost(Op.Cat).perUnit.value * 2)(
+        opTime(jlvm, Op.Cat, words(4)),
+        opTime(jlvm, Op.Cat, words(2000)),
+        4L,
+        2000L
+      ),
+      extra("cat: pieces (64-bit integers)", "piece", piece + r * 25 + schedule.cost(Op.Cat).perUnit.value)(
+        opTime(jlvm, Op.Cat, Vector.fill(4)(small)),
+        opTime(jlvm, Op.Cat, Vector.fill(2000)(small)),
+        4L,
+        2000L
+      ),
+      extra("join: pieces (one-letter texts)", "piece", joinPiece + schedule.cost(Op.Join).perUnit.value * 2)(
+        opTime(jlvm, Op.Join, Vector(a(words(4)), t(""))),
+        opTime(jlvm, Op.Join, Vector(a(words(8000)), t(""))),
+        4L,
+        8000L
+      ),
+      extra("get: a hit compares the key", "32 units", 1L)(
+        opTime(jlvm, Op.Get, keyed(32)),
+        opTime(jlvm, Op.Get, keyed(64000)),
+        32L / Values.KeyBlock,
+        64000L / Values.KeyBlock
+      ),
+      extra("computed path: parse a.a.a...", "unit of weight", schedule.cost(Op.Split).perUnit.value)(
+        parse(path(4)),
+        parse(path(20000)),
+        path(4).weight,
+        path(20000).weight
+      )
+    ).sequence
+  }
+
+  /** `2^k` distinct strings of length `2k` with one Java hash code ("Aa"/"BB"), or as many whose hashes differ ("Aa"/"Ac"). */
+  private def strings(k: Int, a: String, b: String): Vector[String] =
+    (1 to k).foldLeft(Vector(""))((acc, _) => acc.flatMap(s => Vector(s + a, s + b)))
+
+  /**
+   * The timed checks MeteringSuite used to make, which now live here so that no gate measures time (MeteringSuite reads
+   * the gas and counts comparisons instead). Each prints an evaluation's gas per microsecond as a share of a reference
+   * timed right after it, with the floor the suite used: unpriced work measured 0.0001-0.05 of its reference before the
+   * metering fixes, priced work stays near 1. `let` compilation prints how much longer 4000 bindings take than 1000.
+   */
+  private def shares(jlvm: Jlvm): IO[List[String]] = {
+    def compiled(json: String): Compiled = get(Parser.parse(json).flatMap(Compiled(_)))
+    def rate(c: Compiled, d: CanonicalValue): IO[Double] = {
+      val gas = jlvm.evaluate(c, d, Map.empty, unlimited).gasUsed.value
+      micros(() => jlvm.evaluate(c, d, Map.empty, unlimited).gasUsed.value).map(us => gas / math.max(us, 1e-3))
+    }
+    val reference = (compiled("""{"map": [{"var": "xs"}, {"+": [{"var": "$current"}, 1]}]}"""), m(Vector("xs" -> ints(2000))))
+    def share(label: String, floor: Double)(p: String, d: CanonicalValue, against: (Compiled, CanonicalValue) = reference): IO[String] =
+      (rate(compiled(p), d), rate(against._1, against._2)).mapN((r, ref) => f"share $label%-52s ${r / ref}%8.3f   floor $floor%.2f")
+    def xs(v:         CanonicalValue, n: Int) = m(Vector("xs" -> a(Vector.fill(n)(v))))
+    def counted(body: String) = s"""{"count": [{"var": "xs"}, $body]}"""
+    val fifth = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(5).pow(1764)))).fold(e => sys.error(e.toString), identity)
+    val half = CanonicalValue.number(get(Ratio.of(BigInt(1), BigInt(1) << 4095))).fold(e => sys.error(e.toString), identity)
+    val cat = """{"cat": {"var": "xs"}}"""
+    val longPath = t(Vector.fill(50001)("a").mkString("."))
+    val ones = a(Vector.fill(20)(CInt(1)))
+    def lets(names: Vector[String]) =
+      s"""{"let": [[${names.map(x => s"""["$x", 1]""").mkString(", ")}], {"var": "$$${names.last}"}]}"""
+    def keyed(k: String) = m(
+      Vector("xs" -> a(Vector.fill(200)(CInt(1))), "k" -> t(k), "m" -> m(Vector(new String(k.toCharArray) -> CInt(1))))
+    )
+    val set = """{"reduce": [{"var": "xs"}, {"set": [{"var": "$accumulator"}, {"var": "k"}, {"var": "$index"}]}, {"object": {}}]}"""
+    val lookup = counted("""{"get": [{"var": "m"}, {"var": "k"}]}""")
+    def texts(ss: Vector[String]) = m(Vector("xs" -> a(ss.map(t))))
+    val unique = """{"unique": {"var": "xs"}}"""
+    val intersect = """{"intersect": [{"var": "xs"}, {"var": "xs"}]}"""
+    def compileMicros(n: Int): IO[Double] = {
+      val json = lets(Vector.tabulate(n)(i => s"n$i"))
+      micros(() => Parser.parse(json).flatMap(Compiled(_)).fold(_ => 0L, _ => 1L))
+    }
+    List(
+      share("cat: 20 x 1/5^1764", 0.1)(cat, xs(fifth, 20)),
+      share("cat: 20 x 1/2^4095", 0.1)(cat, xs(half, 20)),
+      share("join: 20 x 1/5^1764", 0.1)("""{"join": [{"var": "xs"}, ""]}""", xs(fifth, 20)),
+      share("cat: 1000 small integers", 0.1)(cat, m(Vector("xs" -> a(Vector.tabulate(1000)(i => CInt(i * 1000003L)))))),
+      share("*: a running product of 4000 twos", 0.1)("""{"*": {"var": "xs"}}""", xs(CInt(2), 4000)),
+      share("missing_some: 20 x a 100,001-character key", 0.1)(
+        counted("""{"missing_some": [0, [{"var": "p"}]]}"""),
+        m(Vector("xs" -> ones, "p" -> longPath))
+      ),
+      share("var: 20 x a 100,001-character computed path", 0.1)(
+        counted("""{"var": {"var": "p"}}"""),
+        m(Vector("xs" -> ones, "p" -> longPath))
+      ),
+      share("object: 1000 x a literal with a 50,000-character key", 0.1)(
+        counted(s"""{"object": {"${"k" * 50000}": 1}}"""),
+        xs(CInt(1), 1000)
+      ),
+      share("let: 1024 colliding names, against differing ones", 0.25)(
+        lets(strings(10, "Aa", "BB")),
+        CNull,
+        (compiled(lets(strings(10, "Aa", "Ac"))), CNull)
+      ),
+      share("set: 200 x a 1 MB key, against a 1-byte key", 0.25)(set, keyed("k" * (1 << 20)), (compiled(set), keyed("k"))),
+      share("get: 200 x a 1 MB key, against a 1-byte key", 0.25)(lookup, keyed("k" * (1 << 20)), (compiled(lookup), keyed("k"))),
+      share("unique: 8192 colliding strings, against differing ones", 0.25)(
+        unique,
+        texts(strings(13, "Aa", "BB")),
+        (compiled(unique), texts(strings(13, "Aa", "Ac")))
+      ),
+      share("intersect: 8192 colliding strings, against differing ones", 0.25)(
+        intersect,
+        texts(strings(13, "Aa", "BB")),
+        (compiled(intersect), texts(strings(13, "Aa", "Ac")))
+      ),
+      (compileMicros(1000), compileMicros(4000)).mapN((s, l) =>
+        f"let: compiling 4000 bindings takes ${l / s}%6.2f times 1000's   ceiling 10"
+      )
+    ).sequence
+  }
+
+  /** Node charges: the time per item of growing programs. */
+  private def nodes(jlvm: Jlvm): IO[List[String]] = {
+    val d = m(
+      Vector("x" -> CInt(1), "xs" -> ints(1000), "deep" -> (1 to 32).foldLeft[CanonicalValue](CInt(1))((v, _) => m(Vector("d" -> v))))
+    )
+    def per(label: String, small: Int, large: Int)(e: Int => Expr): IO[String] =
+      Config.Driver.values.toList.traverse { driver =>
+        val c = unlimited.copy(driver = driver)
+        (micros(run(jlvm, e(small), d, c)), micros(run(jlvm, e(large), d, c))).mapN { (ts, tl) =>
+          f"node $label%-28s ${driver.toString}%-12s ${(tl - ts) / (large - small)}%8.4f us each = ${(tl - ts) * Rate / (large - small)}%7.1f gas"
+        }
+      }.map(_.mkString("\n"))
+    List(
+      per("literal in an array", 10, 1000)(n => Expr.Arr(Vector.fill(n)(Expr.Lit(CInt(1))))),
+      per("var read in an array", 10, 1000)(n => Expr.Arr(Vector.fill(n)(Expr.Var(VarRef.Data(Vector("x")), scala.None)))),
+      per("path segment", 2, 32)(n => Expr.Var(VarRef.Data(Vector.fill(n)("d")), scala.None)),
+      per("callback run (map, body 1)", 10, 1000)(n =>
+        Expr.Apply(
+          Op.Map,
+          Vector(
+            Expr.Apply(Op.Slice, Vector(Expr.Var(VarRef.Data(Vector("xs")), scala.None), Expr.Lit(CInt(0)), Expr.Lit(CInt(n)))),
+            Expr.Lit(CInt(1))
+          )
+        )
+      ),
+      per("if, untaken branches", 3, 201)(n =>
+        Expr.Apply(Op.If, Vector.fill(n / 2)(Vector(Expr.Lit(False), Expr.Lit(CInt(1)))).flatten :+ Expr.Lit(CInt(2)))
+      )
+    ).sequence
+  }
+
+  /** With the argument `metering`, only the charges added for metering ([[extras]]), with the node charges to compare. */
+  def run(args: List[String]): IO[ExitCode] =
+    Jlvm.load[IO].flatMap { jlvm =>
+      val everything = !args.contains("metering")
+      for {
+        _  <- IO.println(f"JLVM gas calibration at $Rate%.0f gas/us")
+        ns <- nodes(jlvm)
+        _  <- ns.traverse_(IO.println)
+        os <- if (everything) cases.traverse(fit(jlvm, _)) else IO.pure(Nil)
+        _  <- os.traverse_(IO.println)
+        qs <- if (everything) rationals.traverse(quadratic(jlvm, _)) else IO.pure(Nil)
+        _  <- qs.traverse_(IO.println)
+        xs <- extras(jlvm)
+        _  <- xs.traverse_(IO.println)
+        ss <- shares(jlvm)
+        _  <- ss.traverse_(IO.println)
+      } yield ExitCode.Success
+    }
+}

@@ -1,0 +1,4 @@
+# The same pin as lang/rust/rust-toolchain.toml (clippy pedantic is denied here too); move them together.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]

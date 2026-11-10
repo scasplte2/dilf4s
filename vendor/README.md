@@ -1,7 +1,7 @@
 # Vendored artifacts
 
 Libraries that are not on Maven Central and sit on a consensus path. A copy is kept here, in Maven layout, so the
-build never depends on the publisher's server. `project/Pinned.scala` pins the SHA-256 of each one, so `update` fails
+build never depends on the publisher's server. `lang/scala/project/Pinned.scala` pins the SHA-256 of each one, so `update` fails
 if the bytes or the version ever change.
 
 | Artifact | Why | Source | SHA-256 |
@@ -16,7 +16,7 @@ included, fail at `CryptoOps.load`. The libraries are built by Besu's release pr
 To update:
 1. Download the new jar and pom.
 2. Check them against the publisher's `.sha1` files.
-3. Replace the directory, and update the version in `project/Dependencies.scala` and the hashes in
-   `project/Pinned.scala`.
+3. Replace the directory, and update the version in `lang/scala/project/Dependencies.scala` and the hashes in
+   `lang/scala/project/Pinned.scala`.
 4. Run the gate. The pure-Scala engine cross-checks gnark in `Bn254Suite`, `Sp1Groth16GnarkSuite` and
    `ZkOpsGnarkSuite`.

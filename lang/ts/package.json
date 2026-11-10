@@ -1,0 +1,22 @@
+{
+  "name": "@kd5ujc/dilf4s-sdk",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "npm run build --workspace @kd5ujc/dilf4s-core --workspace @kd5ujc/dilf4s-signing --workspace @kd5ujc/dilf4s-proofs --workspace @kd5ujc/dilf4s-jlvm",
+    "lint": "eslint .",
+    "typecheck": "npm run typecheck --workspace @kd5ujc/dilf4s-core --workspace @kd5ujc/dilf4s-signing --workspace @kd5ujc/dilf4s-proofs --workspace @kd5ujc/dilf4s-jlvm --workspace @kd5ujc/dilf4s-mcp",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "eslint": "10.14.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.0.5"
+  }
+}

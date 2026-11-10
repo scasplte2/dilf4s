@@ -28,16 +28,16 @@ jobs:
           java-version: "21"
           cache: sbt
       - uses: sbt/setup-sbt@v1
-      # the same toolchain as sdk/rust/rust-toolchain.toml
+      # the same toolchain as lang/rust/rust-toolchain.toml
       - uses: dtolnay/rust-toolchain@1.99.1
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk/rust
+          workspaces: lang/rust/native
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: sdk/ts/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Seed
         env:
           SEED_INPUT: ${{ github.event.inputs.seed }}

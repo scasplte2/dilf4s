@@ -1,0 +1,14 @@
+{
+  "name": "dilf4s-workspace",
+  "private": true,
+  "workspaces": [
+    "lang/ts",
+    "lang/ts/packages/*",
+    "tools/mcp"
+  ],
+  "scripts": {
+    "build:ts": "npm run build --workspace @kd5ujc/dilf4s-sdk && npm run build --workspace @kd5ujc/dilf4s-mcp",
+    "test:ts": "npm test --workspace @kd5ujc/dilf4s-sdk",
+    "check:ts": "npm run typecheck --workspace @kd5ujc/dilf4s-sdk && npm run lint --workspace @kd5ujc/dilf4s-sdk && npm run lint --workspace @kd5ujc/dilf4s-mcp"
+  }
+}

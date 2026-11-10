@@ -19,7 +19,7 @@ A call is exactly the five things a JLVM result is a function of (`jlvm.md`):
 - the gas limit;
 - the language version and the gas schedule, which are the guest's: language 1, the latest schedule (1).
 
-The guest `dilf4s-zk-jlvm-call` (`sdk/rust/zk/guest/src/bin/jlvm_call.rs`) reads the call in canonical form:
+The guest `dilf4s-zk-jlvm-call` (`lang/rust/zk/guest/src/bin/jlvm_call.rs`) reads the call in canonical form:
 
 - the program's canonical CBOR, the encoding of its canonical form (`jlvm.md` §1);
 - the input data's canonical CBOR (`canonical-encoding.md` §2);
@@ -137,11 +137,11 @@ with SP1 v6.10.0. Its public inputs are `[programVKey, sha256(publicValues) & (2
 
 The guest's ELF must not depend on where it was built, so that CI, a developer and the prover derive one
 `programVKey`: the host's build remaps the checkout and `CARGO_HOME` out of the paths the ELF embeds
-(`sdk/rust/zk/host/build.rs`), and the guest's workspace root (`sdk/Cargo.toml`) contains every path dependency, so
-cargo hashes them by relative path (`sdk/rust/zk/README.md`, "Layout"). Any change to the guest or the code it links (the JLVM, the cryptography, the SP1
+(`lang/rust/zk/host/build.rs`), and the guest's workspace root (`lang/rust/Cargo.toml`) contains every path dependency, so
+cargo hashes them by relative path (`lang/rust/zk/README.md`, "Layout"). Any change to the guest or the code it links (the JLVM, the cryptography, the SP1
 patches) changes the ELF and the key. The gates then fail, naming both keys, until the call is proved again under
 the new key and the proof pinned: the pinned proof must always verify under the pinned key, and the pinned key must
-always be the guest's (`sdk/rust/zk/README.md`).
+always be the guest's (`lang/rust/zk/README.md`).
 
 ## 4. Informative notes
 
@@ -150,4 +150,4 @@ always be the guest's (`sdk/rust/zk/README.md`).
 - **Cost.** The guest's cycles are the prover's cost, not gas: gas prices the validating nodes that evaluate the call
   (`jlvm.md` §7) and is the same in the guest as anywhere.
 - **Reference values.** `zk_jlvm_v1.json` computes each statement natively in Rust and in Scala, from the
-  `jlvm_v1.json` row it names, and checks the guest commits the same bytes (`sdk/rust/zk/host/tests`).
+  `jlvm_v1.json` row it names, and checks the guest commits the same bytes (`lang/rust/zk/host/tests`).
