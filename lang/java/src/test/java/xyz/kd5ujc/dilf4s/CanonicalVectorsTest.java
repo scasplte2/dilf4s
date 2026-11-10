@@ -89,6 +89,7 @@ public class CanonicalVectorsTest {
 
   @Test
   void limits() {
+    assertEquals(9L, rows(vectors, "limits").stream().filter(r -> str(r, "encoding").equals("cbor")).count(), "CBOR measurement rows");
     check("limits", 19, r -> () -> {
       final Value v = cbor(str(r, "value"));
       final long max = num(r, "maxBytes");
@@ -97,6 +98,9 @@ public class CanonicalVectorsTest {
       if (outcome instanceof Value.Text t && t.value().equals("accepted")) {
         final String out = asCbor ? hex(ok(Cbor.encodeWithin(v, max), str(r, "name"))) : ok(Json.renderWithin(v, max), str(r, "name"));
         assertEquals(str(r, "output"), out, str(r, "name"));
+        if (asCbor) {
+          assertEquals(str(r, "output").length() / 2L, ok(Cbor.encodedLengthWithin(v, max), str(r, "name")), str(r, "name") + ": measured length");
+        }
       } else {
         final String kind = kindOf(outcome);
         final String got = asCbor
@@ -106,6 +110,9 @@ public class CanonicalVectorsTest {
             case TooLarge l -> l.kind();
           };
         assertEquals(kind, got, str(r, "name"));
+        if (asCbor) {
+          assertEquals(new TooLarge(num(map(outcome), "limit")), err(Cbor.encodedLengthWithin(v, max), str(r, "name")), str(r, "name") + ": measured refusal");
+        }
         map(outcome).get("limit").ifPresent(l -> {
           final long applied = asCbor
             ? ((TooLarge) err(Cbor.encodeWithin(v, max), "limit")).limit()

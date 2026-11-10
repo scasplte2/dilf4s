@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -167,7 +168,12 @@ func TestCanonicalModelCases(t *testing.T) {
 }
 
 func TestCanonicalLimitCases(t *testing.T) {
-	for _, c := range canonical(t).Limits {
+	rows := canonical(t).Limits
+	if len(rows) != 19 {
+		t.Fatalf("limits cases: got %d, want 19", len(rows))
+	}
+	measuredRows := 0
+	for _, c := range rows {
 		value, err := core.Decode(fromHex(t, c.Value))
 		if err != nil {
 			t.Fatalf("%s: %v", c.Name, err)
@@ -175,12 +181,13 @@ func TestCanonicalLimitCases(t *testing.T) {
 		limit := int(min(c.MaxBytes, math.MaxInt)) // a limit past int is past the ceiling, which it is then
 		var output string
 		if c.Encoding == canonicalvectors.CanonicalLimitEncodingCbor {
+			measuredRows++
 			var b []byte
 			if b, err = core.EncodeWithin(value, limit); err == nil {
 				output = hexOf(b)
 			}
-			if n, lerr := core.EncodedLengthWithin(value, limit); (lerr == nil) != (err == nil) || (err == nil && n != len(b)) {
-				t.Errorf("%s within %d: the measured length %d, %v disagrees", c.Name, limit, n, lerr)
+			if n, lerr := core.EncodedLengthWithin(value, limit); !reflect.DeepEqual(lerr, err) || (err == nil && n != len(b)) {
+				t.Errorf("%s within %d: measured %d, %v; want %d, %v", c.Name, limit, n, lerr, len(b), err)
 			}
 		} else {
 			output, err = core.RenderJSONWithin(value, limit)
@@ -204,6 +211,9 @@ func TestCanonicalLimitCases(t *testing.T) {
 		if accepted != (err == nil) || (accepted && output != want) {
 			t.Errorf("%s within %d: output %q, want %q", c.Name, limit, output, want)
 		}
+	}
+	if measuredRows != 9 {
+		t.Errorf("CBOR measurement rows: got %d, want 9", measuredRows)
 	}
 }
 
