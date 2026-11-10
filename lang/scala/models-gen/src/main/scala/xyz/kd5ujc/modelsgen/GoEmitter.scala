@@ -130,7 +130,8 @@ final class GoEmitter(
   }
 
   /** A Go type, its encoder (a `func(T, int) (Value, error)` expression) and its decoder (`func(Value) (T, error)`). */
-  private final case class Go(tpe: String, enc: String, dec: String)
+  private enum Storage { case Data, Literal }
+  private final case class Go(tpe: String, enc: String, dec: String, storage: Storage = Storage.Data)
 
   /**
    * `from` is the module the code is emitted into: an alias's target is checked in the alias's own context (`rule`),
@@ -148,18 +149,17 @@ final class GoEmitter(
       case FieldType.Bool     => Go("bool", c("EncodeBool"), c("DecodeBool")).asRight
       case FieldType.AnyValue => Go(c("Value"), c("EncodeAny"), c("DecodeAny")).asRight
       case FieldType.IntRange(lo, hi) =>
-        RustEmitter
-          .native(lo, hi)
+        NativeInteger
+          .forRange(lo, hi)
           .fold(codec(c("Int"), s"${c("IntIn")}{Lo: ${bigBound(lo, c("BigBound"))}, Hi: ${bigBound(hi, c("BigBound"))}}")) { n =>
-            val (tpe, name) = NativeCodecs(n)
-            codec(tpe, s"${c(name)}{Lo: $lo, Hi: $hi}")
+            codec(n.goType, s"${c(n.goCodec)}{Lo: $lo, Hi: $hi}")
           }
           .asRight
       case FieldType.SizedBytes(lo, hi) if lo == hi   => Go(s"[$lo]byte", s"encodeBytes$lo", s"decodeBytes$lo").asRight
       case FieldType.SizedBytes(lo, hi)               => codec("[]byte", s"${c("SizedBytes")}{Lo: $lo, Hi: ${bound(hi)}}").asRight
       case FieldType.SizedText(lo, hi)                => codec("string", s"${c("SizedText")}{Lo: $lo, Hi: ${bound(hi)}}").asRight
       case FieldType.Matching(p)                      => codec("string", s"${c("Matching")}{Pattern: ${c(patternName(p))}}").asRight
-      case FieldType.LitInt(_) | FieldType.LitText(_) => Go("", "", "").asRight
+      case FieldType.LitInt(_) | FieldType.LitText(_) => Go("", "", "", Storage.Literal).asRight
       // an error's field only (Profile refuses it in a wire type): the core's Preview
       case FieldType.Preview => Go(c("Preview"), "", "").asRight
       case FieldType.Ref(q) =>
@@ -186,7 +186,7 @@ final class GoEmitter(
 
   /** Literals carry no data, so they only make sense as required record fields. */
   private def element(rule: QName, g: Go): Either[GenError, Go] =
-    Either.cond(g.tpe.nonEmpty, g, outside(rule, ProfileRefusal.LiteralOutsideRecord))
+    Either.cond(g.storage == Storage.Data, g, outside(rule, ProfileRefusal.LiteralOutsideRecord))
 
   /** The byte-string sizes held as arrays in `t`, each of which a module gives a pair of helper functions. */
   private def fixedSizes(t: FieldType): Set[Int] = t match {
@@ -860,10 +860,6 @@ object GoEmitter {
 
   /** A wire key as an exported Go field name: `contentHash` is `ContentHash`. */
   def fieldName(key: String): String = CanonicalEmitter.pascal(key)
-
-  /** The Go type and runtime codec of each native integer range (as [[RustEmitter.native]] names them). */
-  private val NativeCodecs: Map[String, (String, String)] =
-    Map("u32" -> ("uint32", "Uint32In"), "u64" -> ("uint64", "Uint64In"), "i32" -> ("int32", "Int32In"), "i64" -> ("int64", "Int64In"))
 
   /** The methods every error kind has, which a field cannot be named like. */
   private val ReservedErrorFields = Set("Error", "Kind", "Unwrap")

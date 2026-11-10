@@ -18,7 +18,7 @@ object GoEmitterSuite extends SimpleIOSuite {
   private val generated: IO[SdkSources] =
     SdkSources
       .readSchemas(Paths.get("shared", "schemas"))
-      .flatMap(s => IO.fromEither(SdkSources.generate(s).leftMap(e => new IllegalStateException(e.message))))
+      .flatMap(s => IO.fromEither(SdkSources.generate(s).leftMap(e => GenError.Failure(e))))
 
   /** The committed generated Go files of `root`'s scope are exactly `fresh`. */
   private def compare(fresh: Vector[(String, String)], root: String, command: String): IO[weaver.Expectations] =
@@ -39,7 +39,7 @@ object GoEmitterSuite extends SimpleIOSuite {
   test("committed Go models match shared/schemas") {
     generated.flatMap { g =>
       compare(g.go, GoEmitter.DefaultRoot, SdkSources.Regenerate).map(
-        _.and(expect(g.go.size > 30, s"a package for every schema: ${g.go.size}"))
+        _.and(expect.same(32, g.go.size))
       )
     }
   }
@@ -51,7 +51,7 @@ object GoEmitterSuite extends SimpleIOSuite {
         IO.fromEither(
           SdkSources
             .generateGo(s, SdkSources.GoFixtureRoot, "lang/go/internal/fixtures/schemas")
-            .leftMap(e => new IllegalStateException(e.message))
+            .leftMap(e => GenError.Failure(e))
         )
       )
       .flatMap(g => compare(g, SdkSources.GoFixtureRoot, SdkSources.RegenerateGoFixtures))

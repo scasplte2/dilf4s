@@ -25,6 +25,48 @@ object SdkSourcesSuite extends SimpleIOSuite {
       .and(expect.same("unresolved name `rule` in scope", GenError.Failure(parse).getMessage))
   }
 
+  pureTest("native integer selection uses exact signed and unsigned boundaries") {
+    val u32 = (BigInt(1) << 32) - 1
+    val u64 = (BigInt(1) << 64) - 1
+    val cases = Vector(
+      (BigInt(0), BigInt(0), Some(NativeInteger.U32)),
+      (BigInt(0), u32, Some(NativeInteger.U32)),
+      (BigInt(0), u32 + 1, Some(NativeInteger.U64)),
+      (BigInt(0), u64, Some(NativeInteger.U64)),
+      (BigInt(0), u64 + 1, None),
+      (BigInt(Int.MinValue), BigInt(Int.MaxValue), Some(NativeInteger.I32)),
+      (BigInt(Int.MinValue) - 1, BigInt(Int.MaxValue), Some(NativeInteger.I64)),
+      (BigInt(-1), BigInt(Int.MaxValue) + 1, Some(NativeInteger.I64)),
+      (BigInt(Long.MinValue), BigInt(Long.MaxValue), Some(NativeInteger.I64)),
+      (BigInt(Long.MinValue) - 1, BigInt(0), None),
+      (BigInt(-1), BigInt(Long.MaxValue) + 1, None)
+    )
+    cases.foldMap { case (lo, hi, expected) => expect.same((lo, hi, expected), (lo, hi, NativeInteger.forRange(lo, hi))) }
+  }
+
+  pureTest("literal placement refusals remain typed in each native emitter") {
+    val rule = QName("t", "r")
+    val literal = FieldType.LitInt(1)
+    val alias = QName("other", "hidden")
+    val cases = Vector(
+      ModelRule.Alias(FieldType.TextMap(literal))                                             -> ProfileRefusal.LiteralOutsideRecord,
+      ModelRule.Record(Vector(ProfileField("items", false, FieldType.Vec(literal, 0, None)))) -> ProfileRefusal.LiteralOutsideRecord,
+      ModelRule.Record(Vector(ProfileField("version", false, FieldType.Ref(alias))))          -> ProfileRefusal.LiteralOutsideRecord,
+      ModelRule.Alias(FieldType.Vec(FieldType.Ref(alias), 0, None))                           -> ProfileRefusal.LiteralOutsideRecord,
+      ModelRule.Alias(FieldType.Vec(literal, 0, None))                                        -> ProfileRefusal.LiteralOutsideRecord,
+      ModelRule.Record(Vector(ProfileField("version", true, literal, Vector.empty)))          -> ProfileRefusal.OptionalLiteral("version")
+    )
+    cases.foldMap {
+      case (model, reason) =>
+        val models = Map(rule -> model, alias -> ModelRule.Alias(literal))
+        val rust = new RustEmitter(models).module("t")
+        val go = new GoEmitter(models).module("t")
+        def expected(language: Language) =
+          Left(GenError.Unsupported(rule.toString, UnsupportedFeature.OutsideProfile(ProfileRefusal.ForLanguage(language, reason))))
+        expect.same(expected(Language.Rust), rust).and(expect.same(expected(Language.Go), go))
+    }
+  }
+
   private def committed(dir: Path, suffix: String): IO[Map[String, String]] =
     SdkSources
       .listFiles(dir, suffix)
@@ -67,7 +109,7 @@ object SdkSourcesSuite extends SimpleIOSuite {
       val declaration = """export (?:interface|type) .*|export \* as [A-Za-z][A-Za-z0-9]* from .*""".r
       val loose = exported.filterNot { case (_, line) => constant.matches(line) || declaration.matches(line) }
       expect(loose.isEmpty, s"exports neither a combinator's codec, a number nor a type: ${loose.take(5).mkString(", ")}")
-        .and(expect(exported.count { case (_, line) => constant.matches(line) } > 250, "the constants of every schema were read"))
+        .and(expect.same(351, exported.count { case (_, line) => constant.matches(line) }))
     }
   }
 
