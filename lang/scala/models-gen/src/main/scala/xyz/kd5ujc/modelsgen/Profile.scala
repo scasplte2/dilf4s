@@ -110,7 +110,8 @@ enum ModelRule {
 
 final class Profile(val schema: Schema) {
 
-  private def outside(rule: QName, what: String): GenError = GenError.Unsupported(rule.toString, UnsupportedFeature.OutsideProfile(what))
+  private def outside(rule: QName, what: ProfileRefusal): GenError =
+    GenError.Unsupported(rule.toString, UnsupportedFeature.OutsideProfile(what))
 
   /**
    * A type in field, element or alias position. Only an error family's field (`inError`) may name another error
@@ -130,9 +131,9 @@ final class Profile(val schema: Schema) {
     case RT.Ref(q) =>
       schema.rule(q).flatMap {
         case RuleDef(_, RuleBody.Type(RT.LitInt(_))) =>
-          outside(rule, s"constant ${q.name} in field position (a constant is a value: name it in a range or size bound)").asLeft
+          outside(rule, ProfileRefusal.ConstantInField(q)).asLeft
         case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(_))) if !inError =>
-          outside(rule, s"error family ${q.name} in field position (an error is not a wire type: name its kinds)").asLeft
+          outside(rule, ProfileRefusal.ErrorFamilyInField(q)).asLeft
         // a rule that is one text literal stands for its text
         case RuleDef(_, RuleBody.Type(RT.LitText(v))) => FieldType.LitText(v).asRight
         case _ if q.name == Profile.PreviewRule       => FieldType.Preview.asRight
@@ -146,13 +147,13 @@ final class Profile(val schema: Schema) {
         FieldType.Matching(pattern),
         outside(
           rule,
-          s".regexp ${CanonicalEmitter.literal(pattern)} (supported: ${Profile.Patterns.map(CanonicalEmitter.literal).mkString(", ")})"
+          ProfileRefusal.UnsupportedPattern(pattern)
         )
       )
     case Profile.TextMapOf(value) => fieldType(rule, value).map(FieldType.TextMap(_))
     case RT.Arr(Vector(REntry(occ, _, None, element, _))) if occ != Occ.Once && occ != Occ.Optional =>
       fieldType(rule, element).map(FieldType.Vec(_, occ.min, occ.max))
-    case other => outside(rule, s"${SyntaxSummary(other)} in field position (name it as its own rule)").asLeft
+    case other => outside(rule, ProfileRefusal.FieldTypeInPosition(other)).asLeft
   }
 
   /**
@@ -163,27 +164,27 @@ final class Profile(val schema: Schema) {
     entries.traverse {
       case e @ REntry(occ, _, Some(RKey.TextKey(key)), value, _) if occ == Occ.Once || occ == Occ.Optional =>
         fieldType(rule, value, inError).map(ProfileField(key, occ == Occ.Optional, _, e.doc))
-      case REntry(_, _, key, _, _) =>
-        outside(rule, s"map entry with key ${key.fold("<none>")(_.toString)} (text-literal keys, once or optional)").asLeft
+      case REntry(occ, _, key, _, _) =>
+        outside(rule, ProfileRefusal.MapEntry(occ, key)).asLeft
     }.flatMap { fs =>
-      val clash = Profile.Namings.collectFirst(Function.unlift { (_, name) =>
+      val clash = Profile.Namings.collectFirst(Function.unlift { name =>
         fs.groupBy(f => name(f.key)).collectFirst { case (n, xs) if xs.size > 1 => n -> xs.map(_.key) }
       })
       val unnamed =
-        fs.find(f => Profile.Namings.exists((n, name) => n != "wire" && !Profile.isIdentifier(name(f.key).stripPrefix("r#"))))
+        fs.find(f => Profile.Namings.exists(n => n != Profile.Naming.Wire && !Profile.isIdentifier(n(f.key).stripPrefix("r#"))))
       // a TypeScript record reads its fields as properties, and every object inherits these
       val inherited =
-        fs.find(f => Profile.ObjectMembers(Profile.Namings.collectFirst { case ("camelCase", name) => name(f.key) }.getOrElse(f.key)))
+        fs.find(f => Profile.ObjectMembers(Profile.Naming.Camel(f.key)))
       unnamed
-        .map(f => outside(rule, s"key ${CanonicalEmitter.literal(f.key)} has no identifier form"))
-        .orElse(inherited.map(f => outside(rule, s"key ${CanonicalEmitter.literal(f.key)} names a member every object inherits")))
+        .map(f => outside(rule, ProfileRefusal.InvalidKeyIdentifier(f.key)))
+        .orElse(inherited.map(f => outside(rule, ProfileRefusal.InheritedMember(f.key))))
         .orElse(clash.map { case (n, keys) => GenError.NameClash(rule.toString, n, keys) })
         .toLeft(fs)
     }
 
   /** A wire type never holds a preview, at any depth: a preview is built from caller text, never decoded. */
   private def wire(rule: QName, t: FieldType): Either[GenError, Unit] = t match {
-    case FieldType.Preview            => outside(rule, "preview in a wire type (a preview is an error's field only)").asLeft
+    case FieldType.Preview            => outside(rule, ProfileRefusal.PreviewInWire).asLeft
     case FieldType.TextMap(value)     => wire(rule, value)
     case FieldType.Vec(element, _, _) => wire(rule, element)
     case _                            => ().asRight
@@ -195,9 +196,9 @@ final class Profile(val schema: Schema) {
     val dupNames = names.diff(names.distinct)
     val dupValues = cases.map(_._2).diff(cases.map(_._2).distinct)
     val outOfRange = cases.collect { case (l, v) if v < Profile.IntMin || v > Profile.IntMax => l }
-    if (dupNames.nonEmpty || dupValues.nonEmpty) outside(rule, "enumeration with repeated labels or values").asLeft
-    else if (unnamed.nonEmpty) outside(rule, s"enumeration labels with no identifier form: ${unnamed.mkString(", ")}").asLeft
-    else if (outOfRange.nonEmpty) outside(rule, s"enumeration values beyond CDDL int: ${outOfRange.mkString(", ")}").asLeft
+    if (dupNames.nonEmpty || dupValues.nonEmpty) outside(rule, ProfileRefusal.RepeatedEnumeration(dupNames, dupValues)).asLeft
+    else if (unnamed.nonEmpty) outside(rule, ProfileRefusal.InvalidEnumerationLabels(unnamed)).asLeft
+    else if (outOfRange.nonEmpty) outside(rule, ProfileRefusal.EnumerationOutOfRange(outOfRange)).asLeft
     else ModelRule.Enumeration(cases).asRight
   }
 
@@ -205,10 +206,10 @@ final class Profile(val schema: Schema) {
   private def keySets(alt: QName): Either[GenError, UnionAlternative] =
     schema.rule(alt).flatMap {
       case _ if alt.name == Profile.PreviewRule =>
-        outside(alt, "preview as a choice alternative (a preview is an error's field only)").asLeft
+        outside(alt, ProfileRefusal.PreviewAlternative).asLeft
       case RuleDef(_, RuleBody.Type(RT.MapT(es))) =>
         fields(alt, es).map(fs => UnionAlternative(alt, fs.filterNot(_.optional).map(_.key).toSet, fs.map(_.key).toSet))
-      case _ => outside(alt, "choice alternative that is not a map rule").asLeft
+      case _ => outside(alt, ProfileRefusal.NonMapAlternative).asLeft
     }
 
   /**
@@ -245,7 +246,7 @@ final class Profile(val schema: Schema) {
     }.flatMap { found =>
       if (found.forall(_.isEmpty)) none[Vector[NamedText]].asRight
       else
-        found.sequence.toRight(outside(q, "choice mixing rules of one text literal with other alternatives")).flatMap { members =>
+        found.sequence.toRight(outside(q, ProfileRefusal.MixedTextAlternatives)).flatMap { members =>
           val names = members.map(_._1.name)
           val shared = names.reduceLeftOption((a, b) => a.zip(b).takeWhile((x, y) => x == y).map(_._1).mkString).getOrElse("")
           val prefix = shared.take(shared.lastIndexOf('-') + 1)
@@ -253,13 +254,13 @@ final class Profile(val schema: Schema) {
           val texts = named.map(_.text)
           val ids = named.map(_.name)
           if (texts.distinct.size != texts.size)
-            outside(q, s"choice with repeated texts: ${texts.diff(texts.distinct).map(CanonicalEmitter.literal).mkString(", ")}").asLeft
+            outside(q, ProfileRefusal.RepeatedTexts(texts.diff(texts.distinct))).asLeft
           else
             ids
               .diff(ids.distinct)
               .headOption
               .map(id => GenError.NameClash(q.toString, id, names))
-              .orElse(named.find(m => !Profile.isIdentifier(m.name)).map(m => outside(q, s"member ${m.name} has no identifier form")))
+              .orElse(named.find(m => !Profile.isIdentifier(m.name)).map(m => outside(q, ProfileRefusal.InvalidMemberIdentifier(m.name))))
               .toLeft(named.some)
         }
     }
@@ -269,7 +270,7 @@ final class Profile(val schema: Schema) {
       val choices = classified.collect { case Right(c) => c }
       val all = texts ++ choices.flatMap(_.texts)
       val repeated = all.diff(all.distinct).distinct
-      if (repeated.nonEmpty) outside(rule, s"choice with repeated texts: ${repeated.map(CanonicalEmitter.literal).mkString(", ")}").asLeft
+      if (repeated.nonEmpty) outside(rule, ProfileRefusal.RepeatedTexts(repeated)).asLeft
       else records(rule, classified.collect { case Left(a) => a }, texts, choices)
     }
 
@@ -277,12 +278,13 @@ final class Profile(val schema: Schema) {
     alts.traverse(keySets).flatMap { ks =>
       // ambiguous by wire keys (decoding), or by field names (TypeScript encodes a union by its present fields)
       val ambiguous = (for {
-        (_, name) <- Profile.Namings
-        a         <- ks
-        b         <- ks
+        name <- Profile.Namings
+        a    <- ks
+        b    <- ks
         if CanonicalEmitter.pascal(a.rule.name) < CanonicalEmitter.pascal(b.rule.name) &&
-        (a.required.map(name) -- b.allowed.map(name)).isEmpty && (b.required.map(name) -- a.allowed.map(name)).isEmpty
-      } yield s"${a.rule.name}/${b.rule.name}").distinct
+        (a.required.map(name.apply) -- b.allowed.map(name.apply)).isEmpty && (b.required.map(name.apply) -- a.allowed
+          .map(name.apply)).isEmpty
+      } yield (a.rule, b.rule)).distinct
       if (ambiguous.nonEmpty) GenError.Unsupported(rule.toString, UnsupportedFeature.AmbiguousAlternatives(ambiguous)).asLeft
       else ModelRule.Union(ks, texts, choices).asRight
     }
@@ -296,22 +298,22 @@ final class Profile(val schema: Schema) {
     case FieldType.Uint | FieldType.Int | FieldType.Nint | FieldType.Text | FieldType.Bool => ().asRight
     case FieldType.IntRange(_, _) | FieldType.SizedText(_, _) | FieldType.Matching(_)      => ().asRight
     case FieldType.Preview                                                                 => ().asRight
-    case FieldType.Ref(q) if seen(q) => outside(rule, s"alias cycle through ${q.name}").asLeft
+    case FieldType.Ref(q) if seen(q) => outside(rule, ProfileRefusal.AliasCycle(q)).asLeft
     case FieldType.Ref(q) =>
       schema.rule(q).flatMap {
         // another error family, nested: checked on its own, and never back to this one
         case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(_))) =>
-          Either.cond(!nests(q, rule), (), outside(rule, s"error family ${q.name} nests ${rule.name} (an error cannot hold itself)"))
+          Either.cond(!nests(q, rule), (), outside(rule, ProfileRefusal.NestedError(q, rule)))
         case _ =>
           this.rule(q).flatMap {
             case ModelRule.Alias(target)         => errorField(rule, target, seen + q)
             case ModelRule.Enumeration(_)        => ().asRight
             case ModelRule.NamedTexts(_)         => ().asRight
             case ModelRule.Union(Vector(), _, _) => ().asRight
-            case _ => outside(rule, s"error field of type ${q.name} (text, an integer, a boolean, a kind or an error)").asLeft
+            case _                               => outside(rule, ProfileRefusal.ErrorField(FieldType.Ref(q))).asLeft
           }
       }
-    case other => outside(rule, s"error field of type $other (text, an integer, a boolean, a kind or an error)").asLeft
+    case other => outside(rule, ProfileRefusal.ErrorField(other)).asLeft
   }
 
   /** The error families an error family's fields name directly. */
@@ -349,18 +351,18 @@ final class Profile(val schema: Schema) {
           fields(q, es.filterNot(_.key.contains(RKey.TextKey("kind"))), inError = true)
             .flatMap(fs => fs.traverse_(f => errorField(q, f.tpe, Set.empty)).as(ErrorCase(k, fs, e.doc)))
         case Vector(REntry(occ, _, _, RT.LitText(k), _)) if occ == Occ.Once =>
-          outside(q, s"error kind ${CanonicalEmitter.literal(k)} (a kind is a PascalCase identifier)").asLeft
-        case _ => outside(q, "error family alternative without exactly one \"kind\", a required text literal").asLeft
+          outside(q, ProfileRefusal.InvalidErrorKind(k)).asLeft
+        case _ => outside(q, ProfileRefusal.ErrorKindField(es)).asLeft
       }
     }.flatMap { cases =>
       val kinds = cases.map(_.kind)
       val listed = textChoice(kindRule).toOption.flatten.map(_.texts)
       if (kinds.distinct.size != kinds.size)
-        outside(q, s"error family with repeated kinds: ${kinds.diff(kinds.distinct).mkString(", ")}").asLeft
+        outside(q, ProfileRefusal.RepeatedErrorKinds(kinds.diff(kinds.distinct))).asLeft
       else if (!listed.contains(kinds))
         outside(
           q,
-          s"error family whose kinds are not listed, in order, by ${kindRule.name} = ${kinds.map(CanonicalEmitter.literal).mkString(" / ")}"
+          ProfileRefusal.ErrorKindOrder(kindRule, kinds, listed)
         ).asLeft
       else ModelRule.ErrorFamily(kindRule, cases).asRight
     }
@@ -370,7 +372,7 @@ final class Profile(val schema: Schema) {
   def rule(q: QName): Either[GenError, ModelRule] =
     schema.rule(q).flatMap {
       case RuleDef(_, body) if q.name == Profile.PreviewRule =>
-        val shape = outside(q, "preview that is not { \"head\": text, \"length\": uint }")
+        val shape = outside(q, ProfileRefusal.PreviewShape(body))
         body match {
           case RuleBody.Type(RT.MapT(es)) =>
             fields(q, es)
@@ -381,7 +383,7 @@ final class Profile(val schema: Schema) {
       case RuleDef(_, RuleBody.Type(RT.MapT(es)))    => fields(q, es).flatTap(_.traverse_(f => wire(q, f.tpe))).map(ModelRule.Record(_))
       case RuleDef(_, RuleBody.Type(RT.IntEnum(cs))) => enumeration(q, cs)
       case RuleDef(_, RuleBody.Type(RT.LitInt(v))) =>
-        Either.cond(v >= 0 && v <= Profile.UintMax, ModelRule.Constant(v), outside(q, s"constant $v (a constant is a uint, 0..2^64-1)"))
+        Either.cond(v >= 0 && v <= Profile.UintMax, ModelRule.Constant(v), outside(q, ProfileRefusal.ConstantOutOfRange(v)))
       case RuleDef(_, RuleBody.Type(Profile.ErrorFamilyOf(alternatives))) => errorFamily(q, alternatives)
       case RuleDef(_, RuleBody.Type(RT.LitText(t)))                       => ModelRule.TextMember(t).asRight
       case RuleDef(_, RuleBody.Type(RT.Choice(alts))) if namedTexts(q, alts).exists(_.isDefined) =>
@@ -392,10 +394,10 @@ final class Profile(val schema: Schema) {
           case RT.LitText(t) => Right(t).some
           case _             => none[Either[QName, String]]
         }
-          .toRight(outside(q, "inline choice (a choice is of named map rules and text literals; use an enumeration for integers)"))
+          .toRight(outside(q, ProfileRefusal.InlineChoice(alts)))
           .flatMap(as => union(q, as.collect { case Left(a) => a }, as.collect { case Right(t) => t }))
       case RuleDef(_, RuleBody.Type(t))      => fieldType(q, t).flatTap(wire(q, _)).map(ModelRule.Alias(_))
-      case RuleDef(_, RuleBody.GroupBody(_)) => outside(q, "group rule").asLeft
+      case RuleDef(_, RuleBody.GroupBody(_)) => outside(q, ProfileRefusal.GroupRule).asLeft
     }
 
   /** Every rule of a module in name order, with its model. */
@@ -453,12 +455,18 @@ object Profile {
    * How each emitter names a wire key: the key itself, camelCase (Scala, TypeScript), snake_case (Rust) and PascalCase
    * (Go, whose exported names `xY` and `XY` would both make `XY`).
    */
-  val Namings: Vector[(String, String => String)] = Vector(
-    "wire"       -> identity,
-    "camelCase"  -> (k => CanonicalEmitter.fieldName(k).stripPrefix("`").stripSuffix("`")),
-    "snake_case" -> RustEmitter.fieldName,
-    "PascalCase" -> GoEmitter.fieldName
-  )
+  enum Naming {
+    case Wire, Camel, Snake, Pascal
+
+    def apply(key: String): String = this match {
+      case Wire   => key
+      case Camel  => CanonicalEmitter.fieldName(key).stripPrefix("`").stripSuffix("`")
+      case Snake  => RustEmitter.fieldName(key)
+      case Pascal => GoEmitter.fieldName(key)
+    }
+  }
+
+  val Namings: Vector[Naming] = Naming.values.toVector
 
   /** A choice of inline maps, its alternatives `//` in one map rule: an error family's shape (`{ "kind": "A", ... // "kind": "B" }`). */
   object ErrorFamilyOf {

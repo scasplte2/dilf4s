@@ -23,8 +23,8 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
 
   import RustEmitter._
 
-  private def outside(rule: QName, what: String): GenError =
-    GenError.Unsupported(rule.toString, UnsupportedFeature.OutsideProfile(s"$what (Rust)"))
+  private def outside(rule: QName, what: ProfileRefusal): GenError =
+    GenError.Unsupported(rule.toString, UnsupportedFeature.OutsideProfile(ProfileRefusal.ForLanguage(Language.Rust, what)))
 
   private def typeName(q: QName): String = CanonicalEmitter.pascal(q.name)
 
@@ -98,7 +98,7 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
     case FieldType.Preview => Rs("c::Preview", "", "").asRight
     case FieldType.Ref(q) =>
       models.get(q).toRight(GenError.UnresolvedName(rule.module, q.name)).flatMap {
-        case ModelRule.Alias(_) if resolving(q) => outside(rule, s"alias cycle through ${q.name}").asLeft
+        case ModelRule.Alias(_) if resolving(q) => outside(rule, ProfileRefusal.AliasCycle(q)).asLeft
         case ModelRule.Alias(target) =>
           rs(q, target, resolving + q, from).map(r => Rs(path(from, q, typeName(q)), r.codecType, path(from, q, constName(q))))
         case _ =>
@@ -123,7 +123,7 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
 
   /** Literals carry no data, so they only make sense as required record fields. */
   private def element(rule: QName, r: Rs): Either[GenError, Unit] =
-    Either.cond(r.tpe != "()", (), outside(rule, "literal outside a required record field"))
+    Either.cond(r.tpe != "()", (), outside(rule, ProfileRefusal.LiteralOutsideRecord))
 
   /** A rule's doc comment: where it is defined (and `more`), then its CDDL comment. */
   private def doc(rule: QName, more: String = ""): String =
@@ -148,7 +148,7 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
           case FieldType.Ref(q) => reaches(q, rule)
           case _                => false
         }
-        if (r.tpe == "()" && f.optional) outside(rule, s"optional literal field ${f.key}").asLeft
+        if (r.tpe == "()" && f.optional) outside(rule, ProfileRefusal.OptionalLiteral(f.key)).asLeft
         else
           Field(
             f.key,
@@ -252,7 +252,7 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
          |}
          |""".stripMargin
       }
-    } { case (l, _) => outside(rule, s"enumeration case $l beyond CDDL int").asLeft }
+    } { case (l, _) => outside(rule, ProfileRefusal.EnumerationCaseOutOfRange(l)).asLeft }
 
   private def union(
     rule:    QName,
@@ -276,7 +276,7 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
       .sortBy(_._1)
       .collectFirst { case (v, xs) if xs.size > 1 => GenError.NameClash(rule.toString, v, xs.map(_._2)) }
       .orElse(sources.collectFirst {
-        case (v, s) if !Profile.isIdentifier(v) => outside(rule, s"choice alternative $s has no identifier form")
+        case (v, s) if !Profile.isIdentifier(v) => outside(rule, ProfileRefusal.InvalidAlternativeName(s))
       })
       .orElse(sources.collectFirst { case (v, _) if reserved(v) => GenError.ReservedName(rule.toString, Language.Rust, v) })
     problem.toLeft {
