@@ -565,6 +565,27 @@ func (e NumberBoundScale) Error() string {
 	return fmt.Sprintf("Scale (scale: %v, limit: %v)", e.Scale, e.Limit)
 }
 
+// The text's exponents, summed up to and including this number's, past the exponent budget.
+type NumberBoundExponents struct {
+	// The sum: each number's exponent magnitude, at most one past the scale bound.
+	Exponents uint64
+
+	// The budget (limits.cddl canonical-max-json-exponents).
+	Limit uint64
+}
+
+// Kind is NumberBoundKindExponents.
+func (NumberBoundExponents) Kind() NumberBoundKind {
+	return NumberBoundKindExponents
+}
+
+func (NumberBoundExponents) isNumberBound() {}
+
+// Error is the kind and its fields.
+func (e NumberBoundExponents) Error() string {
+	return fmt.Sprintf("Exponents (exponents: %v, limit: %v)", e.Exponents, e.Limit)
+}
+
 // NumberBoundKind is `number-bound-kind` (shared/schemas/codec-errors.cddl).
 type NumberBoundKind string
 
@@ -574,10 +595,13 @@ const NumberBoundKindDigits NumberBoundKind = "Digits"
 // NumberBoundKindScale is the text "Scale".
 const NumberBoundKindScale NumberBoundKind = "Scale"
 
+// NumberBoundKindExponents is the text "Exponents".
+const NumberBoundKindExponents NumberBoundKind = "Exponents"
+
 // Valid reports whether x is a member of NumberBoundKind.
 func (x NumberBoundKind) Valid() bool {
 	switch x {
-	case NumberBoundKindDigits, NumberBoundKindScale:
+	case NumberBoundKindDigits, NumberBoundKindScale, NumberBoundKindExponents:
 		return true
 	}
 	return false
@@ -585,7 +609,7 @@ func (x NumberBoundKind) Valid() bool {
 
 // AllNumberBoundKind is every member of NumberBoundKind, in schema order: a fresh slice.
 func AllNumberBoundKind() []NumberBoundKind {
-	return []NumberBoundKind{NumberBoundKindDigits, NumberBoundKindScale}
+	return []NumberBoundKind{NumberBoundKindDigits, NumberBoundKindScale, NumberBoundKindExponents}
 }
 
 // EncodeNumberBoundKind is the canonical value of x; a value that is not a member is a TypeMismatch.

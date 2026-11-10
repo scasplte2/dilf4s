@@ -639,6 +639,18 @@ object OpCoverageCases extends IOApp {
   }
 
   /**
+   * A program or a binding read from JSON text whose numbers' exponents pass the budget (canonical-encoding.md §3):
+   * the text is refused before the number that passes it is converted, as every reader of JSON text refuses it.
+   */
+  val exponentBudget: List[Case] = {
+    val over = List.fill(1678)("8e9999").mkString("[", ",", "]")
+    List(
+      Case("dilf4s JSON exponent budget: a program past it is refused", over, CNull),
+      Case("dilf4s JSON exponent budget: a binding past it is refused", """{"var": "$x"}""", CNull, env = Map("x" -> over))
+    )
+  }
+
+  /**
    * Host bindings (jlvm.md §4.1): a name bound to null is bound, so it reads as null where an unbound name is
    * `Malformed`; a default replaces a null read either way, and a path into a null binding reads null. `let` shadows a
    * host binding, and binds null like any other value.
@@ -716,7 +728,7 @@ object OpCoverageCases extends IOApp {
     (Secp256k1.load[IO], vector("merkle_v1.json"), vector("trie_v1.json"), vector("sigma_v1.json"))
       .mapN((secp, mk, tr, sg) =>
         sweep ++ bytesAndHashing ++ casing ++ signatures(secp) ++ merkle(mk) ++ proofWeight(mk) ++ tries(tr) ++ sigmaBounds ++
-        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes ++ errorSites ++ gasLimits ++ sortKeyCeiling ++ hostBindings ++ lookupBounds ++ resultBounds ++
+        frameLookups ++ nonCanonicalEd25519 ++ surfaceReading ++ gasShapes ++ errorSites ++ gasLimits ++ exponentBudget ++ sortKeyCeiling ++ hostBindings ++ lookupBounds ++ resultBounds ++
         verdicts(sg) ++ rootVerifiers(sg)
       )
       .flatMap(cases => IO.blocking(Files.write(path, render(cases).getBytes(UTF_8))))

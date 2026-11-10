@@ -107,6 +107,8 @@ object Errors {
     e match {
       case xyz.kd5ujc.models.codec_errors.NumberBound.Digits(digits, limit) => new xyz.kd5ujc.dilf4s.error.NumberBound.Digits(digits, limit)
       case xyz.kd5ujc.models.codec_errors.NumberBound.Scale(scale, limit)   => new xyz.kd5ujc.dilf4s.error.NumberBound.Scale(scale, limit)
+      case xyz.kd5ujc.models.codec_errors.NumberBound.Exponents(exponents, limit) =>
+        new xyz.kd5ujc.dilf4s.error.NumberBound.Exponents(exponents, limit)
     }
 
   def unsupportedItem(e: xyz.kd5ujc.models.codec_errors.UnsupportedItem): xyz.kd5ujc.dilf4s.error.UnsupportedItem =

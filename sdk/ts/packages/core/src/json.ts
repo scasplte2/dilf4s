@@ -9,7 +9,7 @@
 import { twosAndFives } from "./bigint.js";
 import { byteLimit, Meter } from "./budget.js";
 import type { CanonicalError, JsonSyntaxReason, NotJson, TooLarge, TypeMismatch } from "./error.js";
-import { CANONICAL_MAX_DIGITS, CANONICAL_MAX_SCALE } from "./generated/limits.js";
+import { CANONICAL_MAX_DIGITS, CANONICAL_MAX_JSON_EXPONENTS, CANONICAL_MAX_SCALE } from "./generated/limits.js";
 import { KeySet } from "./keyset.js";
 import { Preview } from "./preview.js";
 import { err, ok, type Result } from "./result.js";
@@ -27,6 +27,13 @@ export const DEFAULT_MAX_SCALE = CANONICAL_MAX_SCALE;
  * any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
  */
 export const MAX_DIGITS = CANONICAL_MAX_DIGITS;
+
+/**
+ * The most a text's numbers may spend on their exponents, summed: each costs its exponent's magnitude, at most
+ * `DEFAULT_MAX_SCALE + 1`. An exponent makes a short text stand for a long value (`8e9999` is six characters and 10,000
+ * digits), so this bounds what exponents add to the work of reading a text (canonical-encoding.md section 3).
+ */
+export const MAX_JSON_EXPONENTS = CANONICAL_MAX_JSON_EXPONENTS;
 
 const leadingZeros = (s: string): number => s.length - s.replace(/^0+/, "").length;
 
@@ -53,6 +60,9 @@ export function parse(text: string, maxScale: number = DEFAULT_MAX_SCALE): Resul
 }
 
 class Parser {
+  /** What the numbers read so far have spent on their exponents. */
+  private spent = 0;
+
   constructor(
     private readonly s: string,
     private readonly maxScale: number,
@@ -209,6 +219,10 @@ class Parser {
     const exponent = magnitude * (hasExp && expSign === "-" ? -1n : 1n);
     const scale = BigInt(fracDigits.length) - exponent;
     if ((scale < 0n ? -scale : scale) > BigInt(this.maxScale)) return err({ kind: "InvalidNumber", ...described, bound: { kind: "Scale", scale: Number(scale > INT32_MAX ? INT32_MAX : scale < INT32_MIN ? INT32_MIN : scale), limit: this.maxScale } });
+    // its exponent's magnitude, at most one past the largest scale, charged to the text's budget before converting
+    const total = this.spent + Number(magnitude > BigInt(DEFAULT_MAX_SCALE + 1) ? BigInt(DEFAULT_MAX_SCALE + 1) : magnitude);
+    if (total > MAX_JSON_EXPONENTS) return err({ kind: "InvalidNumber", ...described, bound: { kind: "Exponents", exponents: total, limit: MAX_JSON_EXPONENTS } });
+    this.spent = total;
     const unscaled = BigInt(intDigits + fracDigits) * (negative ? -1n : 1n);
     // a decimal's denominator is 10^scale: reduced by its primes 2 and 5 alone, never by a general gcd
     // a positive exponent can take an integer past MAX_INTEGER_BITS (9e9999): refused, as every producer does

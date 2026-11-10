@@ -106,10 +106,15 @@ def digitsOf (cs : List Char) : List Char × List Char := (cs.takeWhile isDigit,
 
 def digitValue (ds : List Char) : Nat := ds.foldl (fun n c => n * 10 + (c.toNat - '0'.toNat)) 0
 
+/-- 2^24: the most a text's numbers may spend on their exponents, each its exponent's magnitude, at most
+`maxDigits + 1` (`MaxJsonExponents`, canonical-encoding.md section 3). -/
+def maxJsonExponents : Nat := 2 ^ 24
+
 /-- `-? digits (. digits)? ([eE] [+-]? digits)?`, converted exactly: malformed (`InvalidNumber`), then the
 significand's digits, the exponent's digits and the scale (each `InvalidNumber`), all on the text before any
-conversion; then the value's width (`IntegerTooWide`, `RationalTooWide`). -/
-def number (cs : List Char) : Except Error (Rat × List Char) :=
+conversion; then the exponent budget, `spent` so far (`InvalidNumber`); then the value's width (`IntegerTooWide`,
+`RationalTooWide`). Returns what the text has spent once the number is read. -/
+def number (spent : Nat) (cs : List Char) : Except Error (Rat × List Char × Nat) :=
   let (negative, cs1) := match cs with
     | '-' :: r => (true, r)
     | r => (false, r)
@@ -139,14 +144,17 @@ def number (cs : List Char) : Except Error (Rat × List Char) :=
     let magnitude : Int := if exponentDigits > 18 then (2 ^ 63 - 1 : Nat) else digitValue expDigits
     let exponent : Int := if expNegative then -magnitude else magnitude
     let scale : Int := fracDigits.length - exponent
+    -- its exponent's magnitude, at most one past the largest scale
+    let total := spent + min magnitude.toNat (maxDigits + 1)
     if scale.natAbs > maxDigits then .error .invalidNumber
+    else if total > maxJsonExponents then .error .invalidNumber
     else
       let unscaled : Int := (if negative then -1 else 1) * (digitValue (intDigits ++ fracDigits) : Int)
       let q : Rat := if scale ≥ 0 then mkRat unscaled (10 ^ scale.toNat) else (unscaled * 10 ^ (-scale).toNat : Int)
       if q.den = 1 then
-        if bitLength q.num > maxIntegerBits then .error .integerTooWide else .ok (q, cs4)
+        if bitLength q.num > maxIntegerBits then .error .integerTooWide else .ok (q, cs4, total)
       else if bitLength q.num > maxIntegerBits ∨ natBits q.den > maxIntegerBits then .error .rationalTooWide
-      else .ok (q, cs4)
+      else .ok (q, cs4, total)
 
 /-- The maximum number of containers open at once (`MaxDepth`). -/
 def maxDepth : Nat := 256
@@ -155,9 +163,10 @@ def maxDepth : Nat := 256
 def seenKey (seen : List (List Nat)) (key : List Nat) : Bool := seen.contains key
 
 mutual
-/-- A value at `depth` open containers. `fuel` is twice the text's length plus two: each nesting level takes two calls
-(`value`, then `elements` or `members`), and each of those reads a character before calling again. -/
-def value (fuel depth : Nat) (cs : List Char) : Except Error (Json × List Char) :=
+/-- A value at `depth` open containers, `spent` already spent on exponents; it returns what is spent once it is read.
+`fuel` is twice the text's length plus two: each nesting level takes two calls (`value`, then `elements` or
+`members`), and each of those reads a character before calling again. -/
+def value (fuel depth spent : Nat) (cs : List Char) : Except Error (Json × List Char × Nat) :=
   match fuel with
   | 0 => .error .syntax
   | fuel + 1 =>
@@ -165,41 +174,41 @@ def value (fuel depth : Nat) (cs : List Char) : Except Error (Json × List Char)
     | '{' :: rest =>
       if depth ≥ maxDepth then .error .depthExceeded
       else match skipWs rest with
-        | '}' :: rest' => .ok (.obj [], rest')
-        | _ => members fuel (depth + 1) rest [] []
+        | '}' :: rest' => .ok (.obj [], rest', spent)
+        | _ => members fuel (depth + 1) spent rest [] []
     | '[' :: rest =>
       if depth ≥ maxDepth then .error .depthExceeded
       else match skipWs rest with
-        | ']' :: rest' => .ok (.arr [], rest')
-        | _ => elements fuel (depth + 1) rest []
+        | ']' :: rest' => .ok (.arr [], rest', spent)
+        | _ => elements fuel (depth + 1) spent rest []
     | '"' :: rest => do
       let (us, rest') ← stringUnits rest []
       match fromUnits us with
-      | some s => pure (.str (String.ofList s), rest')
+      | some s => pure (.str (String.ofList s), rest', spent)
       | none => throw .unpairedSurrogate
-    | 't' :: 'r' :: 'u' :: 'e' :: rest => .ok (.bool true, rest)
-    | 'f' :: 'a' :: 'l' :: 's' :: 'e' :: rest => .ok (.bool false, rest)
-    | 'n' :: 'u' :: 'l' :: 'l' :: rest => .ok (.null, rest)
+    | 't' :: 'r' :: 'u' :: 'e' :: rest => .ok (.bool true, rest, spent)
+    | 'f' :: 'a' :: 'l' :: 's' :: 'e' :: rest => .ok (.bool false, rest, spent)
+    | 'n' :: 'u' :: 'l' :: 'l' :: rest => .ok (.null, rest, spent)
     | c :: rest =>
       if c = '-' ∨ isDigit c then do
-        let (q, rest') ← number (c :: rest)
-        pure (.num q, rest')
+        let (q, rest', now) ← number spent (c :: rest)
+        pure (.num q, rest', now)
       else .error .syntax
     | [] => .error .syntax
 /-- The elements of an array, after its `[` or a `,`. -/
-def elements (fuel depth : Nat) (cs : List Char) (acc : List Json) : Except Error (Json × List Char) :=
+def elements (fuel depth spent : Nat) (cs : List Char) (acc : List Json) : Except Error (Json × List Char × Nat) :=
   match fuel with
   | 0 => .error .syntax
   | fuel + 1 => do
-    let (v, rest) ← value fuel depth cs
+    let (v, rest, now) ← value fuel depth spent cs
     match skipWs rest with
-    | ',' :: rest' => elements fuel depth rest' (v :: acc)
-    | ']' :: rest' => pure (.arr (v :: acc).reverse, rest')
+    | ',' :: rest' => elements fuel depth now rest' (v :: acc)
+    | ']' :: rest' => pure (.arr (v :: acc).reverse, rest', now)
     | _ => throw .syntax
 /-- The members of an object, after its `{` or a `,`: a repeated name is refused as soon as it is read, and a name's
 unpaired surrogate only when the object closes. -/
-def members (fuel depth : Nat) (cs : List Char) (seen : List (List Nat)) (acc : List (List Nat × Json)) :
-    Except Error (Json × List Char) :=
+def members (fuel depth spent : Nat) (cs : List Char) (seen : List (List Nat)) (acc : List (List Nat × Json)) :
+    Except Error (Json × List Char × Nat) :=
   match fuel with
   | 0 => .error .syntax
   | fuel + 1 =>
@@ -209,13 +218,13 @@ def members (fuel depth : Nat) (cs : List Char) (seen : List (List Nat)) (acc : 
       if seenKey seen key then throw .duplicateKey
       match skipWs afterKey with
       | ':' :: afterColon => do
-        let (v, afterValue) ← value fuel depth afterColon
+        let (v, afterValue, now) ← value fuel depth spent afterColon
         match skipWs afterValue with
-        | ',' :: rest' => members fuel depth rest' (key :: seen) ((key, v) :: acc)
+        | ',' :: rest' => members fuel depth now rest' (key :: seen) ((key, v) :: acc)
         | '}' :: rest' =>
           let fields := ((key, v) :: acc).reverse
           match fields.mapM (fun (k, x) => (fromUnits k).map (fun s => (String.ofList s, x))) with
-          | some fs => pure (.obj fs, rest')
+          | some fs => pure (.obj fs, rest', now)
           | none => throw .unpairedSurrogate
         | _ => throw .syntax
       | _ => throw .syntax
@@ -225,7 +234,7 @@ end
 /-- JSON text: one value and nothing after it. -/
 def parse (text : String) : Except Error Json := do
   let cs := text.toList
-  let (v, rest) ← value (2 * cs.length + 2) 0 cs
+  let (v, rest, _) ← value (2 * cs.length + 2) 0 0 cs
   if (skipWs rest).isEmpty then pure v else throw .syntax
 
 /-- The bytes a string denotes in the JLVM's JSON surface, when it is `0x` and an even number of lowercase hex digits. -/

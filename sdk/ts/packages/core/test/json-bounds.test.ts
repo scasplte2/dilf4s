@@ -70,3 +70,34 @@ describe("JSON number bounds", () => {
         expect(parts(RationalValue.decimal(n, scale))).toEqual(parts(RationalValue.number(n, 10n ** BigInt(scale))));
   });
 });
+
+describe("the exponent budget (canonical-encoding.md section 3)", () => {
+  const array = (items: readonly string[], tail = "]"): string => `[${items.join(",")}${tail}`;
+  // 1677 exponents of 9999 and one of 8893 spend 2^24 exactly
+  const full = [...Array<string>(1677).fill("8e9999"), "8e8893"];
+
+  it("a text's exponents together spend at most 2^24, and the number that passes it is refused unconverted", () => {
+    expect(json.MAX_JSON_EXPONENTS).toBe(2 ** 24);
+    expect(json.parse(array(full)).ok, "a text that spends it exactly is read").toBe(true);
+    const over = array([...full, "1e1"]);
+    expect(json.parse(over)).toEqual({
+      ok: false,
+      error: { kind: "InvalidNumber", length: 3, offset: over.length - "1e1]".length, bound: { kind: "Exponents", exponents: 2 ** 24 + 1, limit: 2 ** 24 } },
+    });
+    const wide = json.parse(array([...full, "9e9999"]));
+    expect(!wide.ok && wide.error.kind === "InvalidNumber" && wide.error.bound?.kind, "the budget comes before the width").toBe("Exponents");
+  });
+
+  it("an exponent costs at most one past the largest scale, and digits written out cost nothing", () => {
+    // 0.(10,000 zeros)1e10005 is 10^4, its exponent 10,005: after 2^24 - 10,002 it fits only as 10,001
+    const capped = `0.${"0".repeat(10_000)}1e10005`;
+    const before = Array<string>(1676).fill("8e9999");
+    expect(json.parse(array([...before, "8e8890", capped])).ok, "a capped exponent fits as 10,001").toBe(true);
+    const passes = json.parse(array([...before, "8e8892", capped]));
+    expect(!passes.ok && passes.error.kind === "InvalidNumber" && passes.error.bound?.kind === "Exponents" ? passes.error.bound.exponents : 0).toBe(2 ** 24 + 1);
+    // the text's length spends nothing: a 17 MiB string beside numbers without exponents
+    const long = `["${"a".repeat(17 * 2 ** 20)}",12345678,2.5]`;
+    expect(long.length).toBeGreaterThan(2 ** 24);
+    expect(json.parse(long).ok, "a long text without exponents is read").toBe(true);
+  });
+});

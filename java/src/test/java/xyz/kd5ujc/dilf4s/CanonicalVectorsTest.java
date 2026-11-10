@@ -44,7 +44,7 @@ public class CanonicalVectorsTest {
 
   @Test
   void json() {
-    check("json", 132, r -> () -> {
+    check("json", 138, r -> () -> {
       final String text = str(r, "json");
       final Result<Value, CanonicalError> parsed = Json.parse(text);
       if (r.get("error").isPresent()) {

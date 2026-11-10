@@ -103,10 +103,16 @@ number-bound = {
   ; Fraction digits minus the exponent, saturated at the 32-bit signed range.
   "scale": -2147483648..2147483647,
   ; The largest accepted magnitude.
+  "limit": uint .le 9223372036854775807 //
+  ; The text's exponents, summed up to and including this number's, past the exponent budget.
+  "kind": "Exponents",
+  ; The sum: each number's exponent magnitude, at most one past the scale bound.
+  "exponents": uint .le 9223372036854775807,
+  ; The budget (limits.cddl canonical-max-json-exponents).
   "limit": uint .le 9223372036854775807
 }
 
-number-bound-kind = "Digits" / "Scale"
+number-bound-kind = "Digits" / "Scale" / "Exponents"
 
 ; What JSON could not hold: a byte string; a rational whose decimal does not terminate; a number whose JSON form would
 ; pass the digit or scale bound, so it could not be read back. A rendering past a byte limit is no CanonicalError in any

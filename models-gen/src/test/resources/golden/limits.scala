@@ -21,7 +21,11 @@ final val BloomMinBits = 64
  */
 final val CanonicalMaxDepth = 256
 
-/** `canonical-max-digit-bits` (`shared/schemas/limits.cddl`). */
+/**
+ * `canonical-max-digit-bits` (`shared/schemas/limits.cddl`).
+ *
+ * canonical-max-scale + 1), so exponents cannot make a short text long
+ */
 final val CanonicalMaxDigitBits = 33220
 
 /** `canonical-max-digits` (`shared/schemas/limits.cddl`). */
@@ -33,6 +37,9 @@ final val CanonicalMaxDigits = 10000
  * canonical-max-digits digits (a bound checked before converting one)
  */
 final val CanonicalMaxIntegerBits = 33219
+
+/** `canonical-max-json-exponents` (`shared/schemas/limits.cddl`). */
+final val CanonicalMaxJsonExponents = 16777216
 
 /**
  * `canonical-max-rational-bits` (`shared/schemas/limits.cddl`).

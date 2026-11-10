@@ -16,6 +16,11 @@ const DefaultMaxScale = CanonicalMaxScale
 // before any conversion.
 const MaxDigits = CanonicalMaxDigits
 
+// MaxJSONExponents is the most a text's numbers may spend on their exponents, summed: each costs its exponent's
+// magnitude, at most DefaultMaxScale+1. An exponent makes a short text stand for a long value (8e9999 is six characters
+// and 10,000 digits), so this bounds what exponents add to the work of reading a text (canonical-encoding.md section 3).
+const MaxJSONExponents = CanonicalMaxJsonExponents
+
 // MaxRenderBytes is the longest JSON rendering, in UTF-8 bytes: 2^29 - 24, the reference's and the TypeScript SDK's
 // ceiling (V8's longest string). A limit past it is it.
 const MaxRenderBytes = 1<<29 - 24
@@ -70,6 +75,8 @@ type jsonFrame struct {
 type parser struct {
 	text     string
 	maxScale int
+	// what the numbers read so far have spent on their exponents
+	spent uint64
 }
 
 func (p *parser) at(i int) (byte, bool) {
@@ -337,6 +344,12 @@ func (p *parser) number(q int) (Value, int, error) {
 		saturated := int32(min(max(scale, -1<<31), 1<<31-1))
 		return Value{}, 0, invalid(Some[NumberBound](NumberBoundScale{Scale: saturated, Limit: uint64(p.maxScale)}))
 	}
+	// its exponent's magnitude, at most one past the largest scale, charged to the text's budget before converting
+	total := p.spent + uint64(min(magnitude, DefaultMaxScale+1))
+	if total > MaxJSONExponents {
+		return Value{}, 0, invalid(Some[NumberBound](NumberBoundExponents{Exponents: total, Limit: MaxJSONExponents}))
+	}
+	p.spent = total
 	// the digits as one integer: leading zeros (a lone 0 then the fraction's) add nothing, so at most MaxDigits are read
 	all := strings.TrimLeft(intDigits+fracDigits, "0")
 	unscaled := new(big.Int)

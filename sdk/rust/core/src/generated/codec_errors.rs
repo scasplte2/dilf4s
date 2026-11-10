@@ -470,6 +470,13 @@ pub enum NumberBound {
         /// The largest accepted magnitude.
         limit: u64,
     },
+    /// The text's exponents, summed up to and including this number's, past the exponent budget.
+    Exponents {
+        /// The sum: each number's exponent magnitude, at most one past the scale bound.
+        exponents: u64,
+        /// The budget (limits.cddl canonical-max-json-exponents).
+        limit: u64,
+    },
 }
 
 impl NumberBound {
@@ -478,6 +485,7 @@ impl NumberBound {
         match self {
             Self::Digits { .. } => NumberBoundKind::Digits,
             Self::Scale { .. } => NumberBoundKind::Scale,
+            Self::Exponents { .. } => NumberBoundKind::Exponents,
         }
     }
 }
@@ -487,6 +495,7 @@ impl core::fmt::Display for NumberBound {
         match self {
             Self::Digits { digits: a0, limit: a1 } => write!(f, "Digits (digits: {a0}, limit: {a1})"),
             Self::Scale { scale: a0, limit: a1 } => write!(f, "Scale (scale: {a0}, limit: {a1})"),
+            Self::Exponents { exponents: a0, limit: a1 } => write!(f, "Exponents (exponents: {a0}, limit: {a1})"),
         }
     }
 }
@@ -500,6 +509,8 @@ pub enum NumberBoundKind {
     Digits,
     /// The text `Scale`.
     Scale,
+    /// The text `Exponents`.
+    Exponents,
 }
 
 impl c::Model for NumberBoundKind {
@@ -507,13 +518,15 @@ impl c::Model for NumberBoundKind {
         match self {
             Self::Digits => Ok(c::Value::text("Digits")),
             Self::Scale => Ok(c::Value::text("Scale")),
+            Self::Exponents => Ok(c::Value::text("Exponents")),
         }
     }
 
     fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
-        match c::select_alternative(value, &[], &["Digits", "Scale"])? {
+        match c::select_alternative(value, &[], &["Digits", "Scale", "Exponents"])? {
             c::Alternative::Text(0) => Ok(Self::Digits),
             c::Alternative::Text(1) => Ok(Self::Scale),
+            c::Alternative::Text(2) => Ok(Self::Exponents),
             other => Err(c::unknown_alternative(other)),
         }
     }
@@ -521,7 +534,7 @@ impl c::Model for NumberBoundKind {
 
 impl NumberBoundKind {
     /// Every alternative, in schema order.
-    pub const ALL: [Self; 2] = [Self::Digits, Self::Scale];
+    pub const ALL: [Self; 3] = [Self::Digits, Self::Scale, Self::Exponents];
 }
 
 impl core::fmt::Display for NumberBoundKind {
@@ -529,6 +542,7 @@ impl core::fmt::Display for NumberBoundKind {
         match self {
             Self::Digits => f.write_str("Digits"),
             Self::Scale => f.write_str("Scale"),
+            Self::Exponents => f.write_str("Exponents"),
         }
     }
 }

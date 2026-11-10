@@ -4,7 +4,8 @@ package xyz.kd5ujc.dilf4s.error;
 public sealed interface NumberBound
   permits
     NumberBound.Digits,
-    NumberBound.Scale {
+    NumberBound.Scale,
+    NumberBound.Exponents {
 
   /** The kind, as the schema and the vectors name it. */
   String kind();
@@ -22,6 +23,14 @@ public sealed interface NumberBound
     @Override
     public String kind() {
       return "Scale";
+    }
+  }
+
+  /** {@code Exponents}: the text's exponents, summed up to and including this number's, past the budget. */
+  record Exponents(long exponents, long limit) implements NumberBound {
+    @Override
+    public String kind() {
+      return "Exponents";
     }
   }
 }

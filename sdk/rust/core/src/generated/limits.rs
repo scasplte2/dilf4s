@@ -17,6 +17,8 @@ pub const BLOOM_MIN_BITS: u64 = 64;
 pub const CANONICAL_MAX_DEPTH: u64 = 256;
 
 /// `canonical-max-digit-bits` (`shared/schemas/limits.cddl`).
+///
+/// canonical-max-scale + 1), so exponents cannot make a short text long
 pub const CANONICAL_MAX_DIGIT_BITS: u64 = 33_220;
 
 /// `canonical-max-digits` (`shared/schemas/limits.cddl`).
@@ -26,6 +28,9 @@ pub const CANONICAL_MAX_DIGITS: u64 = 10_000;
 ///
 /// canonical-max-digits digits (a bound checked before converting one)
 pub const CANONICAL_MAX_INTEGER_BITS: u64 = 33_219;
+
+/// `canonical-max-json-exponents` (`shared/schemas/limits.cddl`).
+pub const CANONICAL_MAX_JSON_EXPONENTS: u64 = 16_777_216;
 
 /// `canonical-max-rational-bits` (`shared/schemas/limits.cddl`).
 ///
@@ -272,6 +277,9 @@ pub mod as_u32 {
     /// [`super::CANONICAL_MAX_INTEGER_BITS`] as a `u32`.
     pub const CANONICAL_MAX_INTEGER_BITS: u32 = 33_219;
 
+    /// [`super::CANONICAL_MAX_JSON_EXPONENTS`] as a `u32`.
+    pub const CANONICAL_MAX_JSON_EXPONENTS: u32 = 16_777_216;
+
     /// [`super::CANONICAL_MAX_RATIONAL_BITS`] as a `u32`.
     pub const CANONICAL_MAX_RATIONAL_BITS: u32 = 33_219;
 
@@ -391,6 +399,9 @@ pub mod as_usize {
 
     /// [`super::CANONICAL_MAX_INTEGER_BITS`] as a `usize`.
     pub const CANONICAL_MAX_INTEGER_BITS: usize = 33_219;
+
+    /// [`super::CANONICAL_MAX_JSON_EXPONENTS`] as a `usize`.
+    pub const CANONICAL_MAX_JSON_EXPONENTS: usize = 16_777_216;
 
     /// [`super::CANONICAL_MAX_RATIONAL_BITS`] as a `usize`.
     pub const CANONICAL_MAX_RATIONAL_BITS: usize = 33_219;

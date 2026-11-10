@@ -8,6 +8,7 @@
 use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use core::cell::Cell;
 
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero, pow};
@@ -24,6 +25,11 @@ pub const DEFAULT_MAX_SCALE: u32 = crate::generated::limits::as_u32::CANONICAL_M
 /// any conversion; it equals the largest scale, so every decimal of an accepted scale has a form within it.
 pub const MAX_DIGITS: usize = crate::generated::limits::as_usize::CANONICAL_MAX_DIGITS;
 
+/// The most a text's numbers may spend on their exponents, summed: each costs its exponent's magnitude, at most
+/// [`DEFAULT_MAX_SCALE`] + 1. An exponent makes a short text stand for a long value (`8e9999` is six characters and
+/// 10,000 digits), so this bounds what exponents add to the work of reading a text (canonical-encoding.md section 3).
+pub const MAX_JSON_EXPONENTS: u64 = crate::generated::limits::CANONICAL_MAX_JSON_EXPONENTS;
+
 /// Parses JSON text into a canonical value with the default scale bound.
 pub fn parse(text: &str) -> Result<Value, CanonicalError> {
     parse_with_max_scale(text, DEFAULT_MAX_SCALE)
@@ -38,7 +44,7 @@ pub fn parse_with_max_scale(text: &str, max_scale: u32) -> Result<Value, Canonic
             reason: alloc::format!("the scale bound is not an integer from 0 to {DEFAULT_MAX_SCALE}"),
         });
     }
-    Parser { text, bytes: text.as_bytes(), max_scale }.run()
+    Parser { text, bytes: text.as_bytes(), max_scale, spent: Cell::new(0) }.run()
 }
 
 /// A text kept as generalised UTF-8 (WTF-8) while parsing: `\u` escapes may leave an unpaired surrogate, which is
@@ -65,6 +71,8 @@ struct Parser<'a> {
     text: &'a str,
     bytes: &'a [u8],
     max_scale: u32,
+    /// What the numbers read so far have spent on their exponents.
+    spent: Cell<u64>,
 }
 
 fn syntax(offset: usize, reason: JsonSyntaxReason) -> CanonicalError {
@@ -208,8 +216,8 @@ impl Parser<'_> {
     }
 
     /// `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`, converted exactly. Its digits are counted, then its
-    /// scale checked, before any conversion. A refusal describes the number by its length and byte offset, never its
-    /// text, whose size the caller chose.
+    /// scale checked, then its exponent charged to the text's budget ([`MAX_JSON_EXPONENTS`]), before any conversion.
+    /// A refusal describes the number by its length and byte offset, never its text, whose size the caller chose.
     fn number(&self, p: usize) -> Result<(Value, usize), CanonicalError> {
         let negative = self.at(p) == Some(b'-');
         let int_start = if negative { p.saturating_add(1) } else { p };
@@ -264,6 +272,13 @@ impl Parser<'_> {
                 limit: u64::from(self.max_scale),
             }));
         }
+        // its exponent's magnitude, at most one past the largest scale: what it may add to the value's digits
+        let cost = u64::try_from(magnitude.min(i128::from(DEFAULT_MAX_SCALE).saturating_add(1))).unwrap_or(u64::MAX);
+        let total = self.spent.get().saturating_add(cost);
+        if total > MAX_JSON_EXPONENTS {
+            return Err(bounded(NumberBound::Exponents { exponents: total, limit: MAX_JSON_EXPONENTS }));
+        }
+        self.spent.set(total);
         let mut all_digits = String::with_capacity(int_digits.len().saturating_add(frac_digits.len()));
         all_digits.push_str(int_digits);
         all_digits.push_str(frac_digits);

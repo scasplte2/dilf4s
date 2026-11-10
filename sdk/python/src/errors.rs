@@ -155,6 +155,7 @@ impl Refusal for NumberBound {
         match self {
             Self::Digits { digits, limit } => kind!(py, m, &k, digits, limit),
             Self::Scale { scale, limit } => kind!(py, m, &k, scale, limit),
+            Self::Exponents { exponents, limit } => kind!(py, m, &k, exponents, limit),
         }
     }
 }

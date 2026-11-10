@@ -19,6 +19,8 @@ const BloomMinBits = 64
 const CanonicalMaxDepth = 256
 
 // CanonicalMaxDigitBits is `canonical-max-digit-bits` (shared/schemas/limits.cddl).
+//
+// canonical-max-scale + 1), so exponents cannot make a short text long
 const CanonicalMaxDigitBits = 33220
 
 // CanonicalMaxDigits is `canonical-max-digits` (shared/schemas/limits.cddl).
@@ -28,6 +30,9 @@ const CanonicalMaxDigits = 10000
 //
 // canonical-max-digits digits (a bound checked before converting one)
 const CanonicalMaxIntegerBits = 33219
+
+// CanonicalMaxJsonExponents is `canonical-max-json-exponents` (shared/schemas/limits.cddl).
+const CanonicalMaxJsonExponents = 16777216
 
 // CanonicalMaxRationalBits is `canonical-max-rational-bits` (shared/schemas/limits.cddl).
 //

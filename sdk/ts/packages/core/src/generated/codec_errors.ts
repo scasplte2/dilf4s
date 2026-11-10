@@ -169,12 +169,20 @@ export type NumberBound =
       readonly scale: number;
       /** The largest accepted magnitude. */
       readonly limit: number;
+    }
+  /** The text's exponents, summed up to and including this number's, past the exponent budget. */
+  | {
+      readonly kind: "Exponents";
+      /** The sum: each number's exponent magnitude, at most one past the scale bound. */
+      readonly exponents: number;
+      /** The budget (limits.cddl canonical-max-json-exponents). */
+      readonly limit: number;
     };
 
 /** `number-bound-kind` (`shared/schemas/codec-errors.cddl`). */
-export type NumberBoundKind = "Digits" | "Scale";
+export type NumberBoundKind = "Digits" | "Scale" | "Exponents";
 
-export const NumberBoundKind: c.Codec<NumberBoundKind> = c.union<NumberBoundKind>("NumberBoundKind", [], ["Digits", "Scale"]);
+export const NumberBoundKind: c.Codec<NumberBoundKind> = c.union<NumberBoundKind>("NumberBoundKind", [], ["Digits", "Scale", "Exponents"]);
 
 /**
  * `state-key-error` (`shared/schemas/codec-errors.cddl`): an error family, by `kind` (`StateKeyErrorKind`).
