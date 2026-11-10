@@ -29,6 +29,26 @@ import weaver.{Expectations, IOSuite}
  */
 object OttochainCorpusSuite extends IOSuite {
 
+  enum Stage { case Parse, Compile, Render, Reparse, Encode, Decode }
+  enum Representation { case Surface, Canonical }
+  enum Error {
+    case Pipeline(stage: Stage, cause: JlvmError)
+    case ChangedProgram(representation: Representation)
+    case MissingExpression(at: At)
+    case Data(cause: JlvmError)
+    case Evaluation(at: At, cause: JlvmError)
+    case UnknownBindings(names: Set[String])
+
+    def message: String = this match {
+      case Pipeline(stage, cause)         => s"$stage: ${cause.message}"
+      case ChangedProgram(representation) => s"$representation round-trip changed the program"
+      case MissingExpression(at)          => s"missing expression $at"
+      case Data(cause)                    => s"data: ${cause.message}"
+      case Evaluation(at, cause)          => s"$at: ${cause.message}"
+      case UnknownBindings(names)         => s"reads ${names.toList.sorted.mkString(", ")}"
+    }
+  }
+
   final case class Source(repo: String, commit: String, file: String)
 
   /** `line` is where the source has it, when the source is text a path alone does not locate (Scala, TS). */
@@ -77,20 +97,20 @@ object OttochainCorpusSuite extends IOSuite {
     )
   }
 
-  private def strict(e: Entry): Either[String, Program] =
+  private def strict(e: Entry): Either[Error, Program] =
     for {
-      p     <- Parser.parse(e.program.noSpaces).leftMap(err => s"parse: ${err.message}")
-      _     <- Compiled(p).leftMap(err => s"compile: ${err.message}")
-      text  <- Parser.render(p).leftMap(err => s"render: ${err.message}")
-      back  <- Parser.parse(text).leftMap(err => s"rendered text does not parse: ${err.message}")
-      _     <- Either.cond(back == p, (), "the rendered text reads back as another program")
-      bytes <- Parser.encode(p).leftMap(err => s"encode: ${err.message}")
-      dec   <- Parser.decode(bytes).leftMap(err => s"decode: ${err.message}")
-      _     <- Either.cond(dec == p, (), "the canonical encoding decodes to another program")
+      p     <- Parser.parse(e.program.noSpaces).leftMap(Error.Pipeline(Stage.Parse, _))
+      _     <- Compiled(p).leftMap(Error.Pipeline(Stage.Compile, _))
+      text  <- Parser.render(p).leftMap(Error.Pipeline(Stage.Render, _))
+      back  <- Parser.parse(text).leftMap(Error.Pipeline(Stage.Reparse, _))
+      _     <- Either.cond(back == p, (), Error.ChangedProgram(Representation.Surface))
+      bytes <- Parser.encode(p).leftMap(Error.Pipeline(Stage.Encode, _))
+      dec   <- Parser.decode(bytes).leftMap(Error.Pipeline(Stage.Decode, _))
+      _     <- Either.cond(dec == p, (), Error.ChangedProgram(Representation.Canonical))
     } yield p
 
-  private def failures(c: Corpus)(f: Located => Option[String]): Expectations = {
-    val bad = c.entries.flatMap(l => f(l).map(m => s"${l.where}: $m"))
+  private def failures(c: Corpus)(f: Located => Option[Error]): Expectations = {
+    val bad = c.entries.flatMap(l => f(l).map(m => s"${l.where}: ${m.message}"))
     expect(bad.isEmpty, s"${bad.size} failing, first: ${bad.take(10).mkString("; ")}")
   }
 
@@ -124,11 +144,11 @@ object OttochainCorpusSuite extends IOSuite {
 
   test("every $-binding read is one the fiber engine supplies, a callback's, or a let's: no $timestamp") { c =>
     IO(failures(c) { l =>
-      strict(l.entry).toOption.flatMap { p =>
+      strict(l.entry).flatMap { p =>
         val (read, bound) = bindings(p.expr)
         val unknown = read -- HostBindings -- CallbackBindings -- bound
-        Option.when(unknown.nonEmpty)(s"reads ${unknown.toList.sorted.map("$" + _).mkString(", ")}")
-      }
+        Either.cond(unknown.isEmpty, (), Error.UnknownBindings(unknown))
+      }.left.toOption
     })
   }
 
@@ -137,19 +157,19 @@ object OttochainCorpusSuite extends IOSuite {
   /** An expression of the corpus: its corpus file, its path in the source, and its source line where needed. */
   final case class At(file: String, path: String, line: Option[Int] = scala.None)
 
-  private def find(c: Corpus, at: At): Either[String, Program] =
+  private def find(c: Corpus, at: At): Either[Error, Program] =
     c.files.collectFirst { case (at.file, f) => f.expressions.find(e => e.path == at.path && at.line.forall(e.line.contains)) }.flatten
-      .toRight(s"no expression at $at")
+      .toRight(Error.MissingExpression(at))
       .flatMap(strict)
 
-  private def value(json: String): Either[String, CanonicalValue] = JsonSurface.parse(json).leftMap(_.message)
+  private def value(json: String): Either[Error, CanonicalValue] = JsonSurface.parse(json).leftMap(Error.Data(_))
 
-  private def run(c: Corpus, at: At, data: String, ordinal: Long = 0): Either[String, CanonicalValue] =
+  private def run(c: Corpus, at: At, data: String, ordinal: Long = 0): Either[Error, CanonicalValue] =
     (find(c, at), value(data)).tupled.flatMap { (p, d) =>
-      c.jlvm.evaluate(p, d, Map("ordinal" -> CInt(ordinal)), Config()).result.leftMap(e => s"$at: $e")
+      c.jlvm.evaluate(p, d, Map("ordinal" -> CInt(ordinal)), Config()).result.leftMap(Error.Evaluation(at, _))
     }
 
-  private def bool(b: Boolean): Either[String, CanonicalValue] = Right(CanonicalValue.CBool(b))
+  private def bool(b: Boolean): Either[Error, CanonicalValue] = Right(CanonicalValue.CBool(b))
 
   test("$timestamp deadlines count in $ordinal: the Vickrey reveal opens at the deadline ordinal") { c =>
     val reveal = At("sdk/src/privacy/vickreyAuctionDef.json", "$.transitions[0].guard")

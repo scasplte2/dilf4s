@@ -41,6 +41,19 @@ enum GenError:
     case EmptyIntegerDomain(lo, hi) => s"cannot sample an empty integer domain ($lo .. $hi)"
     case SamplingCycle(q)           => s"recursive sampling of `$q` cannot terminate beyond the depth cutoff"
 
+object GenError {
+  final case class Failure(error: GenError) extends RuntimeException(error.message) {
+    override def getCause: Throwable = error match {
+      case GenError.Io(_, cause)     => cause
+      case GenError.Defect(_, cause) => cause
+      case GenError.Parse(_, _) | GenError.UnknownModule(_, _) | GenError.UnresolvedName(_, _) | GenError.ArityMismatch(_, _, _) |
+          GenError.Unsupported(_, _) | GenError.NameClash(_, _, _) | GenError.ReservedName(_, _, _) | GenError.BadConfig(_, _) |
+          GenError.CyclicExpansion(_) | GenError.SamplingCycle(_) | GenError.EmptyIntegerDomain(_, _) =>
+        super.getCause
+    }
+  }
+}
+
 /** A language the generator emits. */
 enum Language:
   case Scala, Rust, TypeScript, Go

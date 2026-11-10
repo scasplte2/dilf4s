@@ -22,33 +22,46 @@ object VectorJson {
   def arr(items:  Iterable[VectorJson]): VectorJson = Arr(items.toVector)
   def obj(fields: (String, VectorJson)*): VectorJson = Obj(fields.toVector)
 
+  private enum Token {
+    case Text(value: String)
+    case Value(value: VectorJson, depth: Int)
+  }
+
+  private enum Container(val open: String, val close: String) {
+    case Array extends Container("[", "]")
+    case Object extends Container("{", "}")
+  }
+
   /** The layout of the committed files, from a worklist: no recursion. */
   def pretty(j: VectorJson): String = {
     @tailrec
-    def go(todo: List[Either[String, (VectorJson, Int)]], acc: Vector[String]): String =
+    def go(todo: List[Token], acc: Vector[String]): String =
       todo match {
-        case Nil                         => acc.mkString
-        case Left(text) :: rest          => go(rest, acc :+ text)
-        case Right((Raw(t), _)) :: rest  => go(rest, acc :+ t)
-        case Right((Arr(xs), d)) :: rest => go(block("[", xs.map(x => List(Right((x, d + 1)))), "]", d) ::: rest, acc)
-        case Right((Obj(fs), d)) :: rest =>
-          go(block("{", fs.map { case (k, v) => List(Left(quote(k) + " : "), Right((v, d + 1))) }, "}", d) ::: rest, acc)
+        case Nil                            => acc.mkString
+        case Token.Text(text) :: rest       => go(rest, acc :+ text)
+        case Token.Value(Raw(t), _) :: rest => go(rest, acc :+ t)
+        case Token.Value(Arr(xs), d) :: rest =>
+          go(block(Container.Array, xs.map(x => List(Token.Value(x, d + 1))), d) ::: rest, acc)
+        case Token.Value(Obj(fs), d) :: rest =>
+          go(block(Container.Object, fs.map { case (k, v) => List(Token.Text(quote(k) + " : "), Token.Value(v, d + 1)) }, d) ::: rest, acc)
       }
-    go(List(Right((j, 0))), Vector.empty)
+    go(List(Token.Value(j, 0)), Vector.empty)
   }
 
-  private def block(
-    open:  String,
-    parts: Vector[List[Either[String, (VectorJson, Int)]]],
-    close: String,
-    depth: Int
-  ): List[Either[String, (VectorJson, Int)]] =
+  private def block(container: Container, parts: Vector[List[Token]], depth: Int): List[Token] =
     // as spaces2 wrote them: an empty array opens a line, an empty object a blank one
-    if (parts.isEmpty) List(Left(open + (if (open == "{") "\n" + "  " * (depth + 1) else "") + "\n" + "  " * depth + close))
-    else {
+    if (parts.isEmpty) {
+      val blank = container match {
+        case Container.Array  => ""
+        case Container.Object => "\n" + "  " * (depth + 1)
+      }
+      List(Token.Text(container.open + blank + "\n" + "  " * depth + container.close))
+    } else {
       val inner = "\n" + "  " * (depth + 1)
-      Left(open) :: parts.toList.zipWithIndex.flatMap { case (p, i) => Left(if (i == 0) inner else "," + inner) :: p } :::
-      List(Left("\n" + "  " * depth + close))
+      Token.Text(container.open) :: parts.toList.zipWithIndex.flatMap {
+        case (p, i) => Token.Text(if (i == 0) inner else "," + inner) :: p
+      } :::
+      List(Token.Text("\n" + "  " * depth + container.close))
     }
 
   /** A JSON string as the committed files write one: control characters escaped, nothing else. */

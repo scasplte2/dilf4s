@@ -2,6 +2,8 @@ package xyz.kd5ujc.core.hash
 
 import cats.Show
 
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Preview, ValueKind}
+
 import org.scalacheck.Gen
 import weaver.scalacheck.Checkers
 import weaver.{Expectations, SimpleIOSuite}
@@ -10,6 +12,27 @@ object PoseidonSuite extends SimpleIOSuite with Checkers {
 
   private def fr(i: BigInt): Fr = Fr.from(i).toOption.get
   private def h(xs: Int*): Either[PoseidonError, BigInt] = Poseidon.hash(xs.map(i => fr(BigInt(i)))).map(_.value)
+
+  pureTest("the circomlib table reader distinguishes malformed shapes, hex and missing tables") {
+    import PoseidonCircomlibCheck.{Error, circom, numbers}
+    val emptyMap = CanonicalValue.map(Vector.empty).toOption.get
+    val emptyArray = CanonicalValue.array(Vector.empty).toOption.get
+    val emptyTable = CanonicalValue.map(Vector("C" -> emptyArray)).toOption.get
+    val badHex = CanonicalValue.array(Vector(CanonicalValue.text("zz").toOption.get)).toOption.get
+    val nonText = CanonicalValue.array(Vector(CanonicalValue.CBool(true))).toOption.get
+    val invalidHex = numbers(badHex) match {
+      case Left(Error.InvalidHex(input, cause)) =>
+        expect.same(Preview.of("zz"), input).and(expect(cause.isInstanceOf[NumberFormatException]))
+      case other => failure(s"expected InvalidHex with its parse cause, got $other")
+    }
+    expect
+      .same(Left(Error.ExpectedArray(ValueKind.Bool)), numbers(CanonicalValue.CBool(true)))
+      .and(expect.same(Left(Error.ExpectedHexText(ValueKind.Bool)), numbers(nonText)))
+      .and(expect.same(Left(Error.ExpectedMap(ValueKind.Bool)), circom(CanonicalValue.CBool(true), emptyMap, 2, 56)))
+      .and(expect.same(Left(Error.MissingField("C")), circom(emptyMap, emptyMap, 2, 56)))
+      .and(expect.same(Left(Error.MissingWidth("C", 0)), circom(emptyTable, emptyMap, 2, 56)))
+      .and(invalidHex)
+  }
 
   pureTest("circomlibjs known answers (widths 2..5, including r - 1)") {
     expect
@@ -69,7 +92,16 @@ object PoseidonSuite extends SimpleIOSuite with Checkers {
   // ---- the constants and the optimised form
 
   private val derived: Map[Int, (PoseidonDerivation.Base, PoseidonParams)] =
-    PoseidonConstantsGen.widths.map(t => t -> PoseidonConstantsGen.derived(t).fold(sys.error, identity)).toMap
+    PoseidonConstantsGen.widths
+      .map(t => t -> PoseidonConstantsGen.derived(t).fold(e => throw PoseidonDerivation.Failure(e), identity))
+      .toMap
+
+  pureTest("derivation refuses unsupported widths and singular matrices with exact causes") {
+    val singular = Vector(Vector(BigInt(1), BigInt(2)), Vector(BigInt(2), BigInt(4)))
+    expect
+      .same(Left(PoseidonDerivation.Error.UnsupportedWidth(1)), PoseidonDerivation.base(1))
+      .and(expect.same(Left(PoseidonDerivation.Error.SingularMatrix(1)), PoseidonDerivation.invert(singular)))
+  }
 
   private val checkedIn: Map[Int, PoseidonParams] = List(
     PoseidonConstants.Width2,

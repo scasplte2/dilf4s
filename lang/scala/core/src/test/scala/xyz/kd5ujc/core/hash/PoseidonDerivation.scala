@@ -23,6 +23,14 @@ import scodec.bits.ByteVector
  */
 private[hash] object PoseidonDerivation {
 
+  enum Error {
+    case SingularMatrix(column: Int)
+    case UnsupportedWidth(width: Int)
+    case UnusableCauchyDraw(width: Int)
+  }
+
+  final case class Failure(error: Error) extends RuntimeException(error.toString)
+
   type Matrix = Vector[Vector[BigInt]]
 
   val R: BigInt = Fr.Modulus
@@ -80,11 +88,11 @@ private[hash] object PoseidonDerivation {
   def identity(n: Int): Matrix = Vector.tabulate(n, n)((i, j) => if (i == j) BigInt(1) else BigInt(0))
 
   /** Gauss-Jordan elimination. */
-  def invert(m: Matrix): Either[String, Matrix] = {
+  def invert(m: Matrix): Either[Error, Matrix] = {
     val n = m.size
     (0 until n).toList
       .foldM(m.zip(identity(n)).map(_ ++ _)) { (a, c) =>
-        (c until n).find(r => a(r)(c) != 0).toRight(s"singular matrix (column $c)").map { p =>
+        (c until n).find(r => a(r)(c) != 0).toRight(Error.SingularMatrix(c)).map { p =>
           val swapped = a.updated(c, a(p)).updated(p, a(c))
           val inv = inverse(swapped(c)(c))
           val pivot = swapped(c).map(x => (x * inv).mod(R))
@@ -106,8 +114,8 @@ private[hash] object PoseidonDerivation {
    * be usable, which it is for every width here. The checks are not reimplemented, so a first draw they would reject
    * is not detected.
    */
-  def base(t: Int): Either[String, Base] =
-    PartialRounds.get(t).toRight(s"no parameters for width $t").flatMap { rp =>
+  def base(t: Int): Either[Error, Base] =
+    PartialRounds.get(t).toRight(Error.UnsupportedWidth(t)).flatMap { rp =>
       val draws = (roundConstant.replicateA((FullRounds + rp) * t), bits.map(_.mod(R)).replicateA(2 * t)).tupled
       draws.runA(seeded(t, rp)).value match {
         case (constants, points) =>
@@ -116,7 +124,7 @@ private[hash] object PoseidonDerivation {
           Either.cond(
             points.distinct.size == 2 * t && xs.forall(x => ys.forall(y => (x + y).mod(R) != 0)),
             Base(t, rp, constants.toVector, Vector.tabulate(t, t)((i, j) => inverse(xs(i) + ys(j)))),
-            s"width $t: the first Cauchy draw is unusable (the reference script would redraw)"
+            Error.UnusableCauchyDraw(t)
           )
       }
     }
@@ -137,7 +145,7 @@ private[hash] object PoseidonDerivation {
   // ---- the optimised form
 
   /** The tables of [[PoseidonParams]]: see there for their layout. */
-  def optimize(b: Base): Either[String, PoseidonParams] = {
+  def optimize(b: Base): Either[Error, PoseidonParams] = {
     val t = b.t
     val rp = b.partialRounds
     val half = FullRounds / 2
