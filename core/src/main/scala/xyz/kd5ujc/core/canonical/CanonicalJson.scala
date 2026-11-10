@@ -288,11 +288,12 @@ object CanonicalJson {
    * [[MaxRenderBytes]]). Fails with `TooLarge` at the first part found past the limit, or for what JSON cannot
    * represent, whichever comes first, as the Rust and TypeScript SDKs do.
    *
-   * O(min(weight, `maxBytes`)) apart from sorting map keys, in one pass: a value's JSON is at least as long in UTF-8 as
-   * its weight (each node writes at least a byte, a text or key its UTF-8 and quotes, a number of `l` whole limbs more
-   * than `l` digits), so each part is refused in O(1) when its weight is over what is left, and each character of the
-   * text is written once, into one builder. The builder is local to this call and never escapes it: each of its states
-   * is used once ([[TextSink]]) and only the finished text leaves, so the function is pure.
+   * O(min(weight, `maxBytes`)), in one pass: a value's JSON is at least as long in UTF-8 as its weight (each node
+   * writes at least a byte, a text or key its UTF-8 and quotes, a number of `l` whole limbs more than `l` digits), so
+   * each part is refused in O(1) when its weight is over what is left, and each character of the text is written once,
+   * into one builder. A map's members are put in code-point order when it is opened, in time linear in its weight
+   * ([[CodePointOrder]]), and only a map that fits is opened. The builder is local to this call and never escapes it:
+   * each of its states is used once ([[TextSink]]) and only the finished text leaves, so the function is pure.
    */
   def renderWithin(value: CanonicalValue, maxBytes: Long): Either[RenderError, String] =
     renderInto(value, maxBytes, new java.lang.StringBuilder)(using TextSink.builder).map(_.toString)
@@ -412,7 +413,7 @@ object CanonicalJson {
           if (out.left < 4L || b.size > (out.left - 4L) / 2) out.refused.asLeft else out.ascii("\"0x" + b.toHex + "\"").map((None, _))
         case CBytes(_)  => RenderError.Canonical(NotJsonRepresentable("bytes")).asLeft
         case CArray(vs) => out.ascii("[").map((Some(Pending.Items(vs, 0)), _))
-        case CMap(m)    => out.ascii("{").map((Some(Pending.Members(m.toVector.sortBy(_._1)(using CodePointOrder), 0)), _))
+        case CMap(m)    => out.ascii("{").map((Some(Pending.Members(m.codePointOrdered, 0)), _))
       }
 
   private def escape(c: Char): Option[String] =
@@ -433,17 +434,4 @@ object CanonicalJson {
     t.foldLeft(2L) { (n, c) =>
       n + escape(c).fold(if (c < 0x80) 1L else if (c < 0x800 || c.isSurrogate) 2L else 3L)(_.length.toLong)
     }
-
-  private[canonical] object CodePointOrder extends Ordering[String] {
-    def compare(a: String, b: String): Int = {
-      @tailrec
-      def go(i: Int, j: Int): Int =
-        if (i >= a.length || j >= b.length) (a.length - i).compare(b.length - j)
-        else {
-          val (x, y) = (a.codePointAt(i), b.codePointAt(j))
-          if (x != y) x.compare(y) else go(i + Character.charCount(x), j + Character.charCount(y))
-        }
-      go(0, 0)
-    }
-  }
 }

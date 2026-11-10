@@ -48,6 +48,7 @@ use num_traits::{One, Signed, Zero};
 
 use crate::error::CanonicalError;
 
+mod code_points;
 mod map;
 
 pub use map::{Entries, Map, MapShape};

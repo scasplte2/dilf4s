@@ -346,6 +346,13 @@ impl Map {
         entries
     }
 
+    /// The entries in code-point order of the keys, the order of their UTF-8 bytes alone: the order JSON writes an
+    /// object's members in and the JLVM lists them in. Linear in the map's weight, whatever the keys, and O(n) when
+    /// they all have one UTF-8 length (`code_points::ordered`).
+    pub fn code_point_entries(&self) -> Vec<(&Text, &Value)> {
+        super::code_points::ordered(self.entries().collect())
+    }
+
     /// The keys in canonical order.
     pub fn keys(&self) -> impl ExactSizeIterator<Item = &Text> {
         self.entries().map(|(k, _)| k)

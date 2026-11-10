@@ -456,17 +456,21 @@ object PureOps {
 
   // ---- objects
 
-  /** Keys, values or `[key, value]` pairs in code-point key order; null (absent) gives null, as in metakit. */
+  /**
+   * Keys, values or `[key, value]` pairs in code-point key order; null (absent) gives null, as in metakit. The entries
+   * are put in that order in time linear in the map's weight (`CanonicalEntries.codePointOrdered`), each with its
+   * value: no key is looked up again.
+   */
   private def listing(op: Op, args: Vector[CanonicalValue]): Result =
     unary(op, args) {
       case CNull => CNull.asRight
       case v =>
         obj(op, v).flatMap { m =>
-          val ks = sortedKeys(m).toVector
+          val entries = m.codePointOrdered
           op match {
-            case Op.Keys   => ks.traverse(text(op, _)).flatMap(array(op, _))
-            case Op.Values => array(op, ks.flatMap(k => m.get(k)))
-            case _         => ks.traverse(k => text(op, k).flatMap(t => array(op, t +: m.get(k).toVector))).flatMap(array(op, _))
+            case Op.Keys   => entries.traverse((k, _) => text(op, k)).flatMap(array(op, _))
+            case Op.Values => array(op, entries.map(_._2))
+            case _         => entries.traverse((k, x) => text(op, k).flatMap(t => array(op, Vector(t, x)))).flatMap(array(op, _))
           }
         }
     }

@@ -632,3 +632,29 @@ fn the_largest_gas_limit_is_metered_and_a_larger_one_is_limit() {
         }
     }
 }
+
+/// jlvm.md section 5.4: `keys`, `values` and `entries` list a map in code-point order of its keys, derived from the
+/// map's canonical order in time linear in its weight (`Map::code_point_entries`, whose own tests count the bytes it
+/// reads). Here: 64 lengths of key under a 256-byte shared prefix, every length interleaving with every other.
+#[test]
+fn keys_values_and_entries_list_interleaved_lengths_under_a_long_prefix_in_code_point_order() {
+    let p = "p".repeat(256);
+    let mut keys: Vec<String> = (0..64u8)
+        .flat_map(|c| {
+            let p = p.clone();
+            (0..64).map(move |j| format!("{p}{}{}", char::from(b'b'.saturating_add(c)), "a".repeat(j)))
+        })
+        .collect();
+    let m = Value::map(keys.iter().enumerate().map(|(i, k)| (k.clone(), int(i64::try_from(i).unwrap_or(0))))).unwrap();
+    keys.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+    let data = obj(vec![("m", m.clone())]);
+    let listed = |op: &str| match eval(&format!(r#"{{"{op}": {{"var": "m"}}}}"#), &data).result {
+        Ok(Value::Array(a)) => a.items().to_vec(),
+        other => panic!("{op}: {other:?}"),
+    };
+    let Value::Map(map) = &m else { panic!("a map") };
+    let value = |k: &str| map.get(k).cloned().unwrap_or(Value::Null);
+    assert_eq!(listed("keys"), keys.iter().map(|k| t(k)).collect::<Vec<_>>());
+    assert_eq!(listed("values"), keys.iter().map(|k| value(k)).collect::<Vec<_>>());
+    assert_eq!(listed("entries"), keys.iter().map(|k| arr(vec![t(k), value(k)])).collect::<Vec<_>>());
+}
