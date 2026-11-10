@@ -3,6 +3,7 @@ package xyz.kd5ujc.crypto.bls
 import cats.effect.Sync
 import cats.syntax.all._
 
+import xyz.kd5ujc.crypto.signing.CryptoError.{DecodeFailure, EncodingReason, KeyReason, Operation, Scheme, Subject}
 import xyz.kd5ujc.crypto.signing._
 
 import scodec.bits.ByteVector
@@ -24,42 +25,42 @@ sealed trait BlsPop
 final class Bls12381 private () {
   import Bls12381._
 
-  private def call[A](operation: String)(thunk: => A): Either[CryptoError, A] =
+  private def call[A](operation: Operation)(thunk: => A): Either[CryptoError.BackendFailure, A] =
     Either
       .catchNonFatal(thunk)
-      .leftMap(e => CryptoError.BackendFailure(s"blst $operation", Option(e.getMessage).getOrElse(e.getClass.getName)))
+      .leftMap(e => CryptoError.BackendFailure(operation, e))
 
   private def secret(key: SigningKey[BlsPop]): Either[CryptoError, SecretKey] =
-    call("from_bendian") { val sk = new SecretKey(); sk.from_bendian(key.bytes.toArray); sk }
+    call(Operation.BlsSecret) { val sk = new SecretKey(); sk.from_bendian(key.bytes.toArray); sk }
 
   /** KeyValidate: a compressed G1 point in the subgroup, not the identity. */
   private def g1(bytes: ByteVector): Either[CryptoError, P1_Affine] =
     if (bytes.size != PublicKeyLength)
-      CryptoError.InvalidEncoding("BLS public key", s"expected $PublicKeyLength bytes, got ${bytes.size}").asLeft
+      CryptoError.InvalidEncoding(Subject.VerifyingKey(Scheme.Bls), EncodingReason.Length(PublicKeyLength, bytes.size)).asLeft
     else
-      call("P1_Affine")(new P1_Affine(bytes.toArray))
-        .leftMap(_ => CryptoError.InvalidKey("BLS public key does not decode"))
-        .flatMap(p => Either.cond(!p.is_inf() && p.in_group(), p, CryptoError.InvalidKey("BLS public key is the identity or outside G1")))
+      call(Operation.BlsG1Decode)(new P1_Affine(bytes.toArray))
+        .leftMap(e => CryptoError.InvalidKey(KeyReason.Decode(Scheme.Bls, DecodeFailure.Backend(e))))
+        .flatMap(p => Either.cond(!p.is_inf() && p.in_group(), p, CryptoError.InvalidKey(KeyReason.BlsSubgroup)))
 
   /** A compressed G2 point in the subgroup (the identity decodes, but never verifies). */
   private def g2(bytes: ByteVector): Either[CryptoError, P2_Affine] =
     if (bytes.size != SignatureLength)
-      CryptoError.InvalidEncoding("BLS signature", s"expected $SignatureLength bytes, got ${bytes.size}").asLeft
+      CryptoError.InvalidEncoding(Subject.Signature(Scheme.Bls), EncodingReason.Length(SignatureLength, bytes.size)).asLeft
     else
-      call("P2_Affine")(new P2_Affine(bytes.toArray))
-        .leftMap(_ => CryptoError.InvalidEncoding("BLS signature", "does not decode"))
-        .flatMap(p => Either.cond(p.in_group(), p, CryptoError.InvalidEncoding("BLS signature", "outside G2")))
+      call(Operation.BlsG2Decode)(new P2_Affine(bytes.toArray))
+        .leftMap(e => CryptoError.InvalidEncoding(Subject.Signature(Scheme.Bls), EncodingReason.BlsDecode(e)))
+        .flatMap(p => Either.cond(p.in_group(), p, CryptoError.InvalidEncoding(Subject.Signature(Scheme.Bls), EncodingReason.OutsideG2)))
 
   implicit val codec: SchemeCodec[BlsPop] = new SchemeCodec[BlsPop] {
     val name: String = "BLS12-381-PoP"
     def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[BlsPop]] =
       SchemeCodec
-        .sized("BLS signing key", 32, bytes)
+        .sized(Subject.SigningKey(Scheme.Bls), 32, bytes)
         .flatMap(b =>
           Either.cond(
             BigInt(1, b.toArray) > 0 && BigInt(1, b.toArray) < R,
             new SigningKey[BlsPop](b),
-            CryptoError.InvalidKey("BLS secret key must be a scalar in [1, r)")
+            CryptoError.InvalidKey(KeyReason.ScalarRange(Scheme.Bls))
           )
         )
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[BlsPop]] = g1(bytes).as(VerifyingKey[BlsPop](bytes))
@@ -68,11 +69,11 @@ final class Bls12381 private () {
 
   /** The public key of a secret key; a native failure is a typed error, never a substitute key. */
   def publicKey(key: SigningKey[BlsPop]): Either[CryptoError, VerifyingKey[BlsPop]] =
-    secret(key).flatMap(sk => call("P1")(VerifyingKey[BlsPop](ByteVector.view(new P1(sk).compress()))))
+    secret(key).flatMap(sk => call(Operation.BlsPublicKey)(VerifyingKey[BlsPop](ByteVector.view(new P1(sk).compress()))))
 
   private def signWith(key: SigningKey[BlsPop], message: ByteVector, dst: String): Either[CryptoError, Signature[BlsPop]] =
     secret(key).flatMap(sk =>
-      call("sign")(Signature[BlsPop](ByteVector.view(new P2().hash_to(message.toArray, dst).sign_with(sk).compress())))
+      call(Operation.BlsSign)(Signature[BlsPop](ByteVector.view(new P2().hash_to(message.toArray, dst).sign_with(sk).compress())))
     )
 
   def sign(key: SigningKey[BlsPop], message: ByteVector): Either[CryptoError, Signature[BlsPop]] = signWith(key, message, SignatureDst)
@@ -81,7 +82,7 @@ final class Bls12381 private () {
     (for {
       pk  <- g1(key)
       sig <- g2(signature)
-      ok  <- call("core_verify")(sig.core_verify(pk, true, message.toArray, dst) == BLST_ERROR.BLST_SUCCESS)
+      ok  <- call(Operation.BlsVerify)(sig.core_verify(pk, true, message.toArray, dst) == BLST_ERROR.BLST_SUCCESS)
     } yield ok).getOrElse(false)
 
   implicit val verifier: Verifier[BlsPop] = (key: VerifyingKey[BlsPop], message: ByteVector, signature: Signature[BlsPop]) =>
@@ -90,12 +91,12 @@ final class Bls12381 private () {
   /** The sum of one or more signatures. */
   def aggregate(signatures: List[Signature[BlsPop]]): Either[CryptoError, Signature[BlsPop]] =
     signatures match {
-      case Nil => CryptoError.InvalidEncoding("BLS aggregate", "at least one signature is required").asLeft
+      case Nil => CryptoError.InvalidEncoding(Subject.BlsAggregate, EncodingReason.EmptyAggregate).asLeft
       case first :: rest =>
         for {
           head <- g2(first.bytes)
           tail <- rest.traverse(s => g2(s.bytes))
-          sum <- call("aggregate")(tail.foldLeft(head.to_jacobian()) { (acc, p) =>
+          sum <- call(Operation.BlsAggregate)(tail.foldLeft(head.to_jacobian()) { (acc, p) =>
             acc.aggregate(p); acc
           })
         } yield Signature[BlsPop](ByteVector.view(sum.compress()))
@@ -109,11 +110,11 @@ final class Bls12381 private () {
         for {
           head <- g1(first.bytes)
           tail <- rest.traverse(k => g1(k.bytes))
-          sum <- call("aggregate")(tail.foldLeft(head.to_jacobian()) { (acc, p) =>
+          sum <- call(Operation.BlsAggregate)(tail.foldLeft(head.to_jacobian()) { (acc, p) =>
             acc.aggregate(p); acc
           })
           sig <- g2(signature.bytes)
-          ok  <- call("core_verify")(sig.core_verify(sum.to_affine(), true, message.toArray, SignatureDst) == BLST_ERROR.BLST_SUCCESS)
+          ok  <- call(Operation.BlsVerify)(sig.core_verify(sum.to_affine(), true, message.toArray, SignatureDst) == BLST_ERROR.BLST_SUCCESS)
         } yield ok
     }).getOrElse(false)
 
@@ -122,7 +123,7 @@ final class Bls12381 private () {
     pairs.nonEmpty && (for {
       keys <- pairs.traverse { case (k, _) => g1(k.bytes) }
       sig  <- g2(signature.bytes)
-      ok <- call("pairing") {
+      ok <- call(Operation.BlsPairing) {
         val pairing = new Pairing(true, SignatureDst)
         keys.zip(pairs.map(_._2)).foreach {
           case (pk, m) => pairing.raw_aggregate(new P2().hash_to(m.toArray, SignatureDst).to_affine(), pk)
@@ -151,22 +152,22 @@ final class Bls12381 private () {
       .cond(
         dst.nonEmpty && dst.length <= 255 && dst.forall(ch => ch >= 0x20 && ch < 0x7f),
         dst,
-        CryptoError.InvalidEncoding("hash-to-curve DST", "must be 1..255 printable ASCII characters")
+        CryptoError.InvalidEncoding(Subject.HashToCurveDst, EncodingReason.InvalidDst)
       )
-      .flatMap(d => call("hash_to")(ByteVector.view(new P2().hash_to(message.toArray, d).serialize())))
+      .flatMap(d => call(Operation.BlsHashToCurve)(ByteVector.view(new P2().hash_to(message.toArray, d).serialize())))
 
   /** EIP-2333 master and child keys (the Ethereum BLS key tree). */
   def eip2333Master(seed: ByteVector): Either[CryptoError, SigningKey[BlsPop]] =
-    Either.cond(seed.size >= 32L, seed, CryptoError.InvalidKey("EIP-2333 seeds are at least 32 bytes")).flatMap { s =>
-      call("derive_master_eip2333") { val sk = new SecretKey(); sk.derive_master_eip2333(s.toArray); ByteVector.view(sk.to_bendian()) }
+    Either.cond(seed.size >= 32L, seed, CryptoError.InvalidKey(KeyReason.Eip2333SeedLength(seed.size))).flatMap { s =>
+      call(Operation.BlsMaster) { val sk = new SecretKey(); sk.derive_master_eip2333(s.toArray); ByteVector.view(sk.to_bendian()) }
         .flatMap(codec.signingKey)
     }
 
   def eip2333Child(parent: SigningKey[BlsPop], index: Long): Either[CryptoError, SigningKey[BlsPop]] =
-    Either.cond(index >= 0 && index < (1L << 32), index, CryptoError.InvalidKey("EIP-2333 indices are 32-bit")).flatMap { i =>
+    Either.cond(index >= 0 && index < (1L << 32), index, CryptoError.InvalidKey(KeyReason.Eip2333Index(index))).flatMap { i =>
       secret(parent)
         .flatMap(p =>
-          call("derive_child_eip2333") { val sk = new SecretKey(); sk.derive_child_eip2333(p, i); ByteVector.view(sk.to_bendian()) }
+          call(Operation.BlsChild) { val sk = new SecretKey(); sk.derive_child_eip2333(p, i); ByteVector.view(sk.to_bendian()) }
         )
         .flatMap(codec.signingKey)
     }
@@ -181,6 +182,8 @@ final class Bls12381 private () {
 
 object Bls12381 {
 
+  case object BackendSelfCheckFailed extends RuntimeException("blst self-check failed")
+
   val PublicKeyLength: Long = 48
   val SignatureLength: Long = 96
   val SignatureDst: String = "BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_"
@@ -189,6 +192,6 @@ object Bls12381 {
 
   /** Loads the native library (an effect, and it can fail on an unsupported platform) and checks it works. */
   def load[F[_]: Sync]: F[Bls12381] = Sync[F].delay(P1_Affine.generator().in_group()).flatMap { ok =>
-    Sync[F].raiseUnless(ok)(new IllegalStateException("blst self-check failed")).as(new Bls12381())
+    Sync[F].raiseUnless(ok)(BackendSelfCheckFailed).as(new Bls12381())
   }
 }

@@ -26,7 +26,7 @@ enum CryptoCause {
   }
 
   def message: String = this match {
-    case Signing(e)        => e.toString
+    case Signing(e)        => e.message
     case Sigma(e)          => e.message
     case Zk(e)             => e.toString
     case Groth16(e)        => e.toString

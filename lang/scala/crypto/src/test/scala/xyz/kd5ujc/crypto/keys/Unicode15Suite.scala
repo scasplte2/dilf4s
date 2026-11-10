@@ -6,7 +6,7 @@ import java.nio.file.{Files, Paths}
 import cats.effect.IO
 import cats.syntax.all._
 
-import xyz.kd5ujc.models.crypto_errors.{KeyError, KeyErrorKind}
+import xyz.kd5ujc.crypto.CryptoFixtureFailure
 
 import scodec.bits.ByteVector
 import weaver.SimpleIOSuite
@@ -39,26 +39,28 @@ object Unicode15Suite extends SimpleIOSuite {
 
   test("a lone surrogate in a phrase, a passphrase or a word is refused") {
     val lone = "\ud800"
-    WordList.load[IO](Bip39.Language.English).map { loaded =>
-      val english = loaded.fold(e => sys.error(e.toString), identity)
+    WordList.load[IO](Bip39.Language.English).flatMap(_.leftMap(CryptoFixtureFailure(_)).liftTo[IO]).map { english =>
       val valid = (List.fill(11)("abandon") :+ "about").mkString(" ")
       val mnemonic = Bip39.toEntropy(valid, english).map(_._1)
-      expect(Bip39.toEntropy(valid + lone, english).left.exists(_.kind == KeyErrorKind.InvalidMnemonic), "the phrase")
+      expect
+        .same(Left(KeyError.InvalidMnemonic(KeyError.MnemonicReason.UnassignedCodePoint)), Bip39.toEntropy(valid + lone, english))
         .and(
-          expect(mnemonic.flatMap(Bip39.seed(_, s"dilf4s$lone")).left.exists(_.kind == KeyErrorKind.InvalidPassphrase), "the passphrase")
+          expect.same(
+            Left(KeyError.InvalidPassphrase(KeyError.PassphraseReason.UnassignedCodePoint)),
+            mnemonic.flatMap(Bip39.seed(_, s"dilf4s$lone"))
+          )
         )
         .and(
-          expect(
-            WordList(Bip39.Language.English, english.words.updated(0, s"abandon$lone")).left.exists(_.kind == KeyErrorKind.InvalidWordList),
-            "a word"
+          expect.same(
+            Left(KeyError.InvalidWordList(Bip39.Language.English, KeyError.WordListReason.UnassignedCodePoint)),
+            WordList(Bip39.Language.English, english.words.updated(0, s"abandon$lone"))
           )
         )
     }
   }
 
   test("a caller's words are normalised, so a precomposed word matches a decomposed phrase") {
-    WordList.load[IO](Bip39.Language.English).map { loaded =>
-      val english = loaded.fold(e => sys.error(e.toString), identity)
+    WordList.load[IO](Bip39.Language.English).flatMap(_.leftMap(CryptoFixtureFailure(_)).liftTo[IO]).map { english =>
       // word 0 given precomposed (U+00E9) is held decomposed (e, U+0301); zero entropy spells it eleven times, and a
       // phrase spelling it precomposed again reads back, as in every SDK
       val words = english.words.updated(0, "caf\u00e9")
@@ -68,8 +70,18 @@ object Unicode15Suite extends SimpleIOSuite {
       }
       expect(words.size == 2048, "2048 words")
         .and(expect(decomposed.map(_._2.bytes) == Right(entropy.bytes), s"the phrase reads back its entropy: $decomposed"))
-        .and(expect(WordList(Bip39.Language.English, words.updated(1, "caf\u00e9")).isLeft, "two words equal once normalised are refused"))
-        .and(expect(WordList(Bip39.Language.English, words.updated(1, "ab andon")).isLeft, "a word holding a separator is refused"))
+        .and(
+          expect.same(
+            Left(KeyError.InvalidWordList(Bip39.Language.English, KeyError.WordListReason.InvalidWords)),
+            WordList(Bip39.Language.English, words.updated(1, "caf\u00e9"))
+          )
+        )
+        .and(
+          expect.same(
+            Left(KeyError.InvalidWordList(Bip39.Language.English, KeyError.WordListReason.InvalidWords)),
+            WordList(Bip39.Language.English, words.updated(1, "ab andon"))
+          )
+        )
         .and(expect((WordList(Bip39.Language.English, words): Either[KeyError, WordList]).isRight, "the list is accepted"))
     }
   }

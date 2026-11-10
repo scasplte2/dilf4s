@@ -316,6 +316,85 @@ object JlvmVectorsSuite extends IOSuite {
       }
   }
 
+  private def sameObservedProduct(expected: Product, actual: Product): weaver.Expectations =
+    expected.productIterator
+      .zip(actual.productIterator)
+      .foldLeft(
+        expect
+          .same(expected.getClass, actual.getClass)
+          .and(expect.same(expected.productArity, actual.productArity))
+          .and((expected, actual) match {
+            case (left: scala.reflect.Enum, right: scala.reflect.Enum) => expect.same(left.ordinal, right.ordinal)
+            case _                                                     => success
+          })
+      ) { case (acc, (left, right)) => acc.and(sameObservedValue(left, right)) }
+
+  private final case class ObservedFailure(width: Long) extends RuntimeException
+
+  // Independent evaluations allocate independent exceptions. Compare every domain field and foreign cause,
+  // including diagnostic text, but not allocation identity or driver-specific stack frames.
+  private def sameObservedValue(expected: Any, actual: Any): weaver.Expectations = (expected, actual) match {
+    case (e: Throwable, a: Throwable) =>
+      expect
+        .same(e.getClass, a.getClass)
+        .and(expect.same(e.getMessage, a.getMessage))
+        .and(sameObservedValue(Option(e.getCause), Option(a.getCause)))
+        .and(sameObservedValue(e.getSuppressed.toVector, a.getSuppressed.toVector))
+        .and((e, a) match {
+          case (left: Product, right: Product) => sameObservedProduct(left, right)
+          case _                               => success
+        })
+    case (e: scodec.bits.ByteVector, a: scodec.bits.ByteVector) => expect.same(e, a)
+    case (e: Product, a: Product)                               => sameObservedProduct(e, a)
+    case (e: Vector[?], a: Vector[?]) =>
+      e.zip(a).foldLeft(expect.same(e.size, a.size)) { case (acc, (left, right)) => acc.and(sameObservedValue(left, right)) }
+    case _ => expect.same(expected, actual)
+  }
+
+  test("observed-value comparison checks exact domain payloads and foreign diagnostics") { _ =>
+    IO {
+      import xyz.kd5ujc.crypto.signing.CryptoError
+      import CryptoError.{DecodeFailure, EncodingReason, KeyReason, Operation, Scheme, Subject}
+      val expected = Left(CryptoError.BackendFailure(Operation.Verify, new IllegalArgumentException("foreign diagnostic")))
+      val repeated = Left(CryptoError.BackendFailure(Operation.Verify, new IllegalArgumentException("foreign diagnostic")))
+      val changedOperation = Left(CryptoError.BackendFailure(Operation.SignSchnorr, new IllegalArgumentException("foreign diagnostic")))
+      val changedClass = Left(CryptoError.BackendFailure(Operation.Verify, new IllegalStateException("foreign diagnostic")))
+      val changedDiagnostic = Left(CryptoError.BackendFailure(Operation.Verify, new IllegalArgumentException("different diagnostic")))
+      val changedCause =
+        Left(CryptoError.BackendFailure(Operation.Verify, new IllegalArgumentException("foreign diagnostic", new IllegalStateException())))
+      val suppressed = new IllegalArgumentException("foreign diagnostic")
+      suppressed.addSuppressed(new IllegalStateException())
+      val changedSuppressed = Left(CryptoError.BackendFailure(Operation.Verify, suppressed))
+      val width = CryptoError.InvalidEncoding(Subject.Bip340Message, EncodingReason.Length(32, 31))
+      val otherWidth = CryptoError.InvalidEncoding(Subject.Bip340Message, EncodingReason.Length(32, 30))
+      expect
+        .same(true, sameObservedValue(expected, repeated).run.isValid)
+        .and(expect.same(false, sameObservedValue(expected, changedOperation).run.isValid))
+        .and(expect.same(false, sameObservedValue(expected, changedClass).run.isValid))
+        .and(expect.same(false, sameObservedValue(expected, changedDiagnostic).run.isValid))
+        .and(expect.same(false, sameObservedValue(expected, changedCause).run.isValid))
+        .and(expect.same(false, sameObservedValue(expected, changedSuppressed).run.isValid))
+        .and(expect.same(false, sameObservedValue(ObservedFailure(1), ObservedFailure(2)).run.isValid))
+        .and(expect.same(false, sameObservedValue(width, otherWidth).run.isValid))
+        .and(expect.same(false, sameObservedValue(EncodingReason.OutsideG2, EncodingReason.EmptyAggregate).run.isValid))
+        .and(
+          expect.same(
+            false,
+            sameObservedValue(
+              CryptoError.InvalidKey(KeyReason.Decode(Scheme.Ristretto255, DecodeFailure.Identity)),
+              CryptoError.InvalidKey(KeyReason.Decode(Scheme.Ristretto255, DecodeFailure.ZeroScalar))
+            ).run.isValid
+          )
+        )
+        .and(expect.same(false, sameObservedValue(Vector(width), Vector(width, width)).run.isValid))
+        .and(
+          expect
+            .same(true, sameObservedValue(scodec.bits.ByteVector(1, 2), scodec.bits.ByteVector(1) ++ scodec.bits.ByteVector(2)).run.isValid)
+        )
+        .and(expect.same(false, sameObservedValue(scodec.bits.ByteVector(1, 2), scodec.bits.ByteVector(1, 3)).run.isValid))
+    }
+  }
+
   test("every driver gives every vector case the same outcome and gas") {
     case (jlvm, in) =>
       IO {
@@ -323,7 +402,13 @@ object JlvmVectorsSuite extends IOSuite {
           val reference = JlvmVectors.run(jlvm, i)
           Config.Driver.values.toList.foldLeft(acc) { (a, d) =>
             val o = JlvmVectors.run(jlvm, i, d)
-            a.and(expect(o.result == reference.result && o.gasUsed == reference.gasUsed, s"${i.name}: $d disagrees"))
+            val sameResult = (reference.result, o.result) match {
+              case (Left(expected), Left(actual)) => sameObservedValue(expected, actual)
+              case _                              => expect.same(reference.result, o.result)
+            }
+            a.and(sameResult)
+              .and(expect.same(reference.gasUsed, o.gasUsed))
+              .and(expect.same(reference.warnings, o.warnings))
           }
         }
       }

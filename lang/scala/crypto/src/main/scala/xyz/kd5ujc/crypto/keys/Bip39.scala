@@ -11,12 +11,6 @@ import cats.syntax.all._
 import org.bouncycastle.crypto.digests.SHA256Digest
 import scodec.bits.{BitVector, ByteVector}
 
-/**
- * A key derivation refused, by kind: generated from `shared/schemas/crypto-errors.cddl`. `InvalidPath` is a path
- * `ChildIndex.path` refuses, `refusal` the typed rule it broke.
- */
-export xyz.kd5ujc.models.crypto_errors.KeyError
-
 /** Secret byte material (seeds, entropy): never printed. */
 final class Secret private[crypto] (val bytes: ByteVector) {
   override def toString: String = s"Secret(<${bytes.size} bytes redacted>)"
@@ -57,15 +51,15 @@ object WordList {
    * non-empty words without a separator.
    */
   def apply(language: Bip39.Language, words: Vector[String]): Either[KeyError, WordList] = {
-    def refused(reason: String): KeyError = KeyError.InvalidWordList(s"${language.name}: $reason", None)
+    def refused(reason: KeyError.WordListReason): KeyError = KeyError.InvalidWordList(language, reason)
     for {
-      _ <- Either.cond(words.size == 2048, (), refused(s"expected 2048 words, got ${words.size}"))
-      _ <- Either.cond(words.forall(Unicode15.assignedText), (), refused("a word holds a code point Unicode 15.0 does not assign"))
+      _ <- Either.cond(words.size == 2048, (), refused(KeyError.WordListReason.Count(words.size)))
+      _ <- Either.cond(words.forall(Unicode15.assignedText), (), refused(KeyError.WordListReason.UnassignedCodePoint))
       normalised = words.map(Bip39.nfkd)
       _ <- Either.cond(
         normalised.distinct.size == 2048 && normalised.forall(w => w.nonEmpty && !w.exists(Bip39.isSeparator)),
         (),
-        refused("expected 2048 distinct words without separators")
+        refused(KeyError.WordListReason.InvalidWords)
       )
     } yield new WordList(language, normalised)
   }
@@ -73,7 +67,7 @@ object WordList {
   /** Loads a bundled word list (`bip-0039/<name>.txt`); reading a resource is an effect. */
   def load[F[_]: Sync](language: Bip39.Language): F[Either[KeyError, WordList]] =
     Sync[F].blocking(Option(getClass.getResourceAsStream(s"/bip-0039/${language.name}.txt"))).flatMap {
-      case None => (KeyError.InvalidWordList(s"missing resource for ${language.name}", None): KeyError).asLeft[WordList].pure[F]
+      case None => (KeyError.InvalidWordList(language, KeyError.WordListReason.MissingResource): KeyError).asLeft[WordList].pure[F]
       case Some(stream) =>
         Resource.fromAutoCloseable(Sync[F].pure(stream)).use(in => Sync[F].blocking(new String(in.readAllBytes(), UTF_8))).map { text =>
           // the words as written: apply checks their code points before it normalises them
@@ -116,7 +110,7 @@ object Bip39 {
   def toMnemonic(entropy: Secret, words: WordList): Either[KeyError, Mnemonic] = {
     val ent = entropy.bytes
     if (!Set(16L, 20L, 24L, 28L, 32L).contains(ent.size))
-      KeyError.InvalidEntropy(s"entropy must be 16..32 bytes in steps of 4, got ${ent.size}").asLeft
+      KeyError.InvalidEntropy(ent.size).asLeft
     else {
       val bits = ent.bits ++ sha256(ent).bits.take(ent.size * 8 / 32)
       new Mnemonic(bits.grouped(11).map(group => words.words(group.toInt(signed = false))).toList, words.language).asRight
@@ -126,7 +120,7 @@ object Bip39 {
   /** A fresh mnemonic from `entropyBytes` (16, 20, 24, 28 or 32) of secure randomness. */
   def generate[F[_]: Monad](entropyBytes: Int, words: WordList)(implicit R: SecureRandom[F]): F[Either[KeyError, Mnemonic]] =
     if (!Set(16, 20, 24, 28, 32).contains(entropyBytes))
-      (KeyError.InvalidEntropy(s"entropy must be 16..32 bytes in steps of 4, got $entropyBytes"): KeyError).asLeft[Mnemonic].pure[F]
+      (KeyError.InvalidEntropy(entropyBytes.toLong): KeyError).asLeft[Mnemonic].pure[F]
     else R.nextBytes(entropyBytes).map(b => toMnemonic(Secret(ByteVector.view(b)), words))
 
   /**
@@ -135,7 +129,7 @@ object Bip39 {
    */
   def toEntropy(phrase: String, words: WordList): Either[KeyError, (Mnemonic, Secret)] =
     Either
-      .cond(Unicode15.assignedText(phrase), (), KeyError.InvalidMnemonic("the phrase holds a code point Unicode 15.0 does not assign"))
+      .cond(Unicode15.assignedText(phrase), (), KeyError.InvalidMnemonic(KeyError.MnemonicReason.UnassignedCodePoint))
       .flatMap(_ => entropyOf(phrase, words))
 
   private def entropyOf(phrase: String, words: WordList): Either[KeyError, (Mnemonic, Secret)] = {
@@ -146,16 +140,16 @@ object Bip39 {
       _ <- Either.cond(
         Set(12, 15, 18, 21, 24).contains(tokens.size),
         (),
-        KeyError.InvalidMnemonic(s"expected 12, 15, 18, 21 or 24 words, got ${tokens.size}")
+        KeyError.InvalidMnemonic(KeyError.MnemonicReason.WordCount(tokens.size))
       )
-      indices <- tokens.traverse(w => words.indexOf(w).toRight(KeyError.InvalidMnemonic("phrase contains a word not in the list")))
+      indices <- tokens.traverse(w => words.indexOf(w).toRight(KeyError.InvalidMnemonic(KeyError.MnemonicReason.UnknownWord)))
       bits = indices.foldLeft(BitVector.empty)((acc, i) => acc ++ BitVector.fromInt(i, 11))
       checksumBits = tokens.size * 11 / 33
       entropy = bits.dropRight(checksumBits.toLong).bytes
       _ <- Either.cond(
         sha256(entropy).bits.take(checksumBits.toLong) == bits.takeRight(checksumBits.toLong),
         (),
-        KeyError.InvalidMnemonic("checksum mismatch")
+        KeyError.InvalidMnemonic(KeyError.MnemonicReason.Checksum)
       )
     } yield (new Mnemonic(tokens, words.language), Secret(entropy))
   }
@@ -174,6 +168,6 @@ object Bip39 {
           2048
         )
       ),
-      KeyError.InvalidPassphrase("the passphrase holds a code point Unicode 15.0 does not assign")
+      KeyError.InvalidPassphrase(KeyError.PassphraseReason.UnassignedCodePoint)
     )
 }
