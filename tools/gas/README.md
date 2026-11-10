@@ -23,4 +23,6 @@ record such a failure as a capacity limit, never a timing result.
 
 Keep raw TSV rounds, check logs, GC logs and `summary.tsv`. `ratios.py` reports rejected rounds, confidence intervals,
 process spread and insufficient process counts. A one-process exploratory result is not a completed calibration.
+Nonpositive or nonfinite timings fail analysis explicitly: preserve the failed run and investigate its baseline
+and measurement conditions before collecting a replacement. Do not drop those rounds to produce a price.
 Compare sorted, reversed and permuted inputs, and separately assess duplicate-heavy inputs before setting prices.

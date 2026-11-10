@@ -28,6 +28,7 @@ the anchor's own charge; the schedule's charge is beside it.
 usage: ratios.py <dir with jvm-*.tsv and rust-*.tsv> [regex] | ratios.py --selftest
 """
 import glob
+import math
 import random
 import re
 import statistics
@@ -85,7 +86,7 @@ def two_means(xs):
 
 def load(path):
     meta, rounds, anchor = {}, defaultdict(list), None
-    for line in open(path):
+    for line_number, line in enumerate(open(path), start=1):
         f = line.rstrip('\n').split('\t')
         if line.startswith('# anchor'):
             anchor = int(re.findall(r'anchor (\d+)', line)[0])
@@ -93,6 +94,10 @@ def load(path):
             meta[f[1]] = dict(name=f[2], group=f[3], charged=int(f[4]))
         elif f[0] == 'S':
             p1, p2, a1, a2, x1, x2, r = map(float, f[4:11])
+            timings = dict(probe1=p1, probe2=p2, anchor1=a1, anchor2=a2, case1=x1, case2=x2, reference=r)
+            invalid = [name for name, value in timings.items() if not math.isfinite(value) or value <= 0]
+            if invalid:
+                raise ValueError(f'{path}:{line_number}: nonpositive or nonfinite timings: {", ".join(invalid)}')
             rounds[f[1]].append((p1, p2, a1, a2, x1, x2, r))
     return anchor, meta, rounds
 
@@ -259,6 +264,20 @@ def selftest():
         c = case(shape)
         assert c['ratio'] > 2.5, f'{name}: priced from the slow mode, got {c["ratio"]}'
         assert c['half'] == float('inf'), f'{name}: unconverged'
+    with tempfile.TemporaryDirectory() as d:
+        path = f'{d}/rust-1.tsv'
+        for column, name in enumerate(('probe1', 'probe2', 'anchor1', 'anchor2', 'case1', 'case2', 'reference')):
+            for invalid in ('0', '-1', 'nan', 'inf', '-inf'):
+                values = ['100'] * 7
+                values[column] = invalid
+                with open(path, 'w') as f:
+                    f.write('S\t2\t0\tAXA\t' + '\t'.join(values) + '\n')
+                try:
+                    load(path)
+                except ValueError as error:
+                    assert str(error) == f'{path}:1: nonpositive or nonfinite timings: {name}', str(error)
+                else:
+                    raise AssertionError(f'{name}={invalid}: expected an explicit timing refusal')
     print('selftest ok')
 
 

@@ -18,6 +18,7 @@ jobs:
           java-version: "21"
           cache: sbt
       - uses: sbt/setup-sbt@v1
+      - run: python3 tools/gas/ratios.py --selftest
       # clean first: the sbt-scalafmt incremental cache can report false passes. The same run prints the JLVM's test
       # classpath, which the difffuzz job runs on
       - run: |
