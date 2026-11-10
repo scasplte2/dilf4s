@@ -13,8 +13,8 @@ import xyz.kd5ujc.modelsgen.Ast._
  * `$$` names) and `/=`, `//=` extensions. Floating-point literals are parsed, never interpreted.
  */
 object CddlParser:
-  final case class ParseFailure(detail: String, line: Int, column: Int):
-    def message: String = s"CDDL parse error at $line:$column: $detail"
+  final case class ParseFailure(cause: Parser.Error, near: String, line: Int, column: Int):
+    def message: String = s"CDDL parse error at $line:$column: near `$near`"
 
   // Lexical ------------------------------------------------------------------------------------
   private val comment: Parser[Unit] = (Parser.char(';') *> Parser.charsWhile0(_ != '\n')).void
@@ -31,12 +31,12 @@ object CddlParser:
 
   /** RFC 8610 `id`: dots and dashes only between alphanumerics, so `a..b` is not one identifier. */
   private val ident: Parser[String] =
-    (idStart ~ idRest).string.flatMap { s =>
+    (idStart ~ idRest).string.filter { s =>
       val bad =
         s.endsWith(".") || s.endsWith("-") || s.contains("..") || s.contains(".-") || s.contains(
           "-."
         )
-      if bad then Parser.failWith("malformed identifier") else Parser.pure(s)
+      !bad
     }.backtrack
 
   private val digits: Parser[String] = Numbers.digits
@@ -145,7 +145,7 @@ object CddlParser:
         tagP | arrayP | mapP | paren | enumP | unwrapP | lit.backtrack.map(Ty.Literal(_)) | nameRef
       )
     val rangeOp: Parser[Boolean] = tok("...").as(false) | tok("..").as(true)
-    val ctrlName: Parser[String] = lexeme(Parser.char('.') *> ident)
+    val ctrlName: Parser[Control] = lexeme(Parser.char('.') *> ident).map(Control.fromWire)
     val tail: Parser[Ty => Ty] =
       (rangeOp ~ ty2).map((inc, hi) => (lo: Ty) => Ty.Range(lo, hi, inc)) |
       (ctrlName ~ ty2).map((op, arg) => (b: Ty) => Ty.Ctrl(b, op, arg))
@@ -185,16 +185,17 @@ object CddlParser:
     if (text.substring(lineStart, offset).forall(_.isWhitespace)) above(lineStart, Nil) else Vector.empty
   }
 
-  private val pragmaRe = """(?m)^;#\s*(import|include)\s+(\S+)\s+as\s+(\S+)\s*$""".r
+  private val pragmaPatterns = PragmaKind.values.toVector.map { kind =>
+    kind -> raw"""(?m)^;#\s*${kind.wire}\s+(\S+)\s+as\s+(\S+)\s*$$""".r
+  }
 
   def parse(text: String): Either[ParseFailure, File] =
     fileP(docs(text, _)).parse(text) match
       case Right((_, rules)) =>
-        val pragmas =
-          pragmaRe
-            .findAllMatchIn(text)
-            .map(m => Pragma(m.group(1), m.group(2), m.group(3)))
-            .toVector
+        val pragmas = pragmaPatterns.flatMap {
+          case (kind, pattern) =>
+            pattern.findAllMatchIn(text).map(m => m.start -> Pragma(kind, m.group(1), m.group(2)))
+        }.sortBy(_._1).map(_._2)
         Right(File(rules, pragmas))
       case Left(err) =>
         val off = err.failedAtOffset
@@ -202,4 +203,4 @@ object CddlParser:
         val line = before.count(_ == '\n') + 1
         val col = off - (before.lastIndexOf('\n') + 1) + 1
         val near = text.slice(off, off + 40).takeWhile(_ != '\n')
-        Left(ParseFailure(s"near `$near`", line, col))
+        Left(ParseFailure(err, near, line, col))

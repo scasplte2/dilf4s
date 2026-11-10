@@ -127,7 +127,7 @@ final class TsEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Strin
     val fieldsOf: Either[GenError, Vector[(UnionAlternative, Vector[ProfileField])]] = alts.traverse { a =>
       models.get(a.rule) match {
         case Some(ModelRule.Record(fs)) => (a -> fs).asRight
-        case _ => GenError.Unsupported(rule.toString, UnsupportedFeature.OutsideProfile("choice alternative that is not a map rule")).asLeft
+        case _ => GenError.Unsupported(rule.toString, UnsupportedFeature.OutsideProfile(ProfileRefusal.NonMapAlternative)).asLeft
       }
     }
     fieldsOf.map { withFields =>

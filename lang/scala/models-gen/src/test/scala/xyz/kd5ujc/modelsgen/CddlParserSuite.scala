@@ -1,5 +1,7 @@
 package xyz.kd5ujc.modelsgen
 
+import cats.parse.Parser
+
 import xyz.kd5ujc.modelsgen.Ast._
 
 import weaver.FunSuite
@@ -15,7 +17,9 @@ object CddlParserSuite extends FunSuite {
 
   test("rules, size control and bytes") {
     expect.same(
-      Right(Vector(Rule("hash32", Vector.empty, Assign.Eq, Ty.Ctrl(Ty.Name("bytes", Vector.empty), "size", Ty.Literal(Lit.IntL(32)))))),
+      Right(
+        Vector(Rule("hash32", Vector.empty, Assign.Eq, Ty.Ctrl(Ty.Name("bytes", Vector.empty), Control.Size, Ty.Literal(Lit.IntL(32)))))
+      ),
       parse("hash32 = bytes .size 32\n").map(_.rules)
     )
   }
@@ -74,12 +78,43 @@ object CddlParserSuite extends FunSuite {
 
   test("pragmas are collected") {
     expect.same(
-      Right(Vector(Pragma("import", "network.base", "base"), Pragma("include", "byron", "byron"))),
+      Right(Vector(Pragma(PragmaKind.Import, "network.base", "base"), Pragma(PragmaKind.Include, "byron", "byron"))),
       parse(";# import network.base as base\n;# include byron as byron\na = 1\n").map(_.pragmas)
     )
   }
 
-  test("errors carry a position") {
-    expect(CddlParser.parse("a = [\nb = c").left.exists(e => e.line >= 1 && e.column >= 1))
+  test("typed pragmas retain source order across kinds") {
+    expect.same(
+      Right(Vector(Pragma(PragmaKind.Include, "a", "a"), Pragma(PragmaKind.Import, "b", "b"), Pragma(PragmaKind.Include, "c", "c"))),
+      parse(";# include a as a\n;# import b as b\n;# include c as c\nx = 1\n").map(_.pragmas)
+    )
+  }
+
+  test("errors retain the exact parser expectation, source and position") {
+    val input = "a = 1\n!"
+    val parsed = CddlParser.parse(input)
+    expect
+      .same(Left((2, 1, 6, "!")), parsed.left.map(e => (e.line, e.column, e.cause.failedAtOffset, e.near)))
+      .and(expect.same(Left(List(Parser.Expectation.EndOfString(6, 7))), parsed.left.map(_.cause.expected.toList)))
+      .and(expect.same(Left(Some(input)), parsed.left.map(_.cause.input)))
+  }
+
+  test("control operators are classified while unknown extensions retain their input name") {
+    val controls = Vector(
+      "size"      -> Control.Size,
+      "regexp"    -> Control.Regexp,
+      "cbor"      -> Control.Cbor,
+      "default"   -> Control.Default,
+      "gt"        -> Control.Compare(Comparison.Greater),
+      "ge"        -> Control.Compare(Comparison.GreaterOrEqual),
+      "lt"        -> Control.Compare(Comparison.Less),
+      "le"        -> Control.Compare(Comparison.LessOrEqual),
+      "ne"        -> Control.Compare(Comparison.NotEqual),
+      "extension" -> Control.Other("extension")
+    )
+    controls.foldLeft(success) {
+      case (acc, (wire, expected)) =>
+        acc.and(expect.same(Some(Ty.Ctrl(Ty.Name("uint", Vector.empty), expected, Ty.Literal(Lit.IntL(3)))), body(s"a = uint .$wire 3")))
+    }
   }
 }

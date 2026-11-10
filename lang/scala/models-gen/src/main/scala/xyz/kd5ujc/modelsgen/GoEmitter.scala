@@ -66,8 +66,8 @@ final class GoEmitter(
   /** A module's package as Go imports it. */
   private def importPath(module: String): String = s"$ModulePath/$root/${packageOf(module)}"
 
-  private def outside(rule: QName, what: String): GenError =
-    GenError.Unsupported(rule.toString, UnsupportedFeature.OutsideProfile(s"$what (Go)"))
+  private def outside(rule: QName, what: ProfileRefusal): GenError =
+    GenError.Unsupported(rule.toString, UnsupportedFeature.OutsideProfile(ProfileRefusal.ForLanguage(Language.Go, what)))
 
   private def typeName(q: QName): String = CanonicalEmitter.pascal(q.name)
 
@@ -164,7 +164,7 @@ final class GoEmitter(
       case FieldType.Preview => Go(c("Preview"), "", "").asRight
       case FieldType.Ref(q) =>
         models.get(q).toRight(GenError.UnresolvedName(rule.module, q.name)).flatMap {
-          case ModelRule.Alias(_) if resolving(q) => outside(rule, s"alias cycle through ${q.name}").asLeft
+          case ModelRule.Alias(_) if resolving(q) => outside(rule, ProfileRefusal.AliasCycle(q)).asLeft
           case ModelRule.Alias(target)            => go(q, target, resolving + q, from).flatMap(element(rule, _)).as(named(from, q))
           case ModelRule.ErrorFamily(_, _)        => Go(qualify(from, q, typeName(q)), "", "").asRight
           case _                                  => named(from, q).asRight
@@ -186,7 +186,7 @@ final class GoEmitter(
 
   /** Literals carry no data, so they only make sense as required record fields. */
   private def element(rule: QName, g: Go): Either[GenError, Go] =
-    Either.cond(g.tpe.nonEmpty, g, outside(rule, "literal outside a required record field"))
+    Either.cond(g.tpe.nonEmpty, g, outside(rule, ProfileRefusal.LiteralOutsideRecord))
 
   /** The byte-string sizes held as arrays in `t`, each of which a module gives a pair of helper functions. */
   private def fixedSizes(t: FieldType): Set[Int] = t match {
@@ -222,8 +222,8 @@ final class GoEmitter(
         val boxed = !inError && recordOf(f.tpe).exists(reaches(_, rule))
         // an error's own `error` (the error it wraps) is Go's Err, as Error is the method every error has
         val name = if (inError && fieldName(f.key) == "Error") WrappedError else fieldName(f.key)
-        if (literal.isDefined && f.optional) outside(rule, s"optional literal field ${f.key}").asLeft
-        else if (!name.headOption.exists(_.isUpper)) outside(rule, s"key ${CanonicalEmitter.literal(f.key)} has no exported Go name").asLeft
+        if (literal.isDefined && f.optional) outside(rule, ProfileRefusal.OptionalLiteral(f.key)).asLeft
+        else if (!name.headOption.exists(_.isUpper)) outside(rule, ProfileRefusal.NoExportedFieldName(f.key)).asLeft
         else {
           val held =
             if (boxed)
@@ -449,7 +449,7 @@ final class GoEmitter(
       .collectFirst { case (t, xs) if xs.size > 1 => GenError.NameClash(rule.toString, t, xs.map(_.source)) }
       .orElse(all.collectFirst {
         case a if !Profile.isIdentifier(a.tpe) || !a.tpe.head.isUpper =>
-          outside(rule, s"choice alternative ${a.source} has no identifier form")
+          outside(rule, ProfileRefusal.InvalidAlternativeName(a.source))
       })
       .toLeft {
         val wrappers = declared.map { a =>
@@ -695,10 +695,10 @@ final class GoEmitter(
         case m if references(m).nonEmpty =>
           outside(
             QName(m, "*"),
-            s"a core module naming ${references(m).toVector.sorted.mkString(", ")} (core cannot import a generated package)"
+            ProfileRefusal.CoreReferences(references(m).toVector.sorted)
           )
       })
-      .orElse(importCycle(modules).map(c => outside(QName(c.headOption.getOrElse(""), "*"), s"an import cycle ${c.mkString(" -> ")}")))
+      .orElse(importCycle(modules).map(c => outside(QName(c.headOption.getOrElse(""), "*"), ProfileRefusal.ImportCycle(c))))
   }
 
   /** The source of one module, and its path under `lang/go`. */
@@ -711,7 +711,7 @@ final class GoEmitter(
       .sortBy(_._1)
       .collectFirst { case (d, xs) if xs.size > 1 => GenError.NameClash(name, d, xs.map(_._2).distinct) }
       .orElse(declared.collectFirst {
-        case (d, _) if !Profile.isIdentifier(d) || !d.head.isUpper => outside(QName(name, d), s"name $d has no exported Go form")
+        case (d, _) if !Profile.isIdentifier(d) || !d.head.isUpper => outside(QName(name, d), ProfileRefusal.NoExportedTypeName(d))
       })
       .orElse(
         Option

@@ -92,9 +92,6 @@ object GoEmitterSuite extends SimpleIOSuite {
   private def go(cddl: String, module: String = "t"): Either[GenError, String] =
     gen(module -> cddl).map(_.getOrElse(GoEmitter.pathOf(module), ""))
 
-  private def outside(e: Either[GenError, ?]): Boolean =
-    e.swap.exists { case GenError.Unsupported(_, UnsupportedFeature.OutsideProfile(_)) => true; case _ => false }
-
   pureTest("a record is a struct of exported fields; a literal field is left out, an optional one is an Optional") {
     val out = go("r = { \"version\": 1, \"content-hash\": bytes, ? \"note\": text, \"n\": uint .le 255 }\n")
     expect(
@@ -219,9 +216,27 @@ object GoEmitterSuite extends SimpleIOSuite {
         )
       )
       .and(
-        expect(outside(gen("a" -> ";# import b as b\nr = { \"x\": b.s }\n", "b" -> ";# import a as a\ns = { ? \"y\": a.r }\n")), "a cycle")
+        expect.same(
+          Left(
+            GenError.Unsupported(
+              "a:*",
+              UnsupportedFeature.OutsideProfile(ProfileRefusal.ForLanguage(Language.Go, ProfileRefusal.ImportCycle(Vector("a", "b", "a"))))
+            )
+          ),
+          gen("a" -> ";# import b as b\nr = { \"x\": b.s }\n", "b" -> ";# import a as a\ns = { ? \"y\": a.r }\n")
+        )
       )
-      .and(expect(outside(gen("limits" -> ";# import m as m\nr = m.s\n", "m" -> "s = uint\n")), "a core module naming another"))
+      .and(
+        expect.same(
+          Left(
+            GenError.Unsupported(
+              "limits:*",
+              UnsupportedFeature.OutsideProfile(ProfileRefusal.ForLanguage(Language.Go, ProfileRefusal.CoreReferences(Vector("m"))))
+            )
+          ),
+          gen("limits" -> ";# import m as m\nr = m.s\n", "m" -> "s = uint\n")
+        )
+      )
       .and(
         expect(
           gen("codec-errors" -> "value = uint\n").swap.exists {

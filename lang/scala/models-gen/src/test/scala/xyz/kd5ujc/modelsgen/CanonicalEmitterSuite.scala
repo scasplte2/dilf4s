@@ -47,10 +47,58 @@ object CanonicalEmitterSuite extends FunSuite {
       .and(expect(gen("r = float\n").isLeft, "floats"))
   }
 
+  test("profile refusals preserve exact reasons and input fields") {
+    val cases = Vector(
+      "r = { 1: uint }"                    -> ProfileRefusal.MapEntry(Ast.Occ.Once, Some(RKey.IntKey(1))),
+      "r = { * \"a\": uint }"              -> ProfileRefusal.MapEntry(Ast.Occ.Star, Some(RKey.TextKey("a"))),
+      "r = text .regexp \"[a-z]+\""        -> ProfileRefusal.UnsupportedPattern("[a-z]+"),
+      "max-n = 1024\nr = { \"n\": max-n }" -> ProfileRefusal.ConstantInField(QName("t", "max-n")),
+      "min-n = -1"                         -> ProfileRefusal.ConstantOutOfRange(-1),
+      "k = \"a\" / \"b\"\nr = \"a\" / k"   -> ProfileRefusal.RepeatedTexts(Vector("a"))
+    )
+    cases.foldLeft(success) {
+      case (acc, (cddl, reason)) =>
+        acc.and(expect.same(Some(UnsupportedFeature.OutsideProfile(reason)), violation(cddl)))
+    }
+  }
+
+  test("profile diagnostics render typed reasons at the presentation boundary") {
+    expect
+      .same(
+        "outside the dilf4s canonical profile: constant -1 (a constant is a uint, 0..2^64-1)",
+        UnsupportedFeature.OutsideProfile(ProfileRefusal.ConstantOutOfRange(-1)).message
+      )
+      .and(
+        expect.same(
+          "outside the dilf4s canonical profile: alias cycle through item (Rust)",
+          UnsupportedFeature
+            .OutsideProfile(ProfileRefusal.ForLanguage(Language.Rust, ProfileRefusal.AliasCycle(QName("t", "item"))))
+            .message
+        )
+      )
+      .and(
+        expect.same(
+          "outside the dilf4s canonical profile: optional literal field version (Go)",
+          UnsupportedFeature.OutsideProfile(ProfileRefusal.ForLanguage(Language.Go, ProfileRefusal.OptionalLiteral("version"))).message
+        )
+      )
+  }
+
+  test("diagnostics distinguish field, member and declaration names") {
+    val cases = Vector(
+      ProfileRefusal.InvalidKeyIdentifier("x-y")                -> "key \"x-y\" has no identifier form",
+      ProfileRefusal.InvalidMemberIdentifier("X")               -> "member X has no identifier form",
+      ProfileRefusal.NoExportedFieldName("x")                   -> "key \"x\" has no exported Go name",
+      ProfileRefusal.NoExportedTypeName("D")                    -> "name D has no exported Go form",
+      ProfileRefusal.ErrorField(FieldType.Ref(QName("m", "r"))) -> "error field of type r (text, an integer, a boolean, a kind or an error)"
+    )
+    cases.foldLeft(success) { case (acc, (reason, expected)) => acc.and(expect.same(expected, reason.message)) }
+  }
+
   test("ambiguous choices are rejected; a key-disjoint choice is accepted") {
     expect
       .same(
-        Some(UnsupportedFeature.AmbiguousAlternatives(Vector("a/b"))),
+        Some(UnsupportedFeature.AmbiguousAlternatives(Vector(QName("t", "a") -> QName("t", "b")))),
         violation("r = a / b\na = { \"x\": uint, ? \"y\": uint }\nb = { \"x\": uint }\n")
       )
       .and(expect(gen("r = a / b\na = { \"x\": uint }\nb = { \"y\": uint }\n").isRight))

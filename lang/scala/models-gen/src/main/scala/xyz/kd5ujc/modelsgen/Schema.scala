@@ -273,7 +273,7 @@ final class Schema(val modules: Map[String, Module]):
 
   private def control(
     base:      Ast.Ty,
-    op:        String,
+    op:        Ast.Control,
     arg:       Ast.Ty,
     scope:     Scope,
     env:       Map[String, RT],
@@ -290,41 +290,42 @@ final class Schema(val modules: Map[String, Module]):
           }
         case other => success(other)
     }
-    def constrained(lo: BigInt, hi: BigInt, bound: BigInt): RT =
-      val ranges = op match
-        case "gt" => Vector((lo.max(bound + 1), hi))
-        case "ge" => Vector((lo.max(bound), hi))
-        case "lt" => Vector((lo, hi.min(bound - 1)))
-        case "le" => Vector((lo, hi.min(bound)))
-        case "ne" => Vector((lo, hi.min(bound - 1)), (lo.max(bound + 1), hi))
-        case _    => Vector.empty
+    def constrained(relation: Ast.Comparison, lo: BigInt, hi: BigInt, bound: BigInt): RT =
+      val ranges = relation match
+        case Ast.Comparison.Greater        => Vector((lo.max(bound + 1), hi))
+        case Ast.Comparison.GreaterOrEqual => Vector((lo.max(bound), hi))
+        case Ast.Comparison.Less           => Vector((lo, hi.min(bound - 1)))
+        case Ast.Comparison.LessOrEqual    => Vector((lo, hi.min(bound)))
+        case Ast.Comparison.NotEqual       => Vector((lo, hi.min(bound - 1)), (lo.max(bound + 1), hi))
       val valid = ranges.collect { case (a, b) if a <= b => RT.IntRange(a, b) }
       if valid.isEmpty then RT.IntRange(1, 0) else flattenChoice(valid)
     ty(base, scope, env, ctx, expanding).flatMap { resolved =>
-      val comparison = Set("gt", "ge", "lt", "le", "ne")(op)
+      val comparison = op match
+        case Ast.Control.Compare(_)                                                                                => true
+        case Ast.Control.Size | Ast.Control.Regexp | Ast.Control.Cbor | Ast.Control.Default | Ast.Control.Other(_) => false
       (if comparison then underlying(resolved, Set.empty) else success(resolved)).flatMap { b =>
         (b, op) match
-          case (RT.Prim(PrimKind.Uint), "size") =>
+          case (RT.Prim(PrimKind.Uint), Ast.Control.Size) =>
             arg match
               case Ast.Ty.Literal(Ast.Lit.IntL(n)) if n >= 0 && n <= Int.MaxValue / 8 =>
                 success(RT.IntRange(0, (BigInt(1) << (8 * n.toInt)) - 1))
               case _ => success(RT.Unsupported(UnsupportedFeature.UnsignedSize(arg)))
-          case (RT.Prim(PrimKind.Bytes), "size") =>
+          case (RT.Prim(PrimKind.Bytes), Ast.Control.Size) =>
             sizes(arg, scope, env, ctx).map(_.fold(RT.Unsupported(UnsupportedFeature.SizeBound(arg)))(RT.SizedBytes(_, _)))
-          case (RT.Prim(PrimKind.Text), "size") =>
+          case (RT.Prim(PrimKind.Text), Ast.Control.Size) =>
             sizes(arg, scope, env, ctx).map(_.fold(RT.Unsupported(UnsupportedFeature.SizeBound(arg)))(RT.SizedText(_, _)))
-          case (RT.Prim(PrimKind.Text), "regexp") =>
+          case (RT.Prim(PrimKind.Text), Ast.Control.Regexp) =>
             arg match
               case Ast.Ty.Literal(Ast.Lit.TextL(pattern)) => success(RT.MatchingText(pattern))
               case _                                      => success(RT.Unsupported(UnsupportedFeature.Control(op)))
-          case (RT.Prim(PrimKind.Bytes), "cbor") =>
+          case (RT.Prim(PrimKind.Bytes), Ast.Control.Cbor) =>
             ty(arg, scope, env, ctx, expanding).map(RT.CborOf(_))
-          case (RT.Prim(PrimKind.Uint), _) if comparison =>
-            intOf(arg, scope, env, ctx).map(constrained(0, (BigInt(1) << 64) - 1, _))
-          case (RT.IntRange(lo, hi), _) if comparison =>
-            intOf(arg, scope, env, ctx).map(constrained(lo, hi, _))
-          case (_, "default") => success(b)
-          case _              => success(RT.Unsupported(UnsupportedFeature.Control(op)))
+          case (RT.Prim(PrimKind.Uint), Ast.Control.Compare(relation)) =>
+            intOf(arg, scope, env, ctx).map(constrained(relation, 0, (BigInt(1) << 64) - 1, _))
+          case (RT.IntRange(lo, hi), Ast.Control.Compare(relation)) =>
+            intOf(arg, scope, env, ctx).map(constrained(relation, lo, hi, _))
+          case (_, Ast.Control.Default) => success(b)
+          case _                        => success(RT.Unsupported(UnsupportedFeature.Control(op)))
       }
     }
 

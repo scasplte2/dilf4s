@@ -21,11 +21,43 @@ object Ast:
     val Star: Occ = Occ(0, None)
     val Plus: Occ = Occ(1, None)
 
+  enum Comparison(val wire: String):
+    case Greater extends Comparison("gt")
+    case GreaterOrEqual extends Comparison("ge")
+    case Less extends Comparison("lt")
+    case LessOrEqual extends Comparison("le")
+    case NotEqual extends Comparison("ne")
+
+  enum Control:
+    case Size, Regexp, Cbor, Default
+    case Compare(relation: Comparison)
+    case Other(name: String)
+
+    def wire: String = this match
+      case Size              => "size"
+      case Regexp            => "regexp"
+      case Cbor              => "cbor"
+      case Default           => "default"
+      case Compare(relation) => relation.wire
+      case Other(name)       => name
+
+  object Control:
+    def fromWire(name: String): Control = name match
+      case "size"    => Control.Size
+      case "regexp"  => Control.Regexp
+      case "cbor"    => Control.Cbor
+      case "default" => Control.Default
+      case other     => Comparison.values.find(_.wire == other).fold[Control](Control.Other(other))(Control.Compare(_))
+
+  enum PragmaKind(val wire: String):
+    case Import extends PragmaKind("import")
+    case Include extends PragmaKind("include")
+
   enum Ty:
     case Name(id: String, args: Vector[Ty])
     case Literal(value: Lit)
     case Range(lo: Ty, hi: Ty, inclusive: Boolean)
-    case Ctrl(base: Ty, op: String, arg: Ty)
+    case Ctrl(base: Ty, op: Control, arg: Ty)
     case Choice(alts: Vector[Ty])
     case Array(group: Group)
     case MapT(group: Group)
@@ -63,6 +95,6 @@ object Ast:
   final case class Rule(name: String, params: Vector[String], assign: Assign, body: Ty, doc: Vector[String] = Vector.empty)
 
   /** `;# import|include <module> as <alias>` directives (ouroboros specs and the ledger cddl). */
-  final case class Pragma(kind: String, module: String, alias: String)
+  final case class Pragma(kind: PragmaKind, module: String, alias: String)
 
   final case class File(rules: Vector[Rule], pragmas: Vector[Pragma])
