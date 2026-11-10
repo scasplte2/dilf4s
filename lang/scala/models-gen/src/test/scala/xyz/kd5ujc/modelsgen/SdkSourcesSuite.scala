@@ -14,6 +14,17 @@ import weaver.SimpleIOSuite
  */
 object SdkSourcesSuite extends SimpleIOSuite {
 
+  pureTest("the generator boundary retains structured errors and underlying I/O causes") {
+    val original = new java.io.IOException("fixture")
+    val io = GenError.Io("schema.cddl", original)
+    val parse = GenError.UnresolvedName("scope", "rule")
+    expect
+      .same(io, GenError.Failure(io).error)
+      .and(expect(GenError.Failure(io).getCause eq original))
+      .and(expect.same(parse, GenError.Failure(parse).error))
+      .and(expect.same("unresolved name `rule` in scope", GenError.Failure(parse).getMessage))
+  }
+
   private def committed(dir: Path, suffix: String): IO[Map[String, String]] =
     SdkSources
       .listFiles(dir, suffix)
@@ -23,7 +34,7 @@ object SdkSourcesSuite extends SimpleIOSuite {
   private val generated: IO[SdkSources] =
     SdkSources
       .readSchemas(java.nio.file.Paths.get("shared", "schemas"))
-      .flatMap(s => IO.fromEither(SdkSources.generate(s).leftMap(e => new IllegalStateException(e.message))))
+      .flatMap(s => IO.fromEither(SdkSources.generate(s).leftMap(e => GenError.Failure(e))))
 
   private def compare(
     language: String,
@@ -67,7 +78,7 @@ object SdkSourcesSuite extends SimpleIOSuite {
   test("committed Rust emitter fixtures match their schemas") {
     SdkSources
       .readSchemas(SdkSources.RustFixtureSchemas)
-      .flatMap(s => IO.fromEither(SdkSources.generate(s).leftMap(e => new IllegalStateException(e.message))))
+      .flatMap(s => IO.fromEither(SdkSources.generate(s).leftMap(e => GenError.Failure(e))))
       .flatMap(g => compare("Rust fixture", SdkSources.RustFixtureDir, ".rs", g.rust, SdkSources.RegenerateFixtures))
   }
 

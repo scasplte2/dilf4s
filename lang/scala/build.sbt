@@ -177,8 +177,7 @@ lazy val core = project.in(file("core"))
         IO.delete(out)
         genRunner
           .run("xyz.kd5ujc.modelsgen.Main", cp, Seq(schemas.getAbsolutePath, out.getAbsolutePath, "xyz.kd5ujc.models"), log)
-          .failed
-          .foreach(e => sys.error(s"models generator failed: ${e.getMessage}"))
+          .get
         (out ** "*.scala").get.toSet
       }
       cached(inputs).toSeq.sortBy(_.getAbsolutePath)

@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Paths}
 import java.util.concurrent.Executors
 
+import cats.data.NonEmptyList
 import cats.effect.std.SecureRandom
 import cats.effect.unsafe.IORuntimeConfig
 import cats.effect.{ExitCode, IO, IOApp, Resource}
@@ -15,7 +16,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
 import scala.jdk.CollectionConverters._
 
-import xyz.kd5ujc.core.canonical.CanonicalValue
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Preview}
 import xyz.kd5ujc.crypto.bls.Bls12381
 import xyz.kd5ujc.crypto.signing.Secp256k1
 import xyz.kd5ujc.jlvm._
@@ -54,6 +55,22 @@ object GasRatios extends IOApp {
     Resource.make(IO(Executors.newSingleThreadExecutor()))(e => IO(e.shutdown())).map(ExecutionContext.fromExecutor)
 
   private val unlimited = Config(limit = GasLimit.Max)
+
+  enum Error {
+    case InvalidAdjustment(value: Preview)
+    case FieldCount(actual: Int)
+    case Preparation(name: String, cause: JlvmError)
+    case UnexpectedDedup(name: String, expected: Either[JlvmError, CanonicalValue], actual: Either[JlvmError, CanonicalValue])
+  }
+
+  final case class Failure(error: Error) extends RuntimeException(error.toString)
+
+  private[benchmarks] def parseCase(line: String): Either[Error, GasCase] =
+    line.split("\\t", -1).toList match {
+      case name :: group :: adjust :: program :: baseline :: data :: Nil =>
+        adjust.toLongOption.toRight(Error.InvalidAdjustment(Preview.of(adjust))).map(GasCase(name, group, program, baseline, data, _))
+      case fields => Left(Error.FieldCount(fields.size))
+    }
 
   /** Each batch of a unit takes at least this long. */
   val Target: Double = 2.5e5
@@ -98,21 +115,43 @@ object GasRatios extends IOApp {
         }
         .map(_.sum)
 
-    /** The configuration, as the header names it, or what differs from the reference. */
-    def verify(s: Settings): Either[String, String] = {
+    enum Violation {
+      case JavaVersion(actual: Int)
+      case HeapSize(initial: Long, maximum: Long)
+      case HeapNotPretouched
+      case Collector(serial: Boolean, actual: Set[String])
+      case ProcessorOverride(actual: Long)
+      case CpuAffinity(actual: Option[Int])
+
+      def message: String = this match {
+        case JavaVersion(actual)        => s"Java $actual, not $JavaFeature"
+        case HeapSize(initial, maximum) => s"heap $initial to $maximum bytes, not fixed at $Heap"
+        case HeapNotPretouched          => "the heap is not touched at start (AlwaysPreTouch is off)"
+        case Collector(_, actual)       => s"collectors ${actual.toList.sorted.mkString(", ")}, not serial"
+        case ProcessorOverride(actual)  => s"ActiveProcessorCount $actual overrides the CPU count"
+        case CpuAffinity(actual)        => s"allowed CPUs ${actual.fold("unknown")(_.toString)}, not pinned to one"
+      }
+    }
+
+    case object Verified {
+      val label: String = s"${Flags.mkString(" ")}; Java $JavaFeature; collectors ${Collectors.toList.sorted.mkString(", ")}; 1 CPU"
+    }
+
+    final case class Rejected(violations: NonEmptyList[Violation])
+        extends RuntimeException(
+          s"not the reference configuration: ${violations.toList.map(_.message).mkString("; ")}"
+        )
+
+    def verify(s: Settings): Either[NonEmptyList[Violation], Verified.type] = {
       val wrong = List(
-        Option.when(s.javaFeature != JavaFeature)(s"Java ${s.javaFeature}, not $JavaFeature"),
-        Option.when(s.initialHeap != Heap || s.maxHeap != Heap)(s"heap ${s.initialHeap} to ${s.maxHeap} bytes, not fixed at $Heap"),
-        Option.when(!s.preTouch)("the heap is not touched at start (AlwaysPreTouch is off)"),
-        Option.when(!s.serial || s.collectors != Collectors)(s"collectors ${s.collectors.toList.sorted.mkString(", ")}, not serial"),
-        Option.when(s.activeProcessorCount != -1L)(s"ActiveProcessorCount ${s.activeProcessorCount} overrides the CPU count"),
-        Option.when(!s.allowedCpus.contains(1))(s"allowed CPUs ${s.allowedCpus.fold("unknown")(_.toString)}, not pinned to one")
+        Option.when(s.javaFeature != JavaFeature)(Violation.JavaVersion(s.javaFeature)),
+        Option.when(s.initialHeap != Heap || s.maxHeap != Heap)(Violation.HeapSize(s.initialHeap, s.maxHeap)),
+        Option.when(!s.preTouch)(Violation.HeapNotPretouched),
+        Option.when(!s.serial || s.collectors != Collectors)(Violation.Collector(s.serial, s.collectors)),
+        Option.when(s.activeProcessorCount != -1L)(Violation.ProcessorOverride(s.activeProcessorCount)),
+        Option.when(!s.allowedCpus.contains(1))(Violation.CpuAffinity(s.allowedCpus))
       ).flatten
-      Either.cond(
-        wrong.isEmpty,
-        s"${Flags.mkString(" ")}; Java ${s.javaFeature}; collectors ${Collectors.toList.sorted.mkString(", ")}; 1 CPU",
-        wrong.mkString("; ")
-      )
+      NonEmptyList.fromList(wrong).toLeft(Verified)
     }
 
     /** This JVM's effective settings: the HotSpot values the flags resolved to, and the process's CPU affinity. */
@@ -136,7 +175,7 @@ object GasRatios extends IOApp {
       )
     }
 
-    val check: IO[Either[String, String]] = current.map(verify)
+    val check: IO[Either[NonEmptyList[Violation], Verified.type]] = current.map(verify)
   }
 
   /** Iterations of the probe: xorshift64, a dependent chain of shifts and xors, so its time is the core's speed. */
@@ -147,12 +186,12 @@ object GasRatios extends IOApp {
     def charged(jlvm: Jlvm): Long = gas(jlvm, program) - gas(jlvm, baseline) + c.adjust
   }
 
-  private def prepare(c: GasCase): Either[JlvmError, Prepared] =
+  private def prepare(c: GasCase): Either[Error, Prepared] =
     (
       Parser.parse(c.program).flatMap(Compiled(_)),
       Parser.parse(c.baseline).flatMap(Compiled(_)),
       DedupInputs.read(c.data)
-    ).mapN(Prepared(c, _, _, _))
+    ).mapN(Prepared(c, _, _, _)).leftMap(Error.Preparation(c.name, _))
 
   @tailrec private def xorshift(k: Int, x: Long): Long =
     if (k == 0) x
@@ -168,7 +207,7 @@ object GasRatios extends IOApp {
   }
 
   private def timed(work: => Long): IO[(Long, Long)] =
-    (IO.monotonic, IO(work), IO.monotonic).mapN((t0, sink, t1) => ((t1 - t0).toNanos, sink))
+    IO(work).timed.map { case (duration, sink) => (duration.toNanos, sink) }
 
   /** Nanoseconds per evaluation over a batch of `n`. */
   private def batch(jlvm: Jlvm, c: Prepared, p: Compiled, n: Int): IO[Double] = timed(loop(jlvm, c, p, n)).map(_._1.toDouble / n)
@@ -236,16 +275,7 @@ object GasRatios extends IOApp {
     (
       Jlvm.load[IO],
       IO.blocking(Files.readAllLines(Paths.get(path), UTF_8).asScala.toList).flatMap { lines =>
-        lines.filter(_.nonEmpty).traverse { line =>
-          line.split("\\t", -1).toList match {
-            case name :: group :: adjust :: program :: baseline :: data :: Nil =>
-              adjust.toLongOption
-                .toRight(new IllegalArgumentException("invalid gas adjustment"))
-                .liftTo[IO]
-                .map(GasCase(name, group, program, baseline, data, _))
-            case _ => IO.raiseError(new IllegalArgumentException("a gas case must have six fields"))
-          }
-        }
+        lines.filter(_.nonEmpty).traverse(line => parseCase(line).leftMap(Failure(_)).liftTo[IO])
       }
     ).tupled
 
@@ -267,19 +297,19 @@ object GasRatios extends IOApp {
           .fold(load)(readCases)
           .flatMap {
             case (jlvm, cases) =>
-              IO.fromEither(cases.traverse(prepare).leftMap(e => new IllegalArgumentException(e.toString)))
+              IO.fromEither(cases.traverse(prepare).leftMap(Failure(_)))
                 .flatMap(_.traverse_ { c =>
                   val o = jlvm.evaluate(c.program, c.data, Map.empty, unlimited)
                   val shown = o.result.fold(
-                    e => s"error ${e.getClass.getSimpleName}",
+                    e => s"error ${e.kind.wire}",
                     v => if (v == CanonicalValue.CBool(false)) "false" else "ok"
                   )
                   val expected = Option.when(c.c.data.startsWith("dedup:")) {
                     if (c.c.group == "unique") jlvm.evaluate(c.baseline, c.data, Map.empty, unlimited).result
                     else Right(CanonicalValue.CBool(true))
                   }
-                  IO.raiseWhen(expected.exists(_ != o.result))(
-                    new IllegalStateException(s"${c.c.name}: unexpected dedup outcome")
+                  expected.traverse_(wanted =>
+                    IO.raiseWhen(wanted != o.result)(Failure(Error.UnexpectedDedup(c.c.name, wanted, o.result)))
                   ) *> IO.println(s"${c.c.name}\t${c.charged(jlvm)}\t$shown")
                 })
           }
@@ -292,18 +322,18 @@ object GasRatios extends IOApp {
         val rounds = rest.headOption.flatMap(_.toIntOption).getOrElse(101)
         val filter = rest.drop(1).headOption.filter(_.nonEmpty).map(_.r)
         (
-          Reference.check.flatMap(_.leftMap(w => new IllegalStateException(s"not the reference configuration: $w")).liftTo[IO]),
+          Reference.check.flatMap(_.leftMap(Reference.Rejected(_)).liftTo[IO]),
           rest.drop(2).headOption.fold(load)(readCases)
         ).flatMapN {
           case (configuration, (jlvm, cases)) =>
             for {
-              prepared <- IO.fromEither(cases.traverse(prepare).leftMap(e => new IllegalArgumentException(e.toString)))
+              prepared <- IO.fromEither(cases.traverse(prepare).leftMap(Failure(_)))
               (anchor, reference) = (prepared(0), prepared(1))
               chosen = prepared.zipWithIndex.drop(2).filter { case (c, _) => filter.forall(_.findFirstIn(c.c.name).isDefined) }
               _ <- IO.println(
                 s"# backend JVM ${System.getProperty("java.version")}; ${chosen.size} cases; $rounds rounds; probe $ProbeSteps steps"
               )
-              _ <- IO.println(s"# configuration $configuration")
+              _ <- IO.println(s"# configuration ${configuration.label}")
               _ <- IO.println(s"# anchor ${anchor.charged(jlvm)}; reference ${reference.charged(jlvm)}")
               _ <- dedicated.use { ec =>
                 (for {

@@ -8,8 +8,8 @@ import cats.syntax.all._
 
 import xyz.kd5ujc.accumulators.versioned.Harness._
 import xyz.kd5ujc.accumulators.versioned.VersionedTrie.Head
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
-import xyz.kd5ujc.core.hash.Digest
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalErrorKind, CanonicalValue, Cbor, Preview}
+import xyz.kd5ujc.core.hash.{Digest, HashError}
 import xyz.kd5ujc.storage.Batch
 
 import io.circe.Json
@@ -25,9 +25,23 @@ object VersionedTrieVectors {
 
   val path: Path = Paths.get("shared", "vectors", "versioned_trie_v1.json")
 
+  enum Error {
+    case Json(cause: io.circe.DecodingFailure)
+    case InvalidHex(value: Preview)
+    case Canonical(cause: CanonicalError)
+    case Hash(cause: HashError)
+    case Versioned(cause: VersionedTrieError)
+    case UnexpectedRefusal(cause: VersionedTrieError)
+    case UnexpectedAcceptance
+    case UnknownCheck(value: Preview)
+    case MissingAt
+  }
+
+  final case class Failure(error: Error) extends RuntimeException(error.toString)
+
   private def hex(b:      ByteVector): Json = b.toHex.asJson
   private def cbor(v:     CanonicalValue): Json = hex(xyz.kd5ujc.core.canonical.CanonicalGens.encoded(v))
-  private def orDie[A](e: Either[VersionedTrieError, A]): IO[A] = e.leftMap(err => new IllegalStateException(err.toString)).liftTo[IO]
+  private def orDie[A](e: Either[VersionedTrieError, A]): IO[A] = e.leftMap(err => Failure(Error.Versioned(err))).liftTo[IO]
 
   val commits: List[(Long, Batch[StateKey, CanonicalValue])] = List(
     1L -> (Batch.put(key("fiber/1"), int(1)) ++ Batch.put(key("fiber/2"), text("x")) ++ Batch.put(key("fiberx/1"), int(9)) ++
@@ -85,8 +99,8 @@ object VersionedTrieVectors {
       Option.when(v.isValidLong)(v.toLong).toRight(VersionedTrieError.InvalidVersion("not a Long")).flatMap(VersionKey.long.encode)
     require(decoded.isRight == encoded.isRight, s"version $v: decoding and encoding disagree")
     require(decoded.forall(d => BigInt(d) == v) && encoded.forall(_ == key), s"version $v: the key does not round-trip")
-    val outcome = decoded.fold(e => Json.obj("kind" -> e.productPrefix.asJson), _ => "accepted".asJson)
-    require(encoded.swap.toOption.map(_.productPrefix) == decoded.swap.toOption.map(_.productPrefix), s"version $v: the kinds differ")
+    val outcome = decoded.fold(e => Json.obj("kind" -> e.kind.wire.asJson), _ => "accepted".asJson)
+    require(encoded.swap.toOption.map(_.kind) == decoded.swap.toOption.map(_.kind), s"version $v: the kinds differ")
     Json.obj("version" -> v.asJson, "key" -> hex(key), "outcome" -> outcome)
   }
 
@@ -172,23 +186,26 @@ object VersionedTrieVectors {
     "Fiber"
   )
 
-  /** The generated state-key codec's encoding of `k`: "accepted", or its refusal's kind (TypeMismatch). */
-  def schemaOutcome(k: String): String =
-    xyz.kd5ujc.models.versioned_trie.StateKey.codec.encode(k).fold(_.productPrefix, _ => "accepted")
+  def schemaOutcome(k: String): Either[CanonicalError, Unit] =
+    xyz.kd5ujc.models.versioned_trie.StateKey.codec.encode(k).void
 
   /** A state-key outcome: "accepted", or the refusal's kind and its normative `segment` (conformance.md \u00a73). */
   def keyOutcome(r: Either[StateKeyError, ?]): Json =
     r.fold(
       {
-        case e @ StateKeyError.InvalidSegment(_, at)    => Json.obj("kind" -> e.productPrefix.asJson, "segment" -> at.asJson)
-        case e @ StateKeyError.SegmentTooLong(_, at, _) => Json.obj("kind" -> e.productPrefix.asJson, "segment" -> at.asJson)
-        case e                                          => Json.obj("kind" -> e.productPrefix.asJson)
+        case e @ StateKeyError.InvalidSegment(_, at)    => Json.obj("kind" -> e.kind.wire.asJson, "segment" -> at.asJson)
+        case e @ StateKeyError.SegmentTooLong(_, at, _) => Json.obj("kind" -> e.kind.wire.asJson, "segment" -> at.asJson)
+        case e                                          => Json.obj("kind" -> e.kind.wire.asJson)
       },
       _ => "accepted".asJson
     )
 
   private def stateKeyCase(k: String): Json =
-    Json.obj("key" -> k.asJson, "schema" -> schemaOutcome(k).asJson, "outcome" -> keyOutcome(StateKey.parse(k)))
+    Json.obj(
+      "key"     -> k.asJson,
+      "schema"  -> schemaOutcome(k).fold(_.kind.wire, _ => "accepted").asJson,
+      "outcome" -> keyOutcome(StateKey.parse(k))
+    )
 
   // ---------------------------------------------------------------------------------------------------- version errors
 
@@ -250,48 +267,48 @@ object VersionedTrieVectors {
             "at"    -> hex(kb)
           )
         )
-    }.flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO])
+    }.flatMap(_.leftMap(e => Failure(Error.Versioned(e))).liftTo[IO])
 
   /** A version error's outcome as the schema's `vt-version-error`: the refusal and the keys it names, in full. */
-  def versionErrorJson(e: VersionedTrieError): Either[String, Json] = e match {
+  def versionErrorJson(e: VersionedTrieError): Either[Error, Json] = e match {
     case VersionedTrieError.VersionNotIncreasing(head, next) =>
       Json.obj("kind" -> "VersionNotIncreasing".asJson, "head" -> head.asJson, "next" -> next.asJson).asRight
     case VersionedTrieError.UnknownVersion(version) => Json.obj("kind" -> "UnknownVersion".asJson, "version" -> version.asJson).asRight
-    case other                                      => s"not a version error: $other".asLeft
+    case other                                      => Error.UnexpectedRefusal(other).asLeft
   }
 
-  private def runVersionError[V](c: io.circe.ACursor)(implicit V: VersionKey[V]): Either[String, VersionedTrieError] = {
-    def bytes(name: String): Either[String, ByteVector] = c.get[String](name).leftMap(_.toString).flatMap(ByteVector.fromHexDescriptive(_))
-    def value(b:    ByteVector) = Cbor.decode(b).leftMap(_.toString)
-    c.get[String]("check").leftMap(_.toString).flatMap {
+  private def runVersionError[V](c: io.circe.ACursor)(implicit V: VersionKey[V]): Either[Error, VersionedTrieError] = {
+    def hex(text:   String): Either[Error, ByteVector] = ByteVector.fromHex(text).toRight(Error.InvalidHex(Preview.of(text)))
+    def bytes(name: String): Either[Error, ByteVector] = c.get[String](name).leftMap(Error.Json(_)).flatMap(hex)
+    def value(b:    ByteVector): Either[Error, CanonicalValue] = Cbor.decode(b).leftMap(Error.Canonical(_))
+    c.get[String]("check").leftMap(Error.Json(_)).flatMap {
       case "replica" =>
         c.get[List[String]]("deltas")
-          .leftMap(_.toString)
-          .flatMap(_.traverse(d => ByteVector.fromHexDescriptive(d).flatMap(value)))
+          .leftMap(Error.Json(_))
+          .flatMap(_.traverse(d => hex(d).flatMap(value)))
           .map { ds =>
             Replica
               .empty[V, H]
               .flatMap(r0 => ds.foldLeftM(r0)((r, d) => VersionedTrieWire.decodeDelta[V, H](d).flatMap(Replica.applyDelta(r, _))))
           }
-          .flatMap(_.swap.leftMap(_ => "accepted"))
+          .flatMap(_.swap.leftMap(_ => Error.UnexpectedAcceptance))
       case "historical" =>
-        (bytes("root").flatMap(Digest.fromBytes[H](_).leftMap(_.toString)), bytes("proof").flatMap(value), bytes("at")).tupled.flatMap {
+        (bytes("root").flatMap(Digest.fromBytes[H](_).leftMap(Error.Hash(_))), bytes("proof").flatMap(value), bytes("at")).tupled.flatMap {
           case (root, proof, at) =>
             (VersionedTrieWire.decodeProof[V, H](proof), V.decode(at)).tupled.flatMap {
               case (pr, u) => VersionedTrieVerifier.verifyHistoricalKey(root, pr, u)
-            }.swap
-              .leftMap(_ => "accepted")
+            }.swap.leftMap(_ => Error.UnexpectedAcceptance)
         }
-      case other => s"unknown check $other".asLeft
+      case other => Error.UnknownCheck(Preview.of(other)).asLeft
     }
   }
 
   /** A `versionErrors` case's outcome, read from its JSON as an SDK loader reads it. */
-  def versionErrorOutcome(c: io.circe.ACursor): Either[String, Json] =
+  def versionErrorOutcome(c: io.circe.ACursor): Either[Error, Json] =
     c.get[Int]("width")
-      .leftMap(_.toString)
+      .leftMap(Error.Json(_))
       .flatMap(w =>
-        withKey(w)(implicit k => runVersionError[Long](c), implicit k => runVersionError[ByteVector](c)).leftMap(_.toString).flatten
+        withKey(w)(implicit k => runVersionError[Long](c), implicit k => runVersionError[ByteVector](c)).leftMap(Error.Versioned(_)).flatten
       )
       .flatMap(versionErrorJson)
 
@@ -299,14 +316,12 @@ object VersionedTrieVectors {
     versionErrorWidths
       .flatTraverse(w =>
         withKey(w)(k => versionErrorCases[Long](w, k.decode)(using k), k => versionErrorCases[ByteVector](w, k.decode)(using k))
-          .leftMap(e => new IllegalStateException(e.toString))
+          .leftMap(e => Failure(Error.Versioned(e)))
           .liftTo[IO]
           .flatten
       )
       .flatMap(
-        _.traverse(j =>
-          versionErrorOutcome(j.hcursor).map(o => j.deepMerge(Json.obj("outcome" -> o))).leftMap(new IllegalStateException(_)).liftTo[IO]
-        )
+        _.traverse(j => versionErrorOutcome(j.hcursor).map(o => j.deepMerge(Json.obj("outcome" -> o))).leftMap(Failure(_)).liftTo[IO])
       )
 
   def build: IO[Json] =
@@ -435,7 +450,7 @@ object VersionedTrieVectors {
             "versionKeys"   -> versionKeyCases.map(versionKeyCase).asJson,
             "versionErrors" -> versionErrorRows.asJson
           )
-      }.flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO])
+      }.flatMap(_.leftMap(e => Failure(Error.Versioned(e))).liftTo[IO])
     }
 
   def render: IO[String] = build.map(_.spaces2 + "\n")
@@ -464,14 +479,39 @@ object VersionedTrieVectorsSuite extends SimpleIOSuite {
           s"keys the pattern accepts and StateKey rejects break only a length limit: $patternOnly"
         )
       )
-      .and(expect(patternOnly.size >= 3, "the cases cover each limit"))
+      .and(
+        expect.same(
+          List("x" * 65, List.fill(17)("a").mkString("/"), List("x" * 64, "x" * 64, "x" * 64, "x" * 62).mkString("/"), "a/" + "x" * 65),
+          patternOnly
+        )
+      )
   }
 
   pureTest("the generated state-key codec encodes exactly the texts the schema pattern matches, and refuses the rest as TypeMismatch") {
     VersionedTrieVectors.stateKeyCases.foldMap { k =>
-      val expected = if (k.matches(VersionedTrieVectors.StateKeyPattern)) "accepted" else "TypeMismatch"
-      expect.same(expected, VersionedTrieVectors.schemaOutcome(k))
+      val expected = if (k.matches(VersionedTrieVectors.StateKeyPattern)) Right(()) else Left(CanonicalErrorKind.TypeMismatch)
+      expect.same(expected, VersionedTrieVectors.schemaOutcome(k).leftMap(_.kind))
     }
+  }
+
+  pureTest("version-error fixtures retain exact input failures and distinguish unexpected acceptance") {
+    import VersionedTrieVectors.{Error, versionErrorJson, versionErrorOutcome}
+    def row(fields: (String, Json)*): io.circe.HCursor = Json.obj(("width" -> 8.asJson) +: fields*).hcursor
+    expect
+      .same(Left(Error.UnknownCheck(Preview.of("other"))), versionErrorOutcome(row("check" -> "other".asJson)))
+      .and(
+        expect.same(
+          Left(Error.UnexpectedAcceptance),
+          versionErrorOutcome(row("check" -> "replica".asJson, "deltas" -> List.empty[Json].asJson))
+        )
+      )
+      .and(
+        expect.same(
+          Left(Error.InvalidHex(Preview.of("zz"))),
+          versionErrorOutcome(row("check" -> "replica".asJson, "deltas" -> List("zz").asJson))
+        )
+      )
+      .and(expect.same(Left(Error.UnexpectedRefusal(VersionedTrieError.Empty)), versionErrorJson(VersionedTrieError.Empty)))
   }
 
   test("every version error names its versions by their full keys: 2w hex characters, at every width") {
@@ -558,7 +598,10 @@ object VersionedTrieVectorsSuite extends SimpleIOSuite {
               expect.same(Right(es), state.namespace(n))
             }
           case "historical" =>
-            val state = get(at.toRight("at").flatMap(u => VersionedTrieVerifier.verifyHistoricalKey(root, proof, u).leftMap(_.toString)))
+            val state = get(
+              at.toRight(VersionedTrieVectors.Error.MissingAt)
+                .flatMap(u => VersionedTrieVerifier.verifyHistoricalKey(root, proof, u).leftMap(VersionedTrieVectors.Error.Versioned(_)))
+            )
             claims.foldMap { case (k, v) => expect.same(Right(true), state.holds(k, v)) }
           case "version" =>
             expect.same(

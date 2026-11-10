@@ -6,7 +6,7 @@ import java.nio.file.{Files, Path, Paths}
 import cats.effect.{ExitCode, IO, IOApp}
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue}
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalJson, CanonicalValue, Preview, ValueKind}
 
 /**
  * Writes `PoseidonConstants.scala` from [[PoseidonDerivation]]. Run from the repository root:
@@ -18,7 +18,7 @@ object PoseidonConstantsGen extends IOApp {
 
   val widths: List[Int] = List(2, 3, 4, 5)
 
-  def derived(t: Int): Either[String, (PoseidonDerivation.Base, PoseidonParams)] =
+  def derived(t: Int): Either[PoseidonDerivation.Error, (PoseidonDerivation.Base, PoseidonParams)] =
     PoseidonDerivation.base(t).flatMap(b => PoseidonDerivation.optimize(b).tupleLeft(b))
 
   private def vector(xs: Vector[BigInt], indent: String): String =
@@ -60,7 +60,7 @@ object PoseidonConstantsGen extends IOApp {
   def run(args: List[String]): IO[ExitCode] =
     widths
       .traverse(t => derived(t).map(_._2))
-      .leftMap(new IllegalStateException(_))
+      .leftMap(PoseidonDerivation.Failure(_))
       .liftTo[IO]
       .flatMap(ps => IO.blocking(Files.write(path, source(ps).getBytes(UTF_8))))
       .flatMap(p => IO.println(s"wrote $p"))
@@ -75,38 +75,60 @@ object PoseidonConstantsGen extends IOApp {
  */
 object PoseidonCircomlibCheck extends IOApp {
 
+  enum Error {
+    case MissingDirectory
+    case Canonical(cause: CanonicalError)
+    case ExpectedArray(actual: ValueKind)
+    case ExpectedMap(actual: ValueKind)
+    case ExpectedHexText(actual: ValueKind)
+    case InvalidHex(input: Preview, cause: Throwable)
+    case MissingField(key: String)
+    case MissingWidth(key: String, index: Int)
+    case Derivation(cause: PoseidonDerivation.Error)
+  }
+
+  final case class Failure(error: Error) extends RuntimeException(error.toString) {
+    override def getCause: Throwable = error match {
+      case Error.InvalidHex(_, cause) => cause
+      case Error.MissingDirectory | Error.Canonical(_) | Error.ExpectedArray(_) | Error.ExpectedMap(_) | Error.ExpectedHexText(_) |
+          Error.MissingField(_) | Error.MissingWidth(_, _) | Error.Derivation(_) =>
+        super.getCause
+    }
+  }
+
   private def load(dir: Path, name: String): IO[CanonicalValue] =
     IO.blocking(new String(Files.readAllBytes(dir.resolve(name)), UTF_8)).flatMap { text =>
       // `export default { ... };`: the object is JSON
       CanonicalJson
         .parse(text.drop(text.indexOf('{')).trim.stripSuffix(";"))
-        .leftMap(e => new IllegalArgumentException(e.toString))
+        .leftMap(e => Failure(Error.Canonical(e)))
         .liftTo[IO]
     }
 
-  private def items(v: CanonicalValue): Either[String, Vector[CanonicalValue]] =
+  private def items(v: CanonicalValue): Either[Error, Vector[CanonicalValue]] =
     v match {
       case CanonicalValue.CArray(vs) => vs.asRight
-      case _                         => "not an array".asLeft
+      case other                     => Error.ExpectedArray(ValueKind.of(other)).asLeft
     }
 
-  private def numbers(v: CanonicalValue): Either[String, Vector[BigInt]] =
+  private[hash] def numbers(v: CanonicalValue): Either[Error, Vector[BigInt]] =
     items(v).flatMap(_.traverse {
-      case CanonicalValue.CText(h) => Either.catchNonFatal(BigInt(h.stripPrefix("0x"), 16)).leftMap(_.toString)
-      case other                   => s"expected hex text, got $other".asLeft
+      case CanonicalValue.CText(h) => Either.catchNonFatal(BigInt(h.stripPrefix("0x"), 16)).leftMap(Error.InvalidHex(Preview.of(h), _))
+      case other                   => Error.ExpectedHexText(ValueKind.of(other)).asLeft
     })
 
-  private def table(v: CanonicalValue): Either[String, Vector[Vector[BigInt]]] = items(v).flatMap(_.traverse(numbers))
+  private def table(v: CanonicalValue): Either[Error, Vector[Vector[BigInt]]] = items(v).flatMap(_.traverse(numbers))
 
   final case class Circom(base: PoseidonDerivation.Base, opt: PoseidonParams)
 
   /** circomlibjs's tables for width `t`. Its optimised `M` and `P` are stored transposed (`new_i = Σ_j M_ji s_j`). */
-  private def circom(base: CanonicalValue, opt: CanonicalValue, t: Int, rp: Int): Either[String, Circom] = {
+  private[hash] def circom(base: CanonicalValue, opt: CanonicalValue, t: Int, rp: Int): Either[Error, Circom] = {
     val k = t - 2
-    def at(j: CanonicalValue, key: String): Either[String, CanonicalValue] =
+    def at(j: CanonicalValue, key: String): Either[Error, CanonicalValue] =
       j match {
-        case CanonicalValue.CMap(m) => m.get(key).toRight(s"no $key").flatMap(items).flatMap(_.lift(k).toRight(s"no $key[$k]"))
-        case _                      => s"no $key".asLeft
+        case CanonicalValue.CMap(m) =>
+          m.get(key).toRight(Error.MissingField(key)).flatMap(items).flatMap(_.lift(k).toRight(Error.MissingWidth(key, k)))
+        case other => Error.ExpectedMap(ValueKind.of(other)).asLeft
       }
     (
       at(base, "C").flatMap(numbers),
@@ -121,12 +143,12 @@ object PoseidonCircomlibCheck extends IOApp {
   def run(args: List[String]): IO[ExitCode] =
     args.headOption
       .map(Paths.get(_))
-      .toRight(new IllegalArgumentException("usage: PoseidonCircomlibCheck <circomlibjs src dir>"))
+      .toRight(Failure(Error.MissingDirectory))
       .liftTo[IO]
       .flatMap { dir =>
         (load(dir, "poseidon_constants.js"), load(dir, "poseidon_constants_opt.js")).flatMapN { (base, opt) =>
           PoseidonConstantsGen.widths.traverse { t =>
-            PoseidonConstantsGen.derived(t).flatMap {
+            PoseidonConstantsGen.derived(t).leftMap(Error.Derivation(_)).flatMap {
               case (b, o) =>
                 circom(base, opt, t, b.partialRounds).map { c =>
                   val verdicts = List(
@@ -141,7 +163,7 @@ object PoseidonCircomlibCheck extends IOApp {
                 }
             }
           }
-            .leftMap(new IllegalStateException(_))
+            .leftMap(Failure(_))
             .liftTo[IO]
             .flatMap { rows =>
               rows.traverse_ {

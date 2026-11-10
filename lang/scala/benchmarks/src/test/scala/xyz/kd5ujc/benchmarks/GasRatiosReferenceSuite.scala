@@ -1,9 +1,11 @@
 package xyz.kd5ujc.benchmarks
 
+import xyz.kd5ujc.core.canonical.Preview
+
 import weaver.SimpleIOSuite
 
 import GasRatios.Reference
-import GasRatios.Reference.Settings
+import GasRatios.Reference.{Settings, Violation}
 
 /** The calibration's configuration check reads effective settings, so a later flag cannot override the reference. */
 object GasRatiosReferenceSuite extends SimpleIOSuite {
@@ -21,26 +23,44 @@ object GasRatiosReferenceSuite extends SimpleIOSuite {
     )
 
   pureTest("the reference configuration passes, and is named") {
-    val named = Reference.verify(reference)
-    expect(named.isRight, s"refused: $named")
-      .and(expect(named.exists(_.contains("-XX:+UseSerialGC")), s"named: $named"))
+    expect
+      .same(Right(Reference.Verified), Reference.verify(reference))
+      .and(
+        expect.same(
+          "-Xms4g -Xmx4g -XX:+UseSerialGC -XX:+AlwaysPreTouch; Java 21; collectors Copy, MarkSweepCompact; 1 CPU",
+          Reference.Verified.label
+        )
+      )
   }
 
-  pureTest("each override of the reference is refused, whatever the command line said") {
+  pureTest("each override has its exact ordered reference violations") {
+    val g1 = Set("G1 Young Generation", "G1 Old Generation")
     val overrides = List(
-      "-XX:-AlwaysPreTouch after the reference flags" -> reference.copy(preTouch = false),
-      "-Xmx5g after -Xmx4g"                           -> reference.copy(maxHeap = 5L << 30),
-      "-Xms2g after -Xms4g"                           -> reference.copy(initialHeap = 2L << 30),
-      "-XX:ActiveProcessorCount=1 on 16 CPUs"         -> reference.copy(activeProcessorCount = 1L, allowedCpus = Some(16)),
-      "-XX:ActiveProcessorCount=1 on one CPU"         -> reference.copy(activeProcessorCount = 1L),
-      "no CPU pinning"                                -> reference.copy(allowedCpus = Some(16)),
-      "an unreadable CPU affinity"                    -> reference.copy(allowedCpus = None),
-      "G1 after the serial flag" -> reference.copy(serial = false, collectors = Set("G1 Young Generation", "G1 Old Generation")),
-      "Java 17"                  -> reference.copy(javaFeature = 17)
+      reference.copy(preTouch = false)       -> List(Violation.HeapNotPretouched),
+      reference.copy(maxHeap = 5L << 30)     -> List(Violation.HeapSize(Reference.Heap, 5L << 30)),
+      reference.copy(initialHeap = 2L << 30) -> List(Violation.HeapSize(2L << 30, Reference.Heap)),
+      reference
+        .copy(activeProcessorCount = 1L, allowedCpus = Some(16)) -> List(Violation.ProcessorOverride(1L), Violation.CpuAffinity(Some(16))),
+      reference.copy(activeProcessorCount = 1L)                  -> List(Violation.ProcessorOverride(1L)),
+      reference.copy(allowedCpus = Some(16))                     -> List(Violation.CpuAffinity(Some(16))),
+      reference.copy(allowedCpus = None)                         -> List(Violation.CpuAffinity(None)),
+      reference.copy(serial = false, collectors = g1)            -> List(Violation.Collector(false, g1)),
+      reference.copy(javaFeature = 17)                           -> List(Violation.JavaVersion(17))
     )
     overrides.foldLeft(success) {
-      case (acc, (name, settings)) => acc.and(expect(Reference.verify(settings).isLeft, s"$name is accepted"))
+      case (acc, (settings, expected)) => acc.and(expect.same(Left(expected), Reference.verify(settings).left.map(_.toList)))
     }
+  }
+
+  pureTest("gas case input reports the exact invalid field and preserves valid fields") {
+    val valid = GasCases.GasCase("name", "group", "program", "baseline", "data", -2L)
+    expect
+      .same(Right(valid), GasRatios.parseCase(valid.line))
+      .and(expect.same(Left(GasRatios.Error.FieldCount(2)), GasRatios.parseCase("name\tgroup")))
+      .and(
+        expect
+          .same(Left(GasRatios.Error.InvalidAdjustment(Preview.of("x"))), GasRatios.parseCase("name\tgroup\tx\tprogram\tbaseline\tdata"))
+      )
   }
 
   pureTest("a CPU list counts its CPUs") {
