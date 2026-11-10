@@ -116,5 +116,5 @@ object CanonicalCirce {
 
   /** Both directions through circe, as a [[Codec]]: for a store's values (`ValueCodec.fromCodec`) or a schema slot. */
   def codec[A: Encoder: Decoder]: Codec[A] =
-    Codec(a => fromCirce(a.asJson), (v: CanonicalValue) => decode[A](v).leftMap(e => DecodeFailure(Nil, e.toString)))
+    Codec(a => fromCirce(a.asJson), (v: CanonicalValue) => decode[A](v).leftMap(e => DecodeFailure(Nil, DecodeReason.Canonical(e))))
 }

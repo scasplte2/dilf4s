@@ -3,9 +3,7 @@ package xyz.kd5ujc.models
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.{Files, Paths}
 
-import cats.syntax.all._
-
-import xyz.kd5ujc.core.canonical.{CanonicalJson, Codec}
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalJson, Codec, DecodeFailure, DecodeReason, Preview}
 
 import weaver.SimpleIOSuite
 
@@ -37,13 +35,13 @@ object VectorSchemasSuite extends SimpleIOSuite {
     "zk_v1.json"                 -> zk_vectors.ZkVectors.codec
   )
 
-  private def lossless[A](codec: Codec[A], json: String): Either[String, Boolean] =
+  private def lossless[A](codec: Codec[A], json: String): Either[CanonicalError | DecodeFailure | CanonicalJson.RenderError, Boolean] =
     for {
-      value   <- CanonicalJson.parse(json).leftMap(_.toString)
-      decoded <- codec.decoder.decode(value).leftMap(_.message)
-      again   <- codec.encode(decoded).leftMap(_.toString)
-      before  <- CanonicalJson.render(value).leftMap(_.toString)
-      after   <- CanonicalJson.render(again).leftMap(_.toString)
+      value   <- CanonicalJson.parse(json)
+      decoded <- codec.decoder.decode(value)
+      again   <- codec.encode(decoded)
+      before  <- CanonicalJson.render(value)
+      after   <- CanonicalJson.render(again)
     } yield before == after
 
   pureTest("every vector file in shared/vectors has a schema") {
@@ -61,7 +59,15 @@ object VectorSchemasSuite extends SimpleIOSuite {
   pureTest("schema violations are reported with the failing path") {
     val bad = read("shared/vectors/merkle_v1.json").replaceFirst("\"leaves\"\\s*:\\s*\\[\\s*\"", "\"leaves\": [\"zz")
     val result =
-      CanonicalJson.parse(bad).leftMap(_.toString).flatMap(merkle_vectors.MerkleVectors.codec.decoder.decode(_).leftMap(_.message))
-    expect(result.left.exists(_.startsWith("leaves.[0]")), result.left.toOption.getOrElse("decoded"))
+      CanonicalJson.parse(bad).flatMap(merkle_vectors.MerkleVectors.codec.decoder.decode(_))
+    result match {
+      case Left(f: DecodeFailure) =>
+        expect
+          .same(List(Preview.of("leaves"), Preview.of("[0]")), f.path)
+          .and(
+            expect.same(DecodeReason.PatternMismatch("([0-9a-f]{2})*", Preview.of("zz")), f.reason)
+          )
+      case other => failure(s"expected a schema failure at leaves.[0], got $other")
+    }
   }
 }

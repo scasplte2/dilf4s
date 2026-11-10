@@ -93,7 +93,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
           case (digest, sig) =>
             Ecrecover
               .recover(digest, sig)
-              .leftMap(reason => crypto(op)(CryptoError.InvalidEncoding("ecrecover", reason)))
+              .leftMap(e => crypto(op)(e.toCryptoError))
               .flatMap(
                 _.toRight(
                   JlvmError.Crypto(op, "the signature recovers no key (r or s out of range, high s, or r not an x-coordinate)", None)
@@ -123,7 +123,7 @@ final class CryptoOps private (secp: Secp256k1, bls: Bls12381, zk: ZkOps) {
       case (k, m, s) =>
         Secp256k1Group
           .decode(k)
-          .leftMap(reason => sigmaRefusal(op)(SigmaError.InvalidPoint("pk", reason)))
+          .leftMap(reason => sigmaRefusal(op)(SigmaError.InvalidPoint("pk", reason.message)))
           .flatMap(SigmaProp.dlog(_).flatMap(Sigma.check(_, s, m)).bimap(sigmaRefusal(op), Values.bool))
     }
 

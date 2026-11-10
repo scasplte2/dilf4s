@@ -84,12 +84,15 @@ object Codec {
   def literalInt[A <: Int & Singleton](a: A): Codec[A] =
     Codec(
       _ => CInt(a).asRight,
-      CanonicalDecoder.int.emap(i => Either.cond(i == BigInt(a), a, s"expected $a, got an integer of ${i.bitLength} bits"))
+      CanonicalDecoder.int.emap(i => Either.cond(i == BigInt(a), a, DecodeReason.IntegerLiteral(BigInt(a), i.bitLength)))
     )
 
   /** Exactly the text `a`, as its singleton type. */
   def literalText[A <: String & Singleton](a: A): Codec[A] =
-    Codec(_ => CanonicalValue.text(a), CanonicalDecoder.text.emap(t => Either.cond(t == a, a, s"expected \"$a\", got ${Preview.of(t)}")))
+    Codec(
+      _ => CanonicalValue.text(a),
+      CanonicalDecoder.text.emap(t => Either.cond(t == a, a, DecodeReason.TextLiteral(Preview.of(a), Preview.of(t))))
+    )
 
   /**
    * Text matching the whole of `pattern` (CDDL `.regexp`). The generator compiles every pattern before emitting it, so
@@ -98,7 +101,7 @@ object Codec {
   def matching(pattern: scala.util.matching.Regex): Codec[String] =
     Codec(
       t => Either.cond(pattern.matches(t), t, mismatch(s"text does not match ${pattern.regex}")).flatMap(CanonicalValue.text),
-      CanonicalDecoder.text.emap(t => Either.cond(pattern.matches(t), t, s"${Preview.of(t)} does not match ${pattern.regex}"))
+      CanonicalDecoder.text.emap(t => Either.cond(pattern.matches(t), t, DecodeReason.PatternMismatch(pattern.regex, Preview.of(t))))
     )
 
   /**
@@ -112,7 +115,7 @@ object Codec {
         case CMap(entries) =>
           entries.toList.traverse { case (k, v) => value.decoder.decode(v).leftMap(_.at(k)).map(k -> _) }
             .map(CanonicalEntries.insertedLike(entries, _))
-        case _ => DecodeFailure(Nil, "expected a map").asLeft
+        case other => DecodeFailure(Nil, DecodeReason.ExpectedType(Vector(ValueKind.Map), ValueKind.of(other))).asLeft
       }
     )
 
@@ -146,8 +149,9 @@ object Codec {
     CanonicalDecoder.keysOf(value) match {
       case None =>
         value match {
-          case CText(t) => texts.collectFirst { case (`t`, a) => a }.toRight(DecodeFailure(Nil, s"${Preview.of(t)} is not an alternative"))
-          case _        => DecodeFailure(Nil, "expected a map or one of the text alternatives").asLeft
+          case CText(t) =>
+            texts.collectFirst { case (`t`, a) => a }.toRight(DecodeFailure(Nil, DecodeReason.UnknownTextAlternative(Preview.of(t))))
+          case other => DecodeFailure(Nil, DecodeReason.ExpectedType(Vector(ValueKind.Map, ValueKind.Text), ValueKind.of(other))).asLeft
         }
       case Some(keys) =>
         // the schema's names are looked up in the value's keys, and the value's keys in the alternative's names (a key
@@ -155,7 +159,7 @@ object Codec {
         alternatives.collectFirst {
           case (required, all, d) if required.forall(k => keys.contains(k)) && keys.iterator.forall(CanonicalKeys.within(keys, all)) => d
         }
-          .toRight(DecodeFailure(Nil, s"no alternative fits a map of ${keys.size} keys"))
+          .toRight(DecodeFailure(Nil, DecodeReason.NoMapAlternative(keys.size)))
           .flatMap(_.decode(value))
     }
 }

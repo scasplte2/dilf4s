@@ -9,7 +9,7 @@ import scala.util.Random
 
 import xyz.kd5ujc.accumulators.merkle.MerkleCodec
 import xyz.kd5ujc.accumulators.trie.TrieProofs
-import xyz.kd5ujc.core.canonical.{Cbor, Codec}
+import xyz.kd5ujc.core.canonical.{CanonicalError, Cbor, Codec, DecodeFailure}
 import xyz.kd5ujc.core.hash.Sha256
 import xyz.kd5ujc.models.bloom.BloomFilter
 import xyz.kd5ujc.models.merkle.{MerkleConsistency, MerkleInclusion, MerkleLogState}
@@ -41,18 +41,20 @@ object SchemaConformanceSuite extends SimpleIOSuite {
   private def json(path: String*): Json = parser.parse(read(path*)).toOption.get
 
   /** decode -> generated decode -> generated encode gives back the same bytes. */
-  private def roundTrip[A](codec: Codec[A], bytes: ByteVector): Either[String, ByteVector] =
+  private def roundTrip[A](codec: Codec[A], bytes: ByteVector): Either[CanonicalError | DecodeFailure, ByteVector] =
     for {
-      value <- Cbor.decode(bytes).leftMap(_.toString)
-      a     <- codec.decoder.decode(value).leftMap(_.message)
-      again <- codec.encode(a).leftMap(_.toString)
+      value <- Cbor.decode(bytes)
+      a     <- codec.decoder.decode(value)
+      again <- codec.encode(a)
     } yield xyz.kd5ujc.core.canonical.CanonicalGens.encoded(again)
 
   pureTest("every Merkle proof in merkle_v1.json round-trips byte-identically and stays valid for the domain decoder") {
     val trees = json("shared", "vectors", "merkle_v1.json").hcursor.downField("trees").as[List[Json]].toOption.get
     def proofs(kind: String) = trees.flatMap(_.hcursor.downField(kind).as[List[String]].toOption.get).map(ByteVector.fromValidHex(_))
     val (inc, con) = (proofs("inclusion"), proofs("consistency"))
-    expect(inc.size >= 30 && con.size >= 40, s"${inc.size} inclusion, ${con.size} consistency proofs")
+    expect
+      .same(36, inc.size)
+      .and(expect.same(45, con.size))
       .and(inc.foldMap(b => expect.same(Right(b), roundTrip(MerkleInclusion.codec, b))))
       .and(con.foldMap(b => expect.same(Right(b), roundTrip(MerkleConsistency.codec, b))))
       .and(

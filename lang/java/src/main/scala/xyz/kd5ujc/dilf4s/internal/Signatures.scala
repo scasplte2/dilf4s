@@ -288,14 +288,12 @@ object Signatures {
     crypto(
       Ecrecover
         .recover(bv(digest), bv(signature))
-        .bimap(
-          CryptoError.InvalidEncoding("ecrecover", _),
-          _.fold(java.util.Optional.empty[Array[Byte]]())(a => java.util.Optional.of(a.toArray))
-        )
+        .leftMap(_.toCryptoError)
+        .map(_.fold(java.util.Optional.empty[Array[Byte]]())(a => java.util.Optional.of(a.toArray)))
     )
 
   def ethereumAddress(key: Array[Byte]): Result[Array[Byte], JCryptoError] =
-    crypto(Ecrecover.address(bv(key)).bimap(CryptoError.InvalidEncoding("Ethereum public key", _), _.toArray))
+    crypto(Ecrecover.address(bv(key)).leftMap(_.toCryptoError).map(_.toArray))
 
   // ---- ECVRF
 
@@ -442,7 +440,7 @@ object Signatures {
     sigma(
       Secp256k1Group
         .decode(bv(key))
-        .leftMap(reason => SigmaError.InvalidPoint("pk", reason): SigmaError)
+        .leftMap(reason => SigmaError.InvalidPoint("pk", reason.message): SigmaError)
         .flatMap(SigmaProp.dlog(_).flatMap(Sigma.check(_, bv(proof), bv(message))))
         .map(java.lang.Boolean.valueOf)
     )

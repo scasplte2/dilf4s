@@ -61,17 +61,18 @@ object BloomFilterSuite extends SimpleIOSuite with Checkers {
 
   pureTest("parameters are validated and mismatched filters do not combine") {
     val small = BloomParams(1024, 3).toOption.get
-    expect(BloomParams(1000, 4).isLeft, "size must be a power of two")
-      .and(expect(BloomParams(2048, 0).isLeft, "at least one hash"))
-      .and(expect(BloomFilter.empty[Sha256](p).union(BloomFilter.empty[Sha256](small)).isLeft, "union needs equal params"))
+    expect
+      .same(Left(BloomError.InvalidBits(1000, BloomParams.MinBits, BloomParams.MaxBits)), BloomParams(1000, 4))
+      .and(expect.same(Left(BloomError.InvalidHashes(0, BloomParams.MaxHashes)), BloomParams(2048, 0)))
+      .and(expect.same(Left(BloomError.Mismatch(p, small)), BloomFilter.empty[Sha256](p).union(BloomFilter.empty[Sha256](small))))
   }
 
   pureTest("a refused encoding never renders the values it was given") {
     val huge = xyz.kd5ujc.core.canonical.CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     val fields = CanonicalValue.map(List("m" -> huge, "k" -> huge, "b" -> huge)).fold(e => sys.error(e.toString), identity)
     expect
-      .same(Left(BloomError.Encoding("invalid bloom fields: m and k are 32-bit integers, b is bytes")), BloomFilter.decode[Sha256](fields))
-      .and(expect.same(Left(BloomError.Encoding("a bloom filter is exactly {m, k, b}")), BloomFilter.decode[Sha256](huge)))
+      .same(Left(BloomError.InvalidFields), BloomFilter.decode[Sha256](fields))
+      .and(expect.same(Left(BloomError.InvalidShape), BloomFilter.decode[Sha256](huge)))
   }
 
   test("the canonical encoding round-trips") {

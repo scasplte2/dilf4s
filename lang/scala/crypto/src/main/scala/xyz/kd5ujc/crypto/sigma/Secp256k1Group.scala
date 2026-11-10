@@ -26,6 +26,20 @@ final case class GroupElement private[sigma] (point: ECPoint) {
  */
 object Secp256k1Group {
 
+  enum DecodeError {
+    case WrongSize(actual: Long, expected: Int)
+    case InvalidPrefix(actual: Int)
+    case InvalidPoint
+    case NonCanonicalEncoding
+
+    def message: String = this match {
+      case WrongSize(actual, expected) => s"a group element is $expected bytes, got $actual"
+      case InvalidPrefix(_)            => "a group element is compressed: prefix 02 or 03"
+      case InvalidPoint                => "not a point of secp256k1"
+      case NonCanonicalEncoding        => "not the canonical encoding of a point"
+    }
+  }
+
   private val curve = CustomNamedCurves.getByName("secp256k1")
 
   val Order: BigInt = xyz.kd5ujc.crypto.signing.Secp256k1.Order
@@ -41,16 +55,16 @@ object Secp256k1Group {
   val Generator: GroupElement = GroupElement(curve.getG.normalize())
   val Identity: GroupElement = GroupElement(curve.getCurve.getInfinity)
 
-  def decode(b: ByteVector): Either[String, GroupElement] =
-    if (b.size != ElementSize.toLong) s"a group element is $ElementSize bytes, got ${b.size}".asLeft
+  def decode(b: ByteVector): Either[DecodeError, GroupElement] =
+    if (b.size != ElementSize.toLong) DecodeError.WrongSize(b.size, ElementSize).asLeft
     else if (b == IdentityBytes) Identity.asRight
-    else if (b(0) != 0x02 && b(0) != 0x03) "a group element is compressed: prefix 02 or 03".asLeft
+    else if (b(0) != 0x02 && b(0) != 0x03) DecodeError.InvalidPrefix(b(0) & 0xff).asLeft
     else
       Either
         .catchNonFatal(curve.getCurve.decodePoint(b.toArray).normalize())
-        .leftMap(_ => "not a point of secp256k1")
+        .leftMap(_ => DecodeError.InvalidPoint)
         .map(GroupElement(_))
-        .filterOrElse(_.bytes == b, "not the canonical encoding of a point")
+        .filterOrElse(_.bytes == b, DecodeError.NonCanonicalEncoding)
 
   /**
    * Whether `p` is a point of this group's curve. Every element built here is; one built around the constructor (a

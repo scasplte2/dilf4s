@@ -218,7 +218,7 @@ object SigmaProp {
       case CMap(m) =>
         def point(k: String): Either[SigmaError, GroupElement] =
           m.get(k) match {
-            case scala.Some(CBytes(b)) => Secp256k1Group.decode(b).leftMap(SigmaError.InvalidPoint(k, _))
+            case scala.Some(CBytes(b)) => Secp256k1Group.decode(b).leftMap(e => SigmaError.InvalidPoint(k, e.message))
             case _                     => invalid(s"$k must be bytes").asLeft
           }
         def node(kind: Kind): Either[SigmaError, Read] =

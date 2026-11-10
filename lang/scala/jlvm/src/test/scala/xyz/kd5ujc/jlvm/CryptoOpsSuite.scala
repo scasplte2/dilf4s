@@ -197,7 +197,7 @@ object CryptoOpsSuite extends IOSuite with Checkers {
   ): IO[ByteVector] =
     IO.fromEither(prop.leftMap(e => new IllegalArgumentException(e.message)))
       .flatMap(p => SigmaProver.prove[IO](p, secrets, message)(using summon, r))
-      .flatMap(e => IO.fromEither(e.leftMap(new IllegalStateException(_))))
+      .flatMap(e => e.leftMap(SigmaProver.Failure(_)).liftTo[IO])
 
   test("schnorr_verify: Ergo's P2PK known-answer vector, through a program") { b =>
     IO {

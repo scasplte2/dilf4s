@@ -96,7 +96,7 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
       .same(List(None, Some(0), Some(1), Some(255), None), List(-1, 0, 1, 255, 256).map(Gf2Byte.from(_).map(_.value)))
       .and(expect.same(List(None, Some(1), Some(255), None), List(0, 1, 255, 256).map(ChildPoint.from(_).map(_.value))))
       .and(expect.same(Right((1 to 255).toVector), ChildPoint.number(Vector.fill(255)(())).map(_.map(_._2.value))))
-      .and(expect(ChildPoint.number(Vector.fill(256)(())).isLeft, "a 256th child would wrap to zero"))
+      .and(expect.same(Left(ChildPoint.Error.TooManyChildren(256, 255)), ChildPoint.number(Vector.fill(256)(()))))
       .and(expect.same(SigmaProp.MaxChildren, ChildPoint.Max))
   }
 
@@ -171,9 +171,9 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
       .same(Right(Secp256k1Group.Generator), Secp256k1Group.decode(g))
       .and(expect.same(Right(Secp256k1Group.Identity), Secp256k1Group.decode(ByteVector.fill(33)(0))))
       .and(expect.same(ByteVector.fill(33)(0), (Secp256k1Group.Generator * Secp256k1Group.Order).bytes))
-      .and(expect(Secp256k1Group.decode(uncompressed).isLeft, "uncompressed"))
-      .and(expect(Secp256k1Group.decode(hex"02" ++ ByteVector.fill(32)(0xff)).isLeft, "x beyond the field"))
-      .and(expect(Secp256k1Group.decode(g.drop(1)).isLeft, "short"))
+      .and(expect.same(Left(Secp256k1Group.DecodeError.WrongSize(65, 33)), Secp256k1Group.decode(uncompressed)))
+      .and(expect.same(Left(Secp256k1Group.DecodeError.InvalidPoint), Secp256k1Group.decode(hex"02" ++ ByteVector.fill(32)(0xff))))
+      .and(expect.same(Left(Secp256k1Group.DecodeError.WrongSize(32, 33)), Secp256k1Group.decode(g.drop(1))))
   }
 
   // ---- Ergo's known-answer vectors (sigmastate 5.0.13, SigningSpecification; cross-checked there with sigma-rust)
@@ -349,8 +349,12 @@ object SigmaSuite extends SimpleIOSuite with Checkers {
   }
 
   pureTest("our prover refuses secrets that do not satisfy the proposition") {
-    expect(SigmaProver.proveWith(p(SigmaProp.threshold(2, keys)), Vector(secrets(0)), msg, hex"01").isLeft, "one of two")
-      .and(expect(SigmaProver.proveWith(keys(0), Vector(BigInt(7)), msg, hex"01").isLeft, "the wrong key"))
+    expect
+      .same(
+        Left(SigmaProver.Error.UnsatisfiedProposition),
+        SigmaProver.proveWith(p(SigmaProp.threshold(2, keys)), Vector(secrets(0)), msg, hex"01")
+      )
+      .and(expect.same(Left(SigmaProver.Error.UnsatisfiedProposition), SigmaProver.proveWith(keys(0), Vector(BigInt(7)), msg, hex"01")))
   }
 
   test("random rings: any member can sign, and the proof verifies") {

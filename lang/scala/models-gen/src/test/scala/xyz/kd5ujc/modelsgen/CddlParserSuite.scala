@@ -1,14 +1,12 @@
 package xyz.kd5ujc.modelsgen
 
-import cats.syntax.all._
-
 import xyz.kd5ujc.modelsgen.Ast._
 
 import weaver.FunSuite
 
 object CddlParserSuite extends FunSuite {
 
-  private def parse(text: String): Either[String, File] = CddlParser.parse(text).leftMap(_.message)
+  private def parse(text: String): Either[CddlParser.ParseFailure, File] = CddlParser.parse(text)
   private def body(text:  String): Option[Ty] = parse(text).toOption.flatMap(_.rules.headOption).map(_.body)
   private def firstGroup(t: Option[Ty]): Option[Vector[Entry]] = t.collect {
     case Ty.Array(Group(Vector(es))) => es
