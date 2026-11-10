@@ -127,8 +127,8 @@ object SchemaFeaturesSuite extends FunSuite {
       .and(has(out, _.scala, "  case Sha3_256 extends Op(\"sha3_256\")\n  case Some extends Op(\"some\")"))
       .and(has(out, _.scala, "def fromWire(wire: String): Option[Op] = byWire.get(wire)"))
       .and(has(out, _.scala, "List((\"!\", Op.Not), (\"===\", Op.StrictEq), (\"sha3_256\", Op.Sha3_256), (\"some\", Op.Some))"))
-      .and(has(out, _.scala, "type Site = \"var\" | Op"))
-      .and(has(out, _.scala, "val values: Vector[Site] = Vector(\"var\", Op.Not, Op.StrictEq, Op.Sha3_256, Op.Some)"))
+      .and(has(out, _.scala, "type Site = p.t.Op | Site.Literal"))
+      .and(has(out, _.scala, "val values: Vector[Site] = Vector(Site.Var, p.t.Op.Not, p.t.Op.StrictEq, p.t.Op.Sha3_256, p.t.Op.Some)"))
       .and(has(out, _.scala, "final case class Call(op: Op, at: Site)"))
       .and(
         has(
@@ -175,6 +175,15 @@ object SchemaFeaturesSuite extends FunSuite {
     "inner = { \"kind\": \"X\", \"n\": uint .le 5 // \"kind\": \"Y\" }\n" +
     "outer-kind = \"P\" / \"Q\"\n" +
     "outer = { \"kind\": \"P\", \"cause\": inner // \"kind\": \"Q\", ? \"maybe\": inner, \"tag\": uint }\n"
+
+  test("an error kind uses its rule-named member, even when it differs from its wire text") {
+    val out =
+      gen("e-kind = e-kind-alpha / e-kind-beta\ne-kind-alpha = \"B\"\ne-kind-beta = \"A\"\ne = { \"kind\": \"B\" // \"kind\": \"A\" }")
+    has(out, _.scala, "case object B extends E {\n    def kind: EKind = EKind.Alpha")
+      .and(has(out, _.scala, "case object A extends E {\n    def kind: EKind = EKind.Beta"))
+      .and(has(out, _.rust, "Self::B => EKind::Alpha"))
+      .and(has(out, _.rust, "Self::A => EKind::Beta"))
+  }
 
   test("an error family's field may hold another error family, never itself; a wide integer stays exact") {
     val out = gen(nested)

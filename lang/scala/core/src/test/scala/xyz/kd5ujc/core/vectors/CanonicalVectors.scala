@@ -555,9 +555,9 @@ object CanonicalVectors {
   )
 
   private def hashOutcome(r: Either[HashError, ?]): List[(String, VectorJson)] =
-    "outcome" -> r.fold(e => str(e.kind), _ => str("accepted")) :: (r match {
+    "outcome" -> r.fold(e => str(e.kind.wire), _ => str("accepted")) :: (r match {
       case Left(HashError.InvalidHex(offset))              => List("offset" -> num(offset))
-      case Left(HashError.InvalidExpansion(refusal, _, _)) => List("refusal" -> str(refusal))
+      case Left(HashError.InvalidExpansion(refusal, _, _)) => List("refusal" -> str(refusal.wire))
       case _                                               => Nil
     })
 

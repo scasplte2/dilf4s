@@ -96,20 +96,20 @@ object TrieProof {
   lazy val codec: Codec[TrieProof] = Codec.vector(Codec.defer(TrieRecord.codec), 0, None)
 }
 
-type TrieRecord = TrieStub | TrieLeaf | TrieBranch
+type TrieRecord = xyz.kd5ujc.models.trie.TrieStub | xyz.kd5ujc.models.trie.TrieLeaf | xyz.kd5ujc.models.trie.TrieBranch
 
 object TrieRecord {
   lazy val codec: Codec[TrieRecord] = Codec(
     {
-      case a: TrieStub => TrieStub.codec.encode(a)
-      case a: TrieLeaf => TrieLeaf.codec.encode(a)
-      case a: TrieBranch => TrieBranch.codec.encode(a)
+      case a: xyz.kd5ujc.models.trie.TrieStub => xyz.kd5ujc.models.trie.TrieStub.codec.encode(a)
+      case a: xyz.kd5ujc.models.trie.TrieLeaf => xyz.kd5ujc.models.trie.TrieLeaf.codec.encode(a)
+      case a: xyz.kd5ujc.models.trie.TrieBranch => xyz.kd5ujc.models.trie.TrieBranch.codec.encode(a)
     },
     (v: CanonicalValue) =>
       Codec.selectAlternative[TrieRecord](v, List(
-        (Set("h"), Set("h"), TrieStub.codec.decoder.map(x => x: TrieRecord)),
-        (Set("s", "v"), Set("s", "v"), TrieLeaf.codec.decoder.map(x => x: TrieRecord)),
-        (Set("c", "s"), Set("c", "s", "v"), TrieBranch.codec.decoder.map(x => x: TrieRecord))
+        (Set("h"), Set("h"), xyz.kd5ujc.models.trie.TrieStub.codec.decoder.map(x => x: TrieRecord)),
+        (Set("s", "v"), Set("s", "v"), xyz.kd5ujc.models.trie.TrieLeaf.codec.decoder.map(x => x: TrieRecord)),
+        (Set("c", "s"), Set("c", "s", "v"), xyz.kd5ujc.models.trie.TrieBranch.codec.decoder.map(x => x: TrieRecord))
       ), List())
   )
 }

@@ -74,7 +74,7 @@ object VersionedTrieVerifier {
   ): Either[VersionedTrieError, Head[V, H]] =
     for {
       claimed <- VersionedTrie.root(proof.head)
-      _       <- Either.cond(claimed == root, (), mismatch("root", root, claimed))
+      _       <- Either.cond(claimed == root, (), mismatch(VtRootComponent.Root, root, claimed))
       top     <- verified(VersionedTrie.topMode, root, "top")(Some(proof.top))
       vkey    <- VersionKey[V].keyOf(proof.head.version)
       _ <- List(

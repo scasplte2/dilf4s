@@ -21,7 +21,7 @@ type Site = xyz.kd5ujc.models.jlvm_errors.JlvmSite
 object Site {
 
   /** The `var` read of a computed path. */
-  val Var: Site = "var"
+  val Var: Site = xyz.kd5ujc.models.jlvm_errors.JlvmSite.Var
 
   /** Every site: each operation, then `var`. */
   val values: Vector[Site] = xyz.kd5ujc.models.jlvm_errors.JlvmSite.values
@@ -30,8 +30,8 @@ object Site {
 /** A site's name as the vectors record it: the operation's wire name, or `var`. */
 extension (site: Site) {
   def wire: String = site match {
-    case op: Op => op.wire
-    case _      => "var"
+    case op: Op                                     => op.wire
+    case xyz.kd5ujc.models.jlvm_errors.JlvmSite.Var => "var"
   }
 }
 

@@ -58,24 +58,24 @@ object RefusalVectors {
    * family's generated kind, with the fields conformance.md §3 names normative for it.
    */
   type Outcome = RefusalOutcome
-  val Accepted: Outcome = "accepted"
+  val Accepted: Outcome = RefusalOutcome.Accepted
 
   def outcomeJson(o: Outcome): Json = o match {
-    case _: String => "accepted".asJson
+    case RefusalOutcome.Accepted => "accepted".asJson
     case VtRefusal(k, cause, l, d, c) =>
       val causeJson = cause.map {
-        case VtTrieCause(t)   => Json.obj("trie" -> Json.fromString(t))
-        case VtKeyCause(k, s) => Json.fromFields(List("stateKey" -> Json.fromString(k)) ++ s.map("segment" -> _.asJson))
+        case VtTrieCause(t)   => Json.obj("trie" -> Json.fromString(t.wire))
+        case VtKeyCause(k, s) => Json.fromFields(List("stateKey" -> Json.fromString(k.wire)) ++ s.map("segment" -> _.asJson))
       }
       Json.fromFields(
-        List("versionedTrie" -> Json.fromString(k)) ++ causeJson.map("cause" -> _) ++ l.map("limit" -> _.asJson) ++ d.map(
+        List("versionedTrie" -> Json.fromString(k.wire)) ++ causeJson.map("cause" -> _) ++ l.map("limit" -> _.asJson) ++ d.map(
           "depth" -> _.asJson
         ) ++
-        c.map(x => "component" -> Json.fromString(x))
+        c.map(x => "component" -> Json.fromString(x.wire))
       )
-    case MerkleRefusal(k, l)   => Json.fromFields(List("merkle" -> Json.fromString(k)) ++ l.map("limit" -> _.asJson))
-    case TrieRefusal(k, l)     => Json.fromFields(List("trie" -> Json.fromString(k)) ++ l.map("limit" -> _.asJson))
-    case PoseidonRefusal(k, d) => Json.fromFields(List("poseidonMerkle" -> Json.fromString(k)) ++ d.map("depth" -> _.asJson))
+    case MerkleRefusal(k, l)   => Json.fromFields(List("merkle" -> Json.fromString(k.wire)) ++ l.map("limit" -> _.asJson))
+    case TrieRefusal(k, l)     => Json.fromFields(List("trie" -> Json.fromString(k.wire)) ++ l.map("limit" -> _.asJson))
+    case PoseidonRefusal(k, d) => Json.fromFields(List("poseidonMerkle" -> Json.fromString(k.wire)) ++ d.map("depth" -> _.asJson))
   }
 
   def versioned(e: VersionedTrieError): Outcome = {
@@ -203,7 +203,7 @@ object RefusalVectors {
           Digest
             .fromBytes[H](rb)
             .fold(
-              _ => MerkleRefusal("Encoding", None),
+              _ => MerkleRefusal(xyz.kd5ujc.models.proofs_errors.MerkleErrorKind.Encoding, None),
               r => outcome(MerkleCodec.verifyLeaf[H](r, n, leaf, v)(using summon[xyz.kd5ujc.core.hash.Hasher[H]], M))(merkle)
             )
         }

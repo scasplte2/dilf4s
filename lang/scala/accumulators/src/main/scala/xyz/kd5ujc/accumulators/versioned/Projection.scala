@@ -49,5 +49,7 @@ object Projection {
   def verifyAgainst[H: TrieHashing](entries: SortedMap[StateKey, CanonicalValue], stateRoot: Digest[H]): Either[VersionedTrieError, Unit] =
     Projection
       .stateRoot[H](entries)
-      .flatMap(computed => Either.cond(computed == stateRoot, (), VersionedTrieError.RootMismatch("state", stateRoot.hex, computed.hex)))
+      .flatMap(computed =>
+        Either.cond(computed == stateRoot, (), VersionedTrieError.RootMismatch(VtRootComponent.State, stateRoot.hex, computed.hex))
+      )
 }

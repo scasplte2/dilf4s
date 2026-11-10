@@ -41,30 +41,30 @@ object JlvmArray {
   given CanonicalDecoder[JlvmArray] = codec.decoder
 }
 
-type JlvmExpr = JlvmNull | JlvmLit | JlvmVar | JlvmVarAt | JlvmApply | JlvmSpread | JlvmArray | JlvmMap
+type JlvmExpr = xyz.kd5ujc.models.jlvm.JlvmNull | xyz.kd5ujc.models.jlvm.JlvmLit | xyz.kd5ujc.models.jlvm.JlvmVar | xyz.kd5ujc.models.jlvm.JlvmVarAt | xyz.kd5ujc.models.jlvm.JlvmApply | xyz.kd5ujc.models.jlvm.JlvmSpread | xyz.kd5ujc.models.jlvm.JlvmArray | xyz.kd5ujc.models.jlvm.JlvmMap
 
 object JlvmExpr {
   lazy val codec: Codec[JlvmExpr] = Codec(
     {
-      case a: JlvmNull => JlvmNull.codec.encode(a)
-      case a: JlvmLit => JlvmLit.codec.encode(a)
-      case a: JlvmVar => JlvmVar.codec.encode(a)
-      case a: JlvmVarAt => JlvmVarAt.codec.encode(a)
-      case a: JlvmApply => JlvmApply.codec.encode(a)
-      case a: JlvmSpread => JlvmSpread.codec.encode(a)
-      case a: JlvmArray => JlvmArray.codec.encode(a)
-      case a: JlvmMap => JlvmMap.codec.encode(a)
+      case a: xyz.kd5ujc.models.jlvm.JlvmNull => xyz.kd5ujc.models.jlvm.JlvmNull.codec.encode(a)
+      case a: xyz.kd5ujc.models.jlvm.JlvmLit => xyz.kd5ujc.models.jlvm.JlvmLit.codec.encode(a)
+      case a: xyz.kd5ujc.models.jlvm.JlvmVar => xyz.kd5ujc.models.jlvm.JlvmVar.codec.encode(a)
+      case a: xyz.kd5ujc.models.jlvm.JlvmVarAt => xyz.kd5ujc.models.jlvm.JlvmVarAt.codec.encode(a)
+      case a: xyz.kd5ujc.models.jlvm.JlvmApply => xyz.kd5ujc.models.jlvm.JlvmApply.codec.encode(a)
+      case a: xyz.kd5ujc.models.jlvm.JlvmSpread => xyz.kd5ujc.models.jlvm.JlvmSpread.codec.encode(a)
+      case a: xyz.kd5ujc.models.jlvm.JlvmArray => xyz.kd5ujc.models.jlvm.JlvmArray.codec.encode(a)
+      case a: xyz.kd5ujc.models.jlvm.JlvmMap => xyz.kd5ujc.models.jlvm.JlvmMap.codec.encode(a)
     },
     (v: CanonicalValue) =>
       Codec.selectAlternative[JlvmExpr](v, List(
-        (Set(), Set(), JlvmNull.codec.decoder.map(x => x: JlvmExpr)),
-        (Set("lit"), Set("lit"), JlvmLit.codec.decoder.map(x => x: JlvmExpr)),
-        (Set("var"), Set("default", "var"), JlvmVar.codec.decoder.map(x => x: JlvmExpr)),
-        (Set("path"), Set("default", "path"), JlvmVarAt.codec.decoder.map(x => x: JlvmExpr)),
-        (Set("args", "op"), Set("args", "op"), JlvmApply.codec.decoder.map(x => x: JlvmExpr)),
-        (Set("arg", "spread"), Set("arg", "spread"), JlvmSpread.codec.decoder.map(x => x: JlvmExpr)),
-        (Set("arr"), Set("arr"), JlvmArray.codec.decoder.map(x => x: JlvmExpr)),
-        (Set("map"), Set("map"), JlvmMap.codec.decoder.map(x => x: JlvmExpr))
+        (Set(), Set(), xyz.kd5ujc.models.jlvm.JlvmNull.codec.decoder.map(x => x: JlvmExpr)),
+        (Set("lit"), Set("lit"), xyz.kd5ujc.models.jlvm.JlvmLit.codec.decoder.map(x => x: JlvmExpr)),
+        (Set("var"), Set("default", "var"), xyz.kd5ujc.models.jlvm.JlvmVar.codec.decoder.map(x => x: JlvmExpr)),
+        (Set("path"), Set("default", "path"), xyz.kd5ujc.models.jlvm.JlvmVarAt.codec.decoder.map(x => x: JlvmExpr)),
+        (Set("args", "op"), Set("args", "op"), xyz.kd5ujc.models.jlvm.JlvmApply.codec.decoder.map(x => x: JlvmExpr)),
+        (Set("arg", "spread"), Set("arg", "spread"), xyz.kd5ujc.models.jlvm.JlvmSpread.codec.decoder.map(x => x: JlvmExpr)),
+        (Set("arr"), Set("arr"), xyz.kd5ujc.models.jlvm.JlvmArray.codec.decoder.map(x => x: JlvmExpr)),
+        (Set("map"), Set("map"), xyz.kd5ujc.models.jlvm.JlvmMap.codec.decoder.map(x => x: JlvmExpr))
       ), List())
   )
 }

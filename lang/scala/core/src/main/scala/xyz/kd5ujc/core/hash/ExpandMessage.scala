@@ -20,8 +20,8 @@ object ExpandMessage {
   def xmd[H](msg: ByteVector, dst: ByteVector, lenInBytes: Int)(implicit H: Hasher[H]): Either[HashError, ByteVector] = {
     def refused(r: ExpansionRefusal): HashError = HashError.InvalidExpansion(r, H.name, limit[H])
     for {
-      _ <- Either.cond(dst.nonEmpty, (), refused("emptyDst"))
-      _ <- Either.cond(lenInBytes > 0 && lenInBytes <= limit[H], (), refused("outputLength"))
+      _ <- Either.cond(dst.nonEmpty, (), refused(ExpansionRefusal.EmptyDst))
+      _ <- Either.cond(lenInBytes > 0 && lenInBytes <= limit[H], (), refused(ExpansionRefusal.OutputLength))
     } yield {
       val bIn = H.outputSize.toInt
       val ell = (lenInBytes + bIn - 1) / bIn

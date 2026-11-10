@@ -26,16 +26,10 @@ object Evaluate {
   }
 
   private def error(e: JlvmError): Record.Outcome =
-    Record.Outcome.Error(
-      e.kind,
-      e.site.map(_.wire),
-      JlvmVectors.cause(e).flatMap(_.asObject).flatMap(_.toList.headOption).map {
-        case (family, kind) => family -> kind.asString.getOrElse(kind.noSpaces)
-      }
-    )
+    Record.Outcome.Error(e.kind, e.site, JlvmVectors.causeValue(e))
 
   private def value(v: CanonicalValue): Either[Error, Record.Outcome] =
-    Cbor.encode(v).bimap(Error.ResultEncoding(_), b => Record.Outcome.Value(b.toHex))
+    Cbor.encode(v).bimap(Error.ResultEncoding(_), Record.Outcome.Value(_))
 
   /** A recipe that does not build is a broken case file, never an outcome: `Left`, as a runner fault. */
   private def built(name: String, recipe: io.circe.Json): Either[Error, (String, CanonicalValue)] =
@@ -116,8 +110,8 @@ object Evaluate {
     val default = GasLimit.Default.amount.value
     val limit = c.gasLimit.getOrElse(default)
     val starved = r.outcome match {
-      case Record.Outcome.Error("OutOfGas", None, None) => true
-      case _                                            => false
+      case Record.Outcome.Error(JlvmErrorKind.OutOfGas, None, None) => true
+      case _                                                        => false
     }
     lazy val free = reference(c.copy(gasLimit = None))
     val local = if (starved) r.gasUsed == limit && r.available.contains(limit) else r.gasUsed <= limit && r.available.isEmpty

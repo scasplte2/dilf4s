@@ -390,14 +390,14 @@ object Cbor {
       case Deliver(key: CText, start, end, MapFrame(remaining, acc, lastKey, None) :: rest, depth) =>
         val keyBytes = in.slice(start, end)
         if (lastKey.exists(compareBytes(_, keyBytes) >= 0))
-          NonCanonical(start, "keyOrder").asLeft
+          NonCanonical(start, NonCanonicalReason.KeyOrder).asLeft
         else run(in, maxDepth, keys, numbers, Read(end, MapFrame(remaining, acc, lastKey, Some((key, keyBytes))) :: rest, depth))
 
       case Deliver(_, start, _, MapFrame(_, _, _, None) :: _, _) =>
         Unsupported(start, UnsupportedItem.NonTextKey).asLeft
 
       case Deliver(CNull, start, _, MapFrame(_, _, _, Some(_)) :: _, _) =>
-        NonCanonical(start, "nullMapValue").asLeft
+        NonCanonical(start, NonCanonicalReason.NullMapValue).asLeft
 
       case Deliver(v, _, end, MapFrame(remaining, acc, _, Some((key, keyBytes))) :: rest, depth) =>
         if (remaining == 1)
@@ -430,7 +430,7 @@ object Cbor {
         readSpan(in, pos + 1, BigInt(len)).flatMap {
           case (b, end) =>
             val n = BigInt(1, b.toArray)
-            Either.cond(n >= minimum, Head(major, n, end), NonCanonical(pos, "nonShortestArgument"))
+            Either.cond(n >= minimum, Head(major, n, end), NonCanonical(pos, NonCanonicalReason.NonShortestArgument))
         }
       if (info < 24) Head(major, BigInt(info), pos + 1).asRight
       else if (major == 7) Unsupported(pos, UnsupportedItem.FloatOrSimple(info)).asLeft
@@ -481,15 +481,15 @@ object Cbor {
       case Head(2, len, bodyStart) =>
         readSpan(in, bodyStart, len).flatMap {
           case (b, e) =>
-            if (b.headOption.forall(_ == 0)) NonCanonical(pos, "bignumLeadingZero").asLeft
-            else if (b.size <= 8) NonCanonical(pos, "bignumInRange").asLeft
+            if (b.headOption.forall(_ == 0)) NonCanonical(pos, NonCanonicalReason.BignumLeadingZero).asLeft
+            else if (b.size <= 8) NonCanonical(pos, NonCanonicalReason.BignumInRange).asLeft
             else if (8L * (b.size - 1) + (32 - Integer.numberOfLeadingZeros(b(0) & 0xff)) > limit) tooWide.asLeft
             else {
               val magnitude = numbers.magnitude(b)
               (if (tag == TagPositiveBignum) magnitude else -1 - magnitude, e).asRight
             }
         }
-      case _ => NonCanonical(pos, "bignumNotBytes").asLeft
+      case _ => NonCanonical(pos, NonCanonicalReason.BignumNotBytes).asLeft
     }
 
   /**
@@ -503,7 +503,7 @@ object Cbor {
       case Head(6, t, end) if t == TagPositiveBignum || t == TagNegativeBignum =>
         val tooWide = RationalTooWide(CanonicalValue.MaxRationalBits)
         readBignum(in, pos, t.toInt, end, CanonicalValue.MaxRationalBits, tooWide, numbers)
-      case _ => NonCanonical(pos, "rationalNotInteger").asLeft
+      case _ => NonCanonical(pos, NonCanonicalReason.RationalNotInteger).asLeft
     }
 
   /**
@@ -518,11 +518,11 @@ object Cbor {
   ): Either[CanonicalError, (CanonicalValue, Long)] =
     for {
       pair <- readHead(in, end)
-      _    <- Either.cond(pair.major == 4 && pair.argument == BigInt(2), (), NonCanonical(pos, "rationalNotPair"))
+      _    <- Either.cond(pair.major == 4 && pair.argument == BigInt(2), (), NonCanonical(pos, NonCanonicalReason.RationalNotPair))
       num  <- readPart(in, pair.end, numbers)
       den  <- readPart(in, num._2, numbers)
-      _    <- Either.cond(den._1 >= 2, (), NonCanonical(pos, "rationalDenominator"))
-      r    <- numbers.lowestTerms(num._1, den._1).toRight(NonCanonical(pos, "rationalNotReduced"))
+      _    <- Either.cond(den._1 >= 2, (), NonCanonical(pos, NonCanonicalReason.RationalDenominator))
+      r    <- numbers.lowestTerms(num._1, den._1).toRight(NonCanonical(pos, NonCanonicalReason.RationalNotReduced))
       v    <- CanonicalValue.number(r)
     } yield (v, den._2)
 

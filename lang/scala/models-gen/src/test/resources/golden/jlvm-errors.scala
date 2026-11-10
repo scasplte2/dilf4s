@@ -21,7 +21,7 @@ object JlvmCryptoCause {
    * @param error The refusal.
    */
   final case class Signing(error: xyz.kd5ujc.models.crypto_errors.CryptoError) extends JlvmCryptoCause {
-    def kind: JlvmCryptoCauseKind = "Signing"
+    def kind: JlvmCryptoCauseKind = JlvmCryptoCauseKind.Signing
   }
 
   /**
@@ -30,7 +30,7 @@ object JlvmCryptoCause {
    * @param error The refusal.
    */
   final case class Sigma(error: xyz.kd5ujc.models.crypto_errors.SigmaError) extends JlvmCryptoCause {
-    def kind: JlvmCryptoCauseKind = "Sigma"
+    def kind: JlvmCryptoCauseKind = JlvmCryptoCauseKind.Sigma
   }
 
   /**
@@ -39,7 +39,7 @@ object JlvmCryptoCause {
    * @param error The refusal.
    */
   final case class Zk(error: xyz.kd5ujc.models.crypto_errors.ZkError) extends JlvmCryptoCause {
-    def kind: JlvmCryptoCauseKind = "Zk"
+    def kind: JlvmCryptoCauseKind = JlvmCryptoCauseKind.Zk
   }
 
   /**
@@ -48,7 +48,7 @@ object JlvmCryptoCause {
    * @param error The refusal.
    */
   final case class Groth16(error: xyz.kd5ujc.models.crypto_errors.Groth16Error) extends JlvmCryptoCause {
-    def kind: JlvmCryptoCauseKind = "Groth16"
+    def kind: JlvmCryptoCauseKind = JlvmCryptoCauseKind.Groth16
   }
 
   /**
@@ -57,7 +57,7 @@ object JlvmCryptoCause {
    * @param error The refusal.
    */
   final case class Vrf(error: xyz.kd5ujc.models.crypto_errors.VrfError) extends JlvmCryptoCause {
-    def kind: JlvmCryptoCauseKind = "Vrf"
+    def kind: JlvmCryptoCauseKind = JlvmCryptoCauseKind.Vrf
   }
 
   /**
@@ -66,7 +66,7 @@ object JlvmCryptoCause {
    * @param error The refusal.
    */
   final case class Hash(error: xyz.kd5ujc.models.hash_errors.HashError) extends JlvmCryptoCause {
-    def kind: JlvmCryptoCauseKind = "Hash"
+    def kind: JlvmCryptoCauseKind = JlvmCryptoCauseKind.Hash
   }
 
   /**
@@ -75,7 +75,7 @@ object JlvmCryptoCause {
    * @param error The refusal.
    */
   final case class Merkle(error: xyz.kd5ujc.models.proofs_errors.MerkleError) extends JlvmCryptoCause {
-    def kind: JlvmCryptoCauseKind = "Merkle"
+    def kind: JlvmCryptoCauseKind = JlvmCryptoCauseKind.Merkle
   }
 
   /**
@@ -85,7 +85,7 @@ object JlvmCryptoCause {
    * @param error The refusal.
    */
   final case class Trie(error: xyz.kd5ujc.models.proofs_errors.TrieError) extends JlvmCryptoCause {
-    def kind: JlvmCryptoCauseKind = "Trie"
+    def kind: JlvmCryptoCauseKind = JlvmCryptoCauseKind.Trie
   }
 
   /**
@@ -94,7 +94,7 @@ object JlvmCryptoCause {
    * @param error The refusal.
    */
   final case class Poseidon(error: xyz.kd5ujc.models.proofs_errors.PoseidonError) extends JlvmCryptoCause {
-    def kind: JlvmCryptoCauseKind = "Poseidon"
+    def kind: JlvmCryptoCauseKind = JlvmCryptoCauseKind.Poseidon
   }
 
   /**
@@ -103,33 +103,33 @@ object JlvmCryptoCause {
    * @param error The refusal.
    */
   final case class PoseidonMerkle(error: xyz.kd5ujc.models.proofs_errors.PoseidonMerkleError) extends JlvmCryptoCause {
-    def kind: JlvmCryptoCauseKind = "PoseidonMerkle"
+    def kind: JlvmCryptoCauseKind = JlvmCryptoCauseKind.PoseidonMerkle
   }
 }
 
-type JlvmCryptoCauseKind = "Signing" | "Sigma" | "Zk" | "Groth16" | "Vrf" | "Hash" | "Merkle" | "Trie" | "Poseidon" | "PoseidonMerkle"
+enum JlvmCryptoCauseKind(val wire: String) {
+  case Signing extends JlvmCryptoCauseKind("Signing")
+  case Sigma extends JlvmCryptoCauseKind("Sigma")
+  case Zk extends JlvmCryptoCauseKind("Zk")
+  case Groth16 extends JlvmCryptoCauseKind("Groth16")
+  case Vrf extends JlvmCryptoCauseKind("Vrf")
+  case Hash extends JlvmCryptoCauseKind("Hash")
+  case Merkle extends JlvmCryptoCauseKind("Merkle")
+  case Trie extends JlvmCryptoCauseKind("Trie")
+  case Poseidon extends JlvmCryptoCauseKind("Poseidon")
+  case PoseidonMerkle extends JlvmCryptoCauseKind("PoseidonMerkle")
+}
 
 object JlvmCryptoCauseKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[JlvmCryptoCauseKind] = Vector("Signing", "Sigma", "Zk", "Groth16", "Vrf", "Hash", "Merkle", "Trie", "Poseidon", "PoseidonMerkle")
+
+  private lazy val byWire = JlvmCryptoCauseKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[JlvmCryptoCauseKind] = byWire.get(wire)
 
   lazy val codec: Codec[JlvmCryptoCauseKind] = Codec(
-    {
-      case "Signing" => Codec.literalText["Signing"]("Signing").encode("Signing")
-      case "Sigma" => Codec.literalText["Sigma"]("Sigma").encode("Sigma")
-      case "Zk" => Codec.literalText["Zk"]("Zk").encode("Zk")
-      case "Groth16" => Codec.literalText["Groth16"]("Groth16").encode("Groth16")
-      case "Vrf" => Codec.literalText["Vrf"]("Vrf").encode("Vrf")
-      case "Hash" => Codec.literalText["Hash"]("Hash").encode("Hash")
-      case "Merkle" => Codec.literalText["Merkle"]("Merkle").encode("Merkle")
-      case "Trie" => Codec.literalText["Trie"]("Trie").encode("Trie")
-      case "Poseidon" => Codec.literalText["Poseidon"]("Poseidon").encode("Poseidon")
-      case "PoseidonMerkle" => Codec.literalText["PoseidonMerkle"]("PoseidonMerkle").encode("PoseidonMerkle")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[JlvmCryptoCauseKind](v, List(
-
-      ), List(("Signing", "Signing": JlvmCryptoCauseKind), ("Sigma", "Sigma": JlvmCryptoCauseKind), ("Zk", "Zk": JlvmCryptoCauseKind), ("Groth16", "Groth16": JlvmCryptoCauseKind), ("Vrf", "Vrf": JlvmCryptoCauseKind), ("Hash", "Hash": JlvmCryptoCauseKind), ("Merkle", "Merkle": JlvmCryptoCauseKind), ("Trie", "Trie": JlvmCryptoCauseKind), ("Poseidon", "Poseidon": JlvmCryptoCauseKind), ("PoseidonMerkle", "PoseidonMerkle": JlvmCryptoCauseKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[JlvmCryptoCauseKind](v, List(), List(("Signing", JlvmCryptoCauseKind.Signing), ("Sigma", JlvmCryptoCauseKind.Sigma), ("Zk", JlvmCryptoCauseKind.Zk), ("Groth16", JlvmCryptoCauseKind.Groth16), ("Vrf", JlvmCryptoCauseKind.Vrf), ("Hash", JlvmCryptoCauseKind.Hash), ("Merkle", JlvmCryptoCauseKind.Merkle), ("Trie", JlvmCryptoCauseKind.Trie), ("Poseidon", JlvmCryptoCauseKind.Poseidon), ("PoseidonMerkle", JlvmCryptoCauseKind.PoseidonMerkle)))
   )
 }
 
@@ -154,7 +154,7 @@ object JlvmError {
    * @param message What was wrong.
    */
   final case class Malformed(message: String) extends JlvmError {
-    def kind: JlvmErrorKind = "Malformed"
+    def kind: JlvmErrorKind = JlvmErrorKind.Malformed
   }
 
   /**
@@ -164,7 +164,7 @@ object JlvmError {
    * @param message What was wrong.
    */
   final case class Type(op: JlvmSite, message: String) extends JlvmError {
-    def kind: JlvmErrorKind = "Type"
+    def kind: JlvmErrorKind = JlvmErrorKind.Type
   }
 
   /**
@@ -174,7 +174,7 @@ object JlvmError {
    * @param message What was wrong.
    */
   final case class Arity(op: JlvmSite, message: String) extends JlvmError {
-    def kind: JlvmErrorKind = "Arity"
+    def kind: JlvmErrorKind = JlvmErrorKind.Arity
   }
 
   /**
@@ -184,7 +184,7 @@ object JlvmError {
    * @param message What was wrong.
    */
   final case class Arithmetic(op: JlvmSite, message: String) extends JlvmError {
-    def kind: JlvmErrorKind = "Arithmetic"
+    def kind: JlvmErrorKind = JlvmErrorKind.Arithmetic
   }
 
   /**
@@ -194,7 +194,7 @@ object JlvmError {
    * @param message What was wrong.
    */
   final case class Domain(op: JlvmSite, message: String) extends JlvmError {
-    def kind: JlvmErrorKind = "Domain"
+    def kind: JlvmErrorKind = JlvmErrorKind.Domain
   }
 
   /**
@@ -205,7 +205,7 @@ object JlvmError {
    * @param cause The typed refusal of the cryptographic family the operation called, when one refused (normative by its family and kind); absent for the operation's own checks of its arguments' shape (a type, a width, a count, a head's fields).
    */
   final case class Crypto(op: JlvmSite, message: String, cause: Option[JlvmCryptoCause]) extends JlvmError {
-    def kind: JlvmErrorKind = "Crypto"
+    def kind: JlvmErrorKind = JlvmErrorKind.Crypto
   }
 
   /**
@@ -214,7 +214,7 @@ object JlvmError {
    * @param message What was wrong.
    */
   final case class Limit(message: String) extends JlvmError {
-    def kind: JlvmErrorKind = "Limit"
+    def kind: JlvmErrorKind = JlvmErrorKind.Limit
   }
 
   /**
@@ -224,31 +224,31 @@ object JlvmError {
    * @param available The limit.
    */
   final case class OutOfGas(required: Long, available: Long) extends JlvmError {
-    def kind: JlvmErrorKind = "OutOfGas"
+    def kind: JlvmErrorKind = JlvmErrorKind.OutOfGas
   }
 }
 
-type JlvmErrorKind = "Malformed" | "Type" | "Arity" | "Arithmetic" | "Domain" | "Crypto" | "Limit" | "OutOfGas"
+enum JlvmErrorKind(val wire: String) {
+  case Malformed extends JlvmErrorKind("Malformed")
+  case Type extends JlvmErrorKind("Type")
+  case Arity extends JlvmErrorKind("Arity")
+  case Arithmetic extends JlvmErrorKind("Arithmetic")
+  case Domain extends JlvmErrorKind("Domain")
+  case Crypto extends JlvmErrorKind("Crypto")
+  case Limit extends JlvmErrorKind("Limit")
+  case OutOfGas extends JlvmErrorKind("OutOfGas")
+}
 
 object JlvmErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[JlvmErrorKind] = Vector("Malformed", "Type", "Arity", "Arithmetic", "Domain", "Crypto", "Limit", "OutOfGas")
+
+  private lazy val byWire = JlvmErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[JlvmErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[JlvmErrorKind] = Codec(
-    {
-      case "Malformed" => Codec.literalText["Malformed"]("Malformed").encode("Malformed")
-      case "Type" => Codec.literalText["Type"]("Type").encode("Type")
-      case "Arity" => Codec.literalText["Arity"]("Arity").encode("Arity")
-      case "Arithmetic" => Codec.literalText["Arithmetic"]("Arithmetic").encode("Arithmetic")
-      case "Domain" => Codec.literalText["Domain"]("Domain").encode("Domain")
-      case "Crypto" => Codec.literalText["Crypto"]("Crypto").encode("Crypto")
-      case "Limit" => Codec.literalText["Limit"]("Limit").encode("Limit")
-      case "OutOfGas" => Codec.literalText["OutOfGas"]("OutOfGas").encode("OutOfGas")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[JlvmErrorKind](v, List(
-
-      ), List(("Malformed", "Malformed": JlvmErrorKind), ("Type", "Type": JlvmErrorKind), ("Arity", "Arity": JlvmErrorKind), ("Arithmetic", "Arithmetic": JlvmErrorKind), ("Domain", "Domain": JlvmErrorKind), ("Crypto", "Crypto": JlvmErrorKind), ("Limit", "Limit": JlvmErrorKind), ("OutOfGas", "OutOfGas": JlvmErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[JlvmErrorKind](v, List(), List(("Malformed", JlvmErrorKind.Malformed), ("Type", JlvmErrorKind.Type), ("Arity", JlvmErrorKind.Arity), ("Arithmetic", JlvmErrorKind.Arithmetic), ("Domain", JlvmErrorKind.Domain), ("Crypto", JlvmErrorKind.Crypto), ("Limit", JlvmErrorKind.Limit), ("OutOfGas", JlvmErrorKind.OutOfGas)))
   )
 }
 
@@ -256,20 +256,25 @@ object JlvmErrorKind {
  * Where an operation-level error arose: an operation, by its own wire name (never an alias), or `var`, the read of a
  * computed path (jlvm.md section 4.1).
  */
-type JlvmSite = "var" | xyz.kd5ujc.models.jlvm.JlvmOp
+type JlvmSite = xyz.kd5ujc.models.jlvm.JlvmOp | JlvmSite.Literal
 
 object JlvmSite {
+  enum Literal(val wire: String) {
+    case Var extends Literal("var")
+  }
+  export Literal.{Var}
+
   /** Every alternative, in schema order. */
-  val values: Vector[JlvmSite] = Vector("var", xyz.kd5ujc.models.jlvm.JlvmOp.If, xyz.kd5ujc.models.jlvm.JlvmOp.And, xyz.kd5ujc.models.jlvm.JlvmOp.Or, xyz.kd5ujc.models.jlvm.JlvmOp.Not, xyz.kd5ujc.models.jlvm.JlvmOp.Truthy, xyz.kd5ujc.models.jlvm.JlvmOp.Default, xyz.kd5ujc.models.jlvm.JlvmOp.Let, xyz.kd5ujc.models.jlvm.JlvmOp.Eq, xyz.kd5ujc.models.jlvm.JlvmOp.Ne, xyz.kd5ujc.models.jlvm.JlvmOp.StrictEq, xyz.kd5ujc.models.jlvm.JlvmOp.StrictNe, xyz.kd5ujc.models.jlvm.JlvmOp.Lt, xyz.kd5ujc.models.jlvm.JlvmOp.Le, xyz.kd5ujc.models.jlvm.JlvmOp.Gt, xyz.kd5ujc.models.jlvm.JlvmOp.Ge, xyz.kd5ujc.models.jlvm.JlvmOp.Add, xyz.kd5ujc.models.jlvm.JlvmOp.Sub, xyz.kd5ujc.models.jlvm.JlvmOp.Mul, xyz.kd5ujc.models.jlvm.JlvmOp.Div, xyz.kd5ujc.models.jlvm.JlvmOp.Mod, xyz.kd5ujc.models.jlvm.JlvmOp.Min, xyz.kd5ujc.models.jlvm.JlvmOp.Max, xyz.kd5ujc.models.jlvm.JlvmOp.Abs, xyz.kd5ujc.models.jlvm.JlvmOp.Round, xyz.kd5ujc.models.jlvm.JlvmOp.RoundHalfUp, xyz.kd5ujc.models.jlvm.JlvmOp.Floor, xyz.kd5ujc.models.jlvm.JlvmOp.Ceil, xyz.kd5ujc.models.jlvm.JlvmOp.Pow, xyz.kd5ujc.models.jlvm.JlvmOp.Map, xyz.kd5ujc.models.jlvm.JlvmOp.Filter, xyz.kd5ujc.models.jlvm.JlvmOp.Reduce, xyz.kd5ujc.models.jlvm.JlvmOp.All, xyz.kd5ujc.models.jlvm.JlvmOp.Some, xyz.kd5ujc.models.jlvm.JlvmOp.None, xyz.kd5ujc.models.jlvm.JlvmOp.Find, xyz.kd5ujc.models.jlvm.JlvmOp.Count, xyz.kd5ujc.models.jlvm.JlvmOp.Merge, xyz.kd5ujc.models.jlvm.JlvmOp.In, xyz.kd5ujc.models.jlvm.JlvmOp.Intersect, xyz.kd5ujc.models.jlvm.JlvmOp.Unique, xyz.kd5ujc.models.jlvm.JlvmOp.Slice, xyz.kd5ujc.models.jlvm.JlvmOp.Reverse, xyz.kd5ujc.models.jlvm.JlvmOp.Flatten, xyz.kd5ujc.models.jlvm.JlvmOp.Length, xyz.kd5ujc.models.jlvm.JlvmOp.Cat, xyz.kd5ujc.models.jlvm.JlvmOp.Substr, xyz.kd5ujc.models.jlvm.JlvmOp.Lower, xyz.kd5ujc.models.jlvm.JlvmOp.Upper, xyz.kd5ujc.models.jlvm.JlvmOp.Join, xyz.kd5ujc.models.jlvm.JlvmOp.Split, xyz.kd5ujc.models.jlvm.JlvmOp.Trim, xyz.kd5ujc.models.jlvm.JlvmOp.StartsWith, xyz.kd5ujc.models.jlvm.JlvmOp.EndsWith, xyz.kd5ujc.models.jlvm.JlvmOp.Keys, xyz.kd5ujc.models.jlvm.JlvmOp.Values, xyz.kd5ujc.models.jlvm.JlvmOp.Entries, xyz.kd5ujc.models.jlvm.JlvmOp.Get, xyz.kd5ujc.models.jlvm.JlvmOp.Has, xyz.kd5ujc.models.jlvm.JlvmOp.Set, xyz.kd5ujc.models.jlvm.JlvmOp.Unset, xyz.kd5ujc.models.jlvm.JlvmOp.Exists, xyz.kd5ujc.models.jlvm.JlvmOp.Missing, xyz.kd5ujc.models.jlvm.JlvmOp.MissingSome, xyz.kd5ujc.models.jlvm.JlvmOp.TypeOf, xyz.kd5ujc.models.jlvm.JlvmOp.Hex, xyz.kd5ujc.models.jlvm.JlvmOp.Unhex, xyz.kd5ujc.models.jlvm.JlvmOp.HexToInt, xyz.kd5ujc.models.jlvm.JlvmOp.BytesToInt, xyz.kd5ujc.models.jlvm.JlvmOp.IntToBytes, xyz.kd5ujc.models.jlvm.JlvmOp.Sha256, xyz.kd5ujc.models.jlvm.JlvmOp.Sha3_256, xyz.kd5ujc.models.jlvm.JlvmOp.Keccak256, xyz.kd5ujc.models.jlvm.JlvmOp.Blake2b256, xyz.kd5ujc.models.jlvm.JlvmOp.Ed25519Verify, xyz.kd5ujc.models.jlvm.JlvmOp.Secp256k1Verify, xyz.kd5ujc.models.jlvm.JlvmOp.Bip340Verify, xyz.kd5ujc.models.jlvm.JlvmOp.Ecrecover, xyz.kd5ujc.models.jlvm.JlvmOp.BlsVerify, xyz.kd5ujc.models.jlvm.JlvmOp.BlsAggregateVerify, xyz.kd5ujc.models.jlvm.JlvmOp.Poseidon, xyz.kd5ujc.models.jlvm.JlvmOp.PmtVerify, xyz.kd5ujc.models.jlvm.JlvmOp.Groth16Verify, xyz.kd5ujc.models.jlvm.JlvmOp.EcvrfVerify, xyz.kd5ujc.models.jlvm.JlvmOp.Bn254Add, xyz.kd5ujc.models.jlvm.JlvmOp.Bn254Mul, xyz.kd5ujc.models.jlvm.JlvmOp.Bn254Pairing, xyz.kd5ujc.models.jlvm.JlvmOp.SchnorrVerify, xyz.kd5ujc.models.jlvm.JlvmOp.SigmaVerify, xyz.kd5ujc.models.jlvm.JlvmOp.MerkleVerify, xyz.kd5ujc.models.jlvm.JlvmOp.MerkleConsistencyVerify, xyz.kd5ujc.models.jlvm.JlvmOp.TrieVerify, xyz.kd5ujc.models.jlvm.JlvmOp.TriePrefixVerify, xyz.kd5ujc.models.jlvm.JlvmOp.TrieRangeVerify)
+  val values: Vector[JlvmSite] = Vector(JlvmSite.Var, xyz.kd5ujc.models.jlvm.JlvmOp.If, xyz.kd5ujc.models.jlvm.JlvmOp.And, xyz.kd5ujc.models.jlvm.JlvmOp.Or, xyz.kd5ujc.models.jlvm.JlvmOp.Not, xyz.kd5ujc.models.jlvm.JlvmOp.Truthy, xyz.kd5ujc.models.jlvm.JlvmOp.Default, xyz.kd5ujc.models.jlvm.JlvmOp.Let, xyz.kd5ujc.models.jlvm.JlvmOp.Eq, xyz.kd5ujc.models.jlvm.JlvmOp.Ne, xyz.kd5ujc.models.jlvm.JlvmOp.StrictEq, xyz.kd5ujc.models.jlvm.JlvmOp.StrictNe, xyz.kd5ujc.models.jlvm.JlvmOp.Lt, xyz.kd5ujc.models.jlvm.JlvmOp.Le, xyz.kd5ujc.models.jlvm.JlvmOp.Gt, xyz.kd5ujc.models.jlvm.JlvmOp.Ge, xyz.kd5ujc.models.jlvm.JlvmOp.Add, xyz.kd5ujc.models.jlvm.JlvmOp.Sub, xyz.kd5ujc.models.jlvm.JlvmOp.Mul, xyz.kd5ujc.models.jlvm.JlvmOp.Div, xyz.kd5ujc.models.jlvm.JlvmOp.Mod, xyz.kd5ujc.models.jlvm.JlvmOp.Min, xyz.kd5ujc.models.jlvm.JlvmOp.Max, xyz.kd5ujc.models.jlvm.JlvmOp.Abs, xyz.kd5ujc.models.jlvm.JlvmOp.Round, xyz.kd5ujc.models.jlvm.JlvmOp.RoundHalfUp, xyz.kd5ujc.models.jlvm.JlvmOp.Floor, xyz.kd5ujc.models.jlvm.JlvmOp.Ceil, xyz.kd5ujc.models.jlvm.JlvmOp.Pow, xyz.kd5ujc.models.jlvm.JlvmOp.Map, xyz.kd5ujc.models.jlvm.JlvmOp.Filter, xyz.kd5ujc.models.jlvm.JlvmOp.Reduce, xyz.kd5ujc.models.jlvm.JlvmOp.All, xyz.kd5ujc.models.jlvm.JlvmOp.Some, xyz.kd5ujc.models.jlvm.JlvmOp.None, xyz.kd5ujc.models.jlvm.JlvmOp.Find, xyz.kd5ujc.models.jlvm.JlvmOp.Count, xyz.kd5ujc.models.jlvm.JlvmOp.Merge, xyz.kd5ujc.models.jlvm.JlvmOp.In, xyz.kd5ujc.models.jlvm.JlvmOp.Intersect, xyz.kd5ujc.models.jlvm.JlvmOp.Unique, xyz.kd5ujc.models.jlvm.JlvmOp.Slice, xyz.kd5ujc.models.jlvm.JlvmOp.Reverse, xyz.kd5ujc.models.jlvm.JlvmOp.Flatten, xyz.kd5ujc.models.jlvm.JlvmOp.Length, xyz.kd5ujc.models.jlvm.JlvmOp.Cat, xyz.kd5ujc.models.jlvm.JlvmOp.Substr, xyz.kd5ujc.models.jlvm.JlvmOp.Lower, xyz.kd5ujc.models.jlvm.JlvmOp.Upper, xyz.kd5ujc.models.jlvm.JlvmOp.Join, xyz.kd5ujc.models.jlvm.JlvmOp.Split, xyz.kd5ujc.models.jlvm.JlvmOp.Trim, xyz.kd5ujc.models.jlvm.JlvmOp.StartsWith, xyz.kd5ujc.models.jlvm.JlvmOp.EndsWith, xyz.kd5ujc.models.jlvm.JlvmOp.Keys, xyz.kd5ujc.models.jlvm.JlvmOp.Values, xyz.kd5ujc.models.jlvm.JlvmOp.Entries, xyz.kd5ujc.models.jlvm.JlvmOp.Get, xyz.kd5ujc.models.jlvm.JlvmOp.Has, xyz.kd5ujc.models.jlvm.JlvmOp.Set, xyz.kd5ujc.models.jlvm.JlvmOp.Unset, xyz.kd5ujc.models.jlvm.JlvmOp.Exists, xyz.kd5ujc.models.jlvm.JlvmOp.Missing, xyz.kd5ujc.models.jlvm.JlvmOp.MissingSome, xyz.kd5ujc.models.jlvm.JlvmOp.TypeOf, xyz.kd5ujc.models.jlvm.JlvmOp.Hex, xyz.kd5ujc.models.jlvm.JlvmOp.Unhex, xyz.kd5ujc.models.jlvm.JlvmOp.HexToInt, xyz.kd5ujc.models.jlvm.JlvmOp.BytesToInt, xyz.kd5ujc.models.jlvm.JlvmOp.IntToBytes, xyz.kd5ujc.models.jlvm.JlvmOp.Sha256, xyz.kd5ujc.models.jlvm.JlvmOp.Sha3_256, xyz.kd5ujc.models.jlvm.JlvmOp.Keccak256, xyz.kd5ujc.models.jlvm.JlvmOp.Blake2b256, xyz.kd5ujc.models.jlvm.JlvmOp.Ed25519Verify, xyz.kd5ujc.models.jlvm.JlvmOp.Secp256k1Verify, xyz.kd5ujc.models.jlvm.JlvmOp.Bip340Verify, xyz.kd5ujc.models.jlvm.JlvmOp.Ecrecover, xyz.kd5ujc.models.jlvm.JlvmOp.BlsVerify, xyz.kd5ujc.models.jlvm.JlvmOp.BlsAggregateVerify, xyz.kd5ujc.models.jlvm.JlvmOp.Poseidon, xyz.kd5ujc.models.jlvm.JlvmOp.PmtVerify, xyz.kd5ujc.models.jlvm.JlvmOp.Groth16Verify, xyz.kd5ujc.models.jlvm.JlvmOp.EcvrfVerify, xyz.kd5ujc.models.jlvm.JlvmOp.Bn254Add, xyz.kd5ujc.models.jlvm.JlvmOp.Bn254Mul, xyz.kd5ujc.models.jlvm.JlvmOp.Bn254Pairing, xyz.kd5ujc.models.jlvm.JlvmOp.SchnorrVerify, xyz.kd5ujc.models.jlvm.JlvmOp.SigmaVerify, xyz.kd5ujc.models.jlvm.JlvmOp.MerkleVerify, xyz.kd5ujc.models.jlvm.JlvmOp.MerkleConsistencyVerify, xyz.kd5ujc.models.jlvm.JlvmOp.TrieVerify, xyz.kd5ujc.models.jlvm.JlvmOp.TriePrefixVerify, xyz.kd5ujc.models.jlvm.JlvmOp.TrieRangeVerify)
 
   lazy val codec: Codec[JlvmSite] = Codec(
     {
       case a: xyz.kd5ujc.models.jlvm.JlvmOp => xyz.kd5ujc.models.jlvm.JlvmOp.codec.encode(a)
-      case "var" => Codec.literalText["var"]("var").encode("var")
+      case a: Literal => Codec.text.encode(a.wire)
     },
     (v: CanonicalValue) =>
       Codec.selectAlternative[JlvmSite](v, List(
 
-      ), List(("var", "var": JlvmSite), ("if", xyz.kd5ujc.models.jlvm.JlvmOp.If: JlvmSite), ("and", xyz.kd5ujc.models.jlvm.JlvmOp.And: JlvmSite), ("or", xyz.kd5ujc.models.jlvm.JlvmOp.Or: JlvmSite), ("!", xyz.kd5ujc.models.jlvm.JlvmOp.Not: JlvmSite), ("!!", xyz.kd5ujc.models.jlvm.JlvmOp.Truthy: JlvmSite), ("default", xyz.kd5ujc.models.jlvm.JlvmOp.Default: JlvmSite), ("let", xyz.kd5ujc.models.jlvm.JlvmOp.Let: JlvmSite), ("==", xyz.kd5ujc.models.jlvm.JlvmOp.Eq: JlvmSite), ("!=", xyz.kd5ujc.models.jlvm.JlvmOp.Ne: JlvmSite), ("===", xyz.kd5ujc.models.jlvm.JlvmOp.StrictEq: JlvmSite), ("!==", xyz.kd5ujc.models.jlvm.JlvmOp.StrictNe: JlvmSite), ("<", xyz.kd5ujc.models.jlvm.JlvmOp.Lt: JlvmSite), ("<=", xyz.kd5ujc.models.jlvm.JlvmOp.Le: JlvmSite), (">", xyz.kd5ujc.models.jlvm.JlvmOp.Gt: JlvmSite), (">=", xyz.kd5ujc.models.jlvm.JlvmOp.Ge: JlvmSite), ("+", xyz.kd5ujc.models.jlvm.JlvmOp.Add: JlvmSite), ("-", xyz.kd5ujc.models.jlvm.JlvmOp.Sub: JlvmSite), ("*", xyz.kd5ujc.models.jlvm.JlvmOp.Mul: JlvmSite), ("/", xyz.kd5ujc.models.jlvm.JlvmOp.Div: JlvmSite), ("%", xyz.kd5ujc.models.jlvm.JlvmOp.Mod: JlvmSite), ("min", xyz.kd5ujc.models.jlvm.JlvmOp.Min: JlvmSite), ("max", xyz.kd5ujc.models.jlvm.JlvmOp.Max: JlvmSite), ("abs", xyz.kd5ujc.models.jlvm.JlvmOp.Abs: JlvmSite), ("round", xyz.kd5ujc.models.jlvm.JlvmOp.Round: JlvmSite), ("round_half_up", xyz.kd5ujc.models.jlvm.JlvmOp.RoundHalfUp: JlvmSite), ("floor", xyz.kd5ujc.models.jlvm.JlvmOp.Floor: JlvmSite), ("ceil", xyz.kd5ujc.models.jlvm.JlvmOp.Ceil: JlvmSite), ("pow", xyz.kd5ujc.models.jlvm.JlvmOp.Pow: JlvmSite), ("map", xyz.kd5ujc.models.jlvm.JlvmOp.Map: JlvmSite), ("filter", xyz.kd5ujc.models.jlvm.JlvmOp.Filter: JlvmSite), ("reduce", xyz.kd5ujc.models.jlvm.JlvmOp.Reduce: JlvmSite), ("all", xyz.kd5ujc.models.jlvm.JlvmOp.All: JlvmSite), ("some", xyz.kd5ujc.models.jlvm.JlvmOp.Some: JlvmSite), ("none", xyz.kd5ujc.models.jlvm.JlvmOp.None: JlvmSite), ("find", xyz.kd5ujc.models.jlvm.JlvmOp.Find: JlvmSite), ("count", xyz.kd5ujc.models.jlvm.JlvmOp.Count: JlvmSite), ("merge", xyz.kd5ujc.models.jlvm.JlvmOp.Merge: JlvmSite), ("in", xyz.kd5ujc.models.jlvm.JlvmOp.In: JlvmSite), ("intersect", xyz.kd5ujc.models.jlvm.JlvmOp.Intersect: JlvmSite), ("unique", xyz.kd5ujc.models.jlvm.JlvmOp.Unique: JlvmSite), ("slice", xyz.kd5ujc.models.jlvm.JlvmOp.Slice: JlvmSite), ("reverse", xyz.kd5ujc.models.jlvm.JlvmOp.Reverse: JlvmSite), ("flatten", xyz.kd5ujc.models.jlvm.JlvmOp.Flatten: JlvmSite), ("length", xyz.kd5ujc.models.jlvm.JlvmOp.Length: JlvmSite), ("cat", xyz.kd5ujc.models.jlvm.JlvmOp.Cat: JlvmSite), ("substr", xyz.kd5ujc.models.jlvm.JlvmOp.Substr: JlvmSite), ("lower", xyz.kd5ujc.models.jlvm.JlvmOp.Lower: JlvmSite), ("upper", xyz.kd5ujc.models.jlvm.JlvmOp.Upper: JlvmSite), ("join", xyz.kd5ujc.models.jlvm.JlvmOp.Join: JlvmSite), ("split", xyz.kd5ujc.models.jlvm.JlvmOp.Split: JlvmSite), ("trim", xyz.kd5ujc.models.jlvm.JlvmOp.Trim: JlvmSite), ("startsWith", xyz.kd5ujc.models.jlvm.JlvmOp.StartsWith: JlvmSite), ("endsWith", xyz.kd5ujc.models.jlvm.JlvmOp.EndsWith: JlvmSite), ("keys", xyz.kd5ujc.models.jlvm.JlvmOp.Keys: JlvmSite), ("values", xyz.kd5ujc.models.jlvm.JlvmOp.Values: JlvmSite), ("entries", xyz.kd5ujc.models.jlvm.JlvmOp.Entries: JlvmSite), ("get", xyz.kd5ujc.models.jlvm.JlvmOp.Get: JlvmSite), ("has", xyz.kd5ujc.models.jlvm.JlvmOp.Has: JlvmSite), ("set", xyz.kd5ujc.models.jlvm.JlvmOp.Set: JlvmSite), ("unset", xyz.kd5ujc.models.jlvm.JlvmOp.Unset: JlvmSite), ("exists", xyz.kd5ujc.models.jlvm.JlvmOp.Exists: JlvmSite), ("missing", xyz.kd5ujc.models.jlvm.JlvmOp.Missing: JlvmSite), ("missing_some", xyz.kd5ujc.models.jlvm.JlvmOp.MissingSome: JlvmSite), ("typeof", xyz.kd5ujc.models.jlvm.JlvmOp.TypeOf: JlvmSite), ("hex", xyz.kd5ujc.models.jlvm.JlvmOp.Hex: JlvmSite), ("unhex", xyz.kd5ujc.models.jlvm.JlvmOp.Unhex: JlvmSite), ("hex_to_int", xyz.kd5ujc.models.jlvm.JlvmOp.HexToInt: JlvmSite), ("bytes_to_int", xyz.kd5ujc.models.jlvm.JlvmOp.BytesToInt: JlvmSite), ("int_to_bytes", xyz.kd5ujc.models.jlvm.JlvmOp.IntToBytes: JlvmSite), ("sha256", xyz.kd5ujc.models.jlvm.JlvmOp.Sha256: JlvmSite), ("sha3_256", xyz.kd5ujc.models.jlvm.JlvmOp.Sha3_256: JlvmSite), ("keccak256", xyz.kd5ujc.models.jlvm.JlvmOp.Keccak256: JlvmSite), ("blake2b256", xyz.kd5ujc.models.jlvm.JlvmOp.Blake2b256: JlvmSite), ("ed25519_verify", xyz.kd5ujc.models.jlvm.JlvmOp.Ed25519Verify: JlvmSite), ("secp256k1_verify", xyz.kd5ujc.models.jlvm.JlvmOp.Secp256k1Verify: JlvmSite), ("bip340_verify", xyz.kd5ujc.models.jlvm.JlvmOp.Bip340Verify: JlvmSite), ("ecrecover", xyz.kd5ujc.models.jlvm.JlvmOp.Ecrecover: JlvmSite), ("bls_verify", xyz.kd5ujc.models.jlvm.JlvmOp.BlsVerify: JlvmSite), ("bls_aggregate_verify", xyz.kd5ujc.models.jlvm.JlvmOp.BlsAggregateVerify: JlvmSite), ("poseidon", xyz.kd5ujc.models.jlvm.JlvmOp.Poseidon: JlvmSite), ("pmt_verify", xyz.kd5ujc.models.jlvm.JlvmOp.PmtVerify: JlvmSite), ("groth16_verify", xyz.kd5ujc.models.jlvm.JlvmOp.Groth16Verify: JlvmSite), ("ecvrf_verify", xyz.kd5ujc.models.jlvm.JlvmOp.EcvrfVerify: JlvmSite), ("bn254_add", xyz.kd5ujc.models.jlvm.JlvmOp.Bn254Add: JlvmSite), ("bn254_mul", xyz.kd5ujc.models.jlvm.JlvmOp.Bn254Mul: JlvmSite), ("bn254_pairing", xyz.kd5ujc.models.jlvm.JlvmOp.Bn254Pairing: JlvmSite), ("schnorr_verify", xyz.kd5ujc.models.jlvm.JlvmOp.SchnorrVerify: JlvmSite), ("sigma_verify", xyz.kd5ujc.models.jlvm.JlvmOp.SigmaVerify: JlvmSite), ("merkle_verify", xyz.kd5ujc.models.jlvm.JlvmOp.MerkleVerify: JlvmSite), ("merkle_consistency_verify", xyz.kd5ujc.models.jlvm.JlvmOp.MerkleConsistencyVerify: JlvmSite), ("trie_verify", xyz.kd5ujc.models.jlvm.JlvmOp.TrieVerify: JlvmSite), ("trie_prefix_verify", xyz.kd5ujc.models.jlvm.JlvmOp.TriePrefixVerify: JlvmSite), ("trie_range_verify", xyz.kd5ujc.models.jlvm.JlvmOp.TrieRangeVerify: JlvmSite)))
+      ), List(("var", JlvmSite.Var: JlvmSite), ("if", xyz.kd5ujc.models.jlvm.JlvmOp.If: JlvmSite), ("and", xyz.kd5ujc.models.jlvm.JlvmOp.And: JlvmSite), ("or", xyz.kd5ujc.models.jlvm.JlvmOp.Or: JlvmSite), ("!", xyz.kd5ujc.models.jlvm.JlvmOp.Not: JlvmSite), ("!!", xyz.kd5ujc.models.jlvm.JlvmOp.Truthy: JlvmSite), ("default", xyz.kd5ujc.models.jlvm.JlvmOp.Default: JlvmSite), ("let", xyz.kd5ujc.models.jlvm.JlvmOp.Let: JlvmSite), ("==", xyz.kd5ujc.models.jlvm.JlvmOp.Eq: JlvmSite), ("!=", xyz.kd5ujc.models.jlvm.JlvmOp.Ne: JlvmSite), ("===", xyz.kd5ujc.models.jlvm.JlvmOp.StrictEq: JlvmSite), ("!==", xyz.kd5ujc.models.jlvm.JlvmOp.StrictNe: JlvmSite), ("<", xyz.kd5ujc.models.jlvm.JlvmOp.Lt: JlvmSite), ("<=", xyz.kd5ujc.models.jlvm.JlvmOp.Le: JlvmSite), (">", xyz.kd5ujc.models.jlvm.JlvmOp.Gt: JlvmSite), (">=", xyz.kd5ujc.models.jlvm.JlvmOp.Ge: JlvmSite), ("+", xyz.kd5ujc.models.jlvm.JlvmOp.Add: JlvmSite), ("-", xyz.kd5ujc.models.jlvm.JlvmOp.Sub: JlvmSite), ("*", xyz.kd5ujc.models.jlvm.JlvmOp.Mul: JlvmSite), ("/", xyz.kd5ujc.models.jlvm.JlvmOp.Div: JlvmSite), ("%", xyz.kd5ujc.models.jlvm.JlvmOp.Mod: JlvmSite), ("min", xyz.kd5ujc.models.jlvm.JlvmOp.Min: JlvmSite), ("max", xyz.kd5ujc.models.jlvm.JlvmOp.Max: JlvmSite), ("abs", xyz.kd5ujc.models.jlvm.JlvmOp.Abs: JlvmSite), ("round", xyz.kd5ujc.models.jlvm.JlvmOp.Round: JlvmSite), ("round_half_up", xyz.kd5ujc.models.jlvm.JlvmOp.RoundHalfUp: JlvmSite), ("floor", xyz.kd5ujc.models.jlvm.JlvmOp.Floor: JlvmSite), ("ceil", xyz.kd5ujc.models.jlvm.JlvmOp.Ceil: JlvmSite), ("pow", xyz.kd5ujc.models.jlvm.JlvmOp.Pow: JlvmSite), ("map", xyz.kd5ujc.models.jlvm.JlvmOp.Map: JlvmSite), ("filter", xyz.kd5ujc.models.jlvm.JlvmOp.Filter: JlvmSite), ("reduce", xyz.kd5ujc.models.jlvm.JlvmOp.Reduce: JlvmSite), ("all", xyz.kd5ujc.models.jlvm.JlvmOp.All: JlvmSite), ("some", xyz.kd5ujc.models.jlvm.JlvmOp.Some: JlvmSite), ("none", xyz.kd5ujc.models.jlvm.JlvmOp.None: JlvmSite), ("find", xyz.kd5ujc.models.jlvm.JlvmOp.Find: JlvmSite), ("count", xyz.kd5ujc.models.jlvm.JlvmOp.Count: JlvmSite), ("merge", xyz.kd5ujc.models.jlvm.JlvmOp.Merge: JlvmSite), ("in", xyz.kd5ujc.models.jlvm.JlvmOp.In: JlvmSite), ("intersect", xyz.kd5ujc.models.jlvm.JlvmOp.Intersect: JlvmSite), ("unique", xyz.kd5ujc.models.jlvm.JlvmOp.Unique: JlvmSite), ("slice", xyz.kd5ujc.models.jlvm.JlvmOp.Slice: JlvmSite), ("reverse", xyz.kd5ujc.models.jlvm.JlvmOp.Reverse: JlvmSite), ("flatten", xyz.kd5ujc.models.jlvm.JlvmOp.Flatten: JlvmSite), ("length", xyz.kd5ujc.models.jlvm.JlvmOp.Length: JlvmSite), ("cat", xyz.kd5ujc.models.jlvm.JlvmOp.Cat: JlvmSite), ("substr", xyz.kd5ujc.models.jlvm.JlvmOp.Substr: JlvmSite), ("lower", xyz.kd5ujc.models.jlvm.JlvmOp.Lower: JlvmSite), ("upper", xyz.kd5ujc.models.jlvm.JlvmOp.Upper: JlvmSite), ("join", xyz.kd5ujc.models.jlvm.JlvmOp.Join: JlvmSite), ("split", xyz.kd5ujc.models.jlvm.JlvmOp.Split: JlvmSite), ("trim", xyz.kd5ujc.models.jlvm.JlvmOp.Trim: JlvmSite), ("startsWith", xyz.kd5ujc.models.jlvm.JlvmOp.StartsWith: JlvmSite), ("endsWith", xyz.kd5ujc.models.jlvm.JlvmOp.EndsWith: JlvmSite), ("keys", xyz.kd5ujc.models.jlvm.JlvmOp.Keys: JlvmSite), ("values", xyz.kd5ujc.models.jlvm.JlvmOp.Values: JlvmSite), ("entries", xyz.kd5ujc.models.jlvm.JlvmOp.Entries: JlvmSite), ("get", xyz.kd5ujc.models.jlvm.JlvmOp.Get: JlvmSite), ("has", xyz.kd5ujc.models.jlvm.JlvmOp.Has: JlvmSite), ("set", xyz.kd5ujc.models.jlvm.JlvmOp.Set: JlvmSite), ("unset", xyz.kd5ujc.models.jlvm.JlvmOp.Unset: JlvmSite), ("exists", xyz.kd5ujc.models.jlvm.JlvmOp.Exists: JlvmSite), ("missing", xyz.kd5ujc.models.jlvm.JlvmOp.Missing: JlvmSite), ("missing_some", xyz.kd5ujc.models.jlvm.JlvmOp.MissingSome: JlvmSite), ("typeof", xyz.kd5ujc.models.jlvm.JlvmOp.TypeOf: JlvmSite), ("hex", xyz.kd5ujc.models.jlvm.JlvmOp.Hex: JlvmSite), ("unhex", xyz.kd5ujc.models.jlvm.JlvmOp.Unhex: JlvmSite), ("hex_to_int", xyz.kd5ujc.models.jlvm.JlvmOp.HexToInt: JlvmSite), ("bytes_to_int", xyz.kd5ujc.models.jlvm.JlvmOp.BytesToInt: JlvmSite), ("int_to_bytes", xyz.kd5ujc.models.jlvm.JlvmOp.IntToBytes: JlvmSite), ("sha256", xyz.kd5ujc.models.jlvm.JlvmOp.Sha256: JlvmSite), ("sha3_256", xyz.kd5ujc.models.jlvm.JlvmOp.Sha3_256: JlvmSite), ("keccak256", xyz.kd5ujc.models.jlvm.JlvmOp.Keccak256: JlvmSite), ("blake2b256", xyz.kd5ujc.models.jlvm.JlvmOp.Blake2b256: JlvmSite), ("ed25519_verify", xyz.kd5ujc.models.jlvm.JlvmOp.Ed25519Verify: JlvmSite), ("secp256k1_verify", xyz.kd5ujc.models.jlvm.JlvmOp.Secp256k1Verify: JlvmSite), ("bip340_verify", xyz.kd5ujc.models.jlvm.JlvmOp.Bip340Verify: JlvmSite), ("ecrecover", xyz.kd5ujc.models.jlvm.JlvmOp.Ecrecover: JlvmSite), ("bls_verify", xyz.kd5ujc.models.jlvm.JlvmOp.BlsVerify: JlvmSite), ("bls_aggregate_verify", xyz.kd5ujc.models.jlvm.JlvmOp.BlsAggregateVerify: JlvmSite), ("poseidon", xyz.kd5ujc.models.jlvm.JlvmOp.Poseidon: JlvmSite), ("pmt_verify", xyz.kd5ujc.models.jlvm.JlvmOp.PmtVerify: JlvmSite), ("groth16_verify", xyz.kd5ujc.models.jlvm.JlvmOp.Groth16Verify: JlvmSite), ("ecvrf_verify", xyz.kd5ujc.models.jlvm.JlvmOp.EcvrfVerify: JlvmSite), ("bn254_add", xyz.kd5ujc.models.jlvm.JlvmOp.Bn254Add: JlvmSite), ("bn254_mul", xyz.kd5ujc.models.jlvm.JlvmOp.Bn254Mul: JlvmSite), ("bn254_pairing", xyz.kd5ujc.models.jlvm.JlvmOp.Bn254Pairing: JlvmSite), ("schnorr_verify", xyz.kd5ujc.models.jlvm.JlvmOp.SchnorrVerify: JlvmSite), ("sigma_verify", xyz.kd5ujc.models.jlvm.JlvmOp.SigmaVerify: JlvmSite), ("merkle_verify", xyz.kd5ujc.models.jlvm.JlvmOp.MerkleVerify: JlvmSite), ("merkle_consistency_verify", xyz.kd5ujc.models.jlvm.JlvmOp.MerkleConsistencyVerify: JlvmSite), ("trie_verify", xyz.kd5ujc.models.jlvm.JlvmOp.TrieVerify: JlvmSite), ("trie_prefix_verify", xyz.kd5ujc.models.jlvm.JlvmOp.TriePrefixVerify: JlvmSite), ("trie_range_verify", xyz.kd5ujc.models.jlvm.JlvmOp.TrieRangeVerify: JlvmSite)))
   )
 }

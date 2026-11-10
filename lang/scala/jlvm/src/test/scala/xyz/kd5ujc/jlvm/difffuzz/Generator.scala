@@ -3,7 +3,7 @@ package xyz.kd5ujc.jlvm.difffuzz
 import cats.data.{NonEmptyVector, State}
 import cats.syntax.all._
 
-import xyz.kd5ujc.jlvm.{Op, Parser}
+import xyz.kd5ujc.jlvm.{JlvmErrorKind, Op, Parser}
 
 import Gen._
 import Sj._
@@ -182,8 +182,8 @@ final class Generator(corpus: Corpus, reference: FuzzCase => Either[Fault, Recor
           f => pure((c, false, Some(f))),
           r => {
             val starved = r.outcome match {
-              case Record.Outcome.Error("OutOfGas", _, _) => true
-              case _                                      => false
+              case Record.Outcome.Error(JlvmErrorKind.OutOfGas, _, _) => true
+              case _                                                  => false
             }
             if (starved || r.gasUsed == 0) pure((c, false, None))
             else

@@ -348,7 +348,7 @@ object SdkSourcesSuite extends SimpleIOSuite {
     expect(scala.exists(_.contains("sealed trait E extends Product with Serializable {")), scala.fold(_.message, identity))
       .and(
         expect(
-          scala.exists(_.contains("final case class Bad(what: String, count: Option[Int]) extends E {\n    def kind: EKind = \"Bad\"")),
+          scala.exists(_.contains("final case class Bad(what: String, count: Option[Int]) extends E {\n    def kind: EKind = EKind.Bad")),
           "a kind with fields"
         )
       )
@@ -400,8 +400,13 @@ object SdkSourcesSuite extends SimpleIOSuite {
         )
       )
       .and(expect(ts.exists(_.contains("export type Outcome = \"fine\" | EKind;")), ts.fold(_.message, identity)))
-      .and(expect(scala.exists(_.contains("type Outcome = \"fine\" | EKind")), scala.fold(_.message, identity)))
-      .and(expect(scala.exists(_.contains("val values: Vector[Outcome] = Vector(\"fine\", \"Bad\", \"Gone\", \"Hit\")")), "values"))
+      .and(expect(scala.exists(_.contains("type Outcome = p.t.EKind | Outcome.Literal")), scala.fold(_.message, identity)))
+      .and(
+        expect(
+          scala.exists(_.contains("val values: Vector[Outcome] = Vector(Outcome.Fine, p.t.EKind.Bad, p.t.EKind.Gone, p.t.EKind.Hit)")),
+          "values"
+        )
+      )
       .and(expect(outside(gen("k = \"a\" / \"b\"\nr = \"a\" / k\n")), "a text twice"))
   }
 

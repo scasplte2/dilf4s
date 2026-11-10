@@ -16,7 +16,11 @@ object CanonicalCirceSuite extends SimpleIOSuite with Checkers {
   private def parse(s: String) = CanonicalJson.parse(s)
 
   private def viaCirce(text: String): Either[CanonicalError, CanonicalValue] =
-    parser.parse(text).left.map(_ => JsonSyntax(0, "expectedValue")).flatMap(CanonicalCirce.fromCirce(_))
+    parser
+      .parse(text)
+      .left
+      .map(_ => JsonSyntax(0, xyz.kd5ujc.models.codec_errors.JsonSyntaxReason.ExpectedValue))
+      .flatMap(CanonicalCirce.fromCirce(_))
 
   pureTest("a refused rational is named by its size, never its digits, as render names it") {
     def rational(n: BigInt, d: BigInt) =
@@ -25,7 +29,7 @@ object CanonicalCirceSuite extends SimpleIOSuite with Checkers {
     // a rational that wide is no value (CanonicalValue.MaxRationalBits); the widest integer is, and converts
     val huge = xyz.kd5ujc.core.canonical.CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     expect
-      .same(Left(NotJsonRepresentable("non-terminating rational")), CanonicalCirce.toCirce(third))
+      .same(Left(NotJsonRepresentable(xyz.kd5ujc.models.codec_errors.NotJson.NonTerminatingRational)), CanonicalCirce.toCirce(third))
       .and(expect.same(Right(Json.fromBigInt(huge.value)), CanonicalCirce.toCirce(huge)))
       .and(
         expect.same(

@@ -55,7 +55,7 @@ object JsonRenderSuite extends SimpleIOSuite with Checkers {
         case i: CInt      => Eval.now(CanonicalJson.integerText(i).asRight)
         case r: CRational => Eval.now(CanonicalJson.rationalText(r))
         case t: CText     => Eval.now(quote(t.value).asRight)
-        case CBytes(_)    => Eval.now(NotJsonRepresentable("bytes").asLeft)
+        case CBytes(_)    => Eval.now(NotJsonRepresentable(NotJson.Bytes).asLeft)
         case CArray(vs)   => Eval.defer(vs.traverse(go)).map(_.sequence.map(_.mkString("[", ",", "]")))
         case CMap(m) =>
           Eval
@@ -150,7 +150,7 @@ object JsonRenderSuite extends SimpleIOSuite with Checkers {
   pureTest("what JSON cannot represent is refused at the first such part, unless the limit is met first") {
     val withBytes = get(CanonicalValue.array(Vector(get(CanonicalValue.text("x" * 50)), CBytes(scodec.bits.ByteVector(1)))))
     expect
-      .same(Left(RenderError.Canonical(NotJsonRepresentable("bytes"))), CanonicalJson.renderWithin(withBytes, 1000L))
+      .same(Left(RenderError.Canonical(NotJsonRepresentable(NotJson.Bytes))), CanonicalJson.renderWithin(withBytes, 1000L))
       .and(expect.same(Left(RenderError.TooLarge(20L)), CanonicalJson.renderWithin(withBytes, 20L)))
   }
 }

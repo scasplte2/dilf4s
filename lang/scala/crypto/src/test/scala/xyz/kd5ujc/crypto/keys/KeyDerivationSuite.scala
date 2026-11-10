@@ -167,25 +167,25 @@ object KeyDerivationSuite extends SimpleIOSuite {
       s"m${"/1'" * 255}" -> List.fill(255)(0x80000001L)
     )
     val refused: List[(String, (PathRefusal, String))] = List(
-      "m/2147483648'"                -> ("outOfRange": PathRefusal, "path segment 0 is out of range"),
-      "m/4294967295"                 -> ("outOfRange": PathRefusal, "path segment 0 is out of range"),
-      "m/9999999999"                 -> ("outOfRange": PathRefusal, "path segment 0 is out of range"),
-      "m/0/10000000000"              -> ("tooManyDigits": PathRefusal, "path segment 1 has 11 digits, more than 10"),
-      s"m/1/2/${"9" * 4096}'"        -> ("tooManyDigits": PathRefusal, "path segment 2 has 4096 digits, more than 10"),
-      "m/007"                        -> ("leadingZero": PathRefusal, "path segment 0 has a leading zero"),
-      "m/00"                         -> ("leadingZero": PathRefusal, "path segment 0 has a leading zero"),
-      "m/000'"                       -> ("leadingZero": PathRefusal, "path segment 0 has a leading zero"),
-      "m/1/01h"                      -> ("leadingZero": PathRefusal, "path segment 1 has a leading zero"),
-      "m/02147483647'"               -> ("leadingZero": PathRefusal, "path segment 0 has a leading zero"),
-      s"m/${zeros}1'"                -> ("leadingZero": PathRefusal, "path segment 0 has a leading zero"),
-      s"m/${zeros}12345678901"       -> ("leadingZero": PathRefusal, "path segment 0 has a leading zero"),
-      "m/1/x9"                       -> ("malformed": PathRefusal, "path segment 1 is malformed"),
-      "m/"                           -> ("malformed": PathRefusal, "path segment 0 is malformed"),
-      s"m${"/7" * 256}"              -> ("tooDeep": PathRefusal, "path has more than 255 segments"),
-      s"m${"/7" * 255}/x"            -> ("tooDeep": PathRefusal, "path has more than 255 segments"),
-      s"m${"/7" * 9}/x${"/7" * 300}" -> ("malformed": PathRefusal, "path segment 9 is malformed"),
-      "44'/0"                        -> ("missingMaster": PathRefusal, "path must start with m"),
-      ""                             -> ("missingMaster": PathRefusal, "path must start with m")
+      "m/2147483648'"                -> (PathRefusal.OutOfRange: PathRefusal, "path segment 0 is out of range"),
+      "m/4294967295"                 -> (PathRefusal.OutOfRange: PathRefusal, "path segment 0 is out of range"),
+      "m/9999999999"                 -> (PathRefusal.OutOfRange: PathRefusal, "path segment 0 is out of range"),
+      "m/0/10000000000"              -> (PathRefusal.TooManyDigits: PathRefusal, "path segment 1 has 11 digits, more than 10"),
+      s"m/1/2/${"9" * 4096}'"        -> (PathRefusal.TooManyDigits: PathRefusal, "path segment 2 has 4096 digits, more than 10"),
+      "m/007"                        -> (PathRefusal.LeadingZero: PathRefusal, "path segment 0 has a leading zero"),
+      "m/00"                         -> (PathRefusal.LeadingZero: PathRefusal, "path segment 0 has a leading zero"),
+      "m/000'"                       -> (PathRefusal.LeadingZero: PathRefusal, "path segment 0 has a leading zero"),
+      "m/1/01h"                      -> (PathRefusal.LeadingZero: PathRefusal, "path segment 1 has a leading zero"),
+      "m/02147483647'"               -> (PathRefusal.LeadingZero: PathRefusal, "path segment 0 has a leading zero"),
+      s"m/${zeros}1'"                -> (PathRefusal.LeadingZero: PathRefusal, "path segment 0 has a leading zero"),
+      s"m/${zeros}12345678901"       -> (PathRefusal.LeadingZero: PathRefusal, "path segment 0 has a leading zero"),
+      "m/1/x9"                       -> (PathRefusal.Malformed: PathRefusal, "path segment 1 is malformed"),
+      "m/"                           -> (PathRefusal.Malformed: PathRefusal, "path segment 0 is malformed"),
+      s"m${"/7" * 256}"              -> (PathRefusal.TooDeep: PathRefusal, "path has more than 255 segments"),
+      s"m${"/7" * 255}/x"            -> (PathRefusal.TooDeep: PathRefusal, "path has more than 255 segments"),
+      s"m${"/7" * 9}/x${"/7" * 300}" -> (PathRefusal.Malformed: PathRefusal, "path segment 9 is malformed"),
+      "44'/0"                        -> (PathRefusal.MissingMaster: PathRefusal, "path must start with m"),
+      ""                             -> (PathRefusal.MissingMaster: PathRefusal, "path must start with m")
     )
     accepted.foldMap { case (p, is) => expect.same(Right(is), serialized(p)) } |+|
     refused.foldMap { case (p, r) => expect.same(Left(KeyError.InvalidPath(r._1, r._2)), ChildIndex.path(p)) } |+|
@@ -201,9 +201,9 @@ object KeyDerivationSuite extends SimpleIOSuite {
       (t, (l, p, d)) <- IO((ChildIndex.path(long), ChildIndex.path(padded), ChildIndex.path(deep))).timed
     } yield
       expect(t.toMillis < 2000, s"took ${t.toMillis} ms")
-        .and(expect.same(Left(KeyError.InvalidPath("tooManyDigits", "path segment 0 has 1000000 digits, more than 10")), l))
-        .and(expect.same(Left(KeyError.InvalidPath("leadingZero", "path segment 0 has a leading zero")), p))
-        .and(expect.same(Left(KeyError.InvalidPath("tooDeep", "path has more than 255 segments")), d))
+        .and(expect.same(Left(KeyError.InvalidPath(PathRefusal.TooManyDigits, "path segment 0 has 1000000 digits, more than 10")), l))
+        .and(expect.same(Left(KeyError.InvalidPath(PathRefusal.LeadingZero, "path segment 0 has a leading zero")), p))
+        .and(expect.same(Left(KeyError.InvalidPath(PathRefusal.TooDeep, "path has more than 255 segments")), d))
   }
 
   // ------------------------------------------------------------------ SLIP-10 Ed25519 (vector 1)

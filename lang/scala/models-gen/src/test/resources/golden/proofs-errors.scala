@@ -23,7 +23,7 @@ object MerkleError {
    * @param size The tree size.
    */
   final case class IndexOutOfRange(index: MerklePosition, size: MerklePosition) extends MerkleError {
-    def kind: MerkleErrorKind = "IndexOutOfRange"
+    def kind: MerkleErrorKind = MerkleErrorKind.IndexOutOfRange
   }
 
   /**
@@ -33,7 +33,7 @@ object MerkleError {
    * @param newSize The new size.
    */
   final case class InvalidSizes(oldSize: MerklePosition, newSize: MerklePosition) extends MerkleError {
-    def kind: MerkleErrorKind = "InvalidSizes"
+    def kind: MerkleErrorKind = MerkleErrorKind.InvalidSizes
   }
 
   /**
@@ -42,7 +42,7 @@ object MerkleError {
    * @param reason Why.
    */
   final case class InvalidProof(reason: String) extends MerkleError {
-    def kind: MerkleErrorKind = "InvalidProof"
+    def kind: MerkleErrorKind = MerkleErrorKind.InvalidProof
   }
 
   /**
@@ -52,7 +52,7 @@ object MerkleError {
    * @param computed The recomputed root, hex.
    */
   final case class RootMismatch(expected: String, computed: String) extends MerkleError {
-    def kind: MerkleErrorKind = "RootMismatch"
+    def kind: MerkleErrorKind = MerkleErrorKind.RootMismatch
   }
 
   /**
@@ -61,7 +61,7 @@ object MerkleError {
    * @param reason Why.
    */
   final case class Encoding(reason: String) extends MerkleError {
-    def kind: MerkleErrorKind = "Encoding"
+    def kind: MerkleErrorKind = MerkleErrorKind.Encoding
   }
 
   /**
@@ -70,30 +70,30 @@ object MerkleError {
    * @param limit The limit: MaxProofWeight (normative), or an SDK's own lower commitment ceiling.
    */
   final case class TooLarge(limit: Long) extends MerkleError {
-    def kind: MerkleErrorKind = "TooLarge"
+    def kind: MerkleErrorKind = MerkleErrorKind.TooLarge
   }
 }
 
 /** Every kind of MerkleError, in the family's order. */
-type MerkleErrorKind = "IndexOutOfRange" | "InvalidSizes" | "InvalidProof" | "RootMismatch" | "Encoding" | "TooLarge"
+enum MerkleErrorKind(val wire: String) {
+  case IndexOutOfRange extends MerkleErrorKind("IndexOutOfRange")
+  case InvalidSizes extends MerkleErrorKind("InvalidSizes")
+  case InvalidProof extends MerkleErrorKind("InvalidProof")
+  case RootMismatch extends MerkleErrorKind("RootMismatch")
+  case Encoding extends MerkleErrorKind("Encoding")
+  case TooLarge extends MerkleErrorKind("TooLarge")
+}
 
 object MerkleErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[MerkleErrorKind] = Vector("IndexOutOfRange", "InvalidSizes", "InvalidProof", "RootMismatch", "Encoding", "TooLarge")
+
+  private lazy val byWire = MerkleErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[MerkleErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[MerkleErrorKind] = Codec(
-    {
-      case "IndexOutOfRange" => Codec.literalText["IndexOutOfRange"]("IndexOutOfRange").encode("IndexOutOfRange")
-      case "InvalidSizes" => Codec.literalText["InvalidSizes"]("InvalidSizes").encode("InvalidSizes")
-      case "InvalidProof" => Codec.literalText["InvalidProof"]("InvalidProof").encode("InvalidProof")
-      case "RootMismatch" => Codec.literalText["RootMismatch"]("RootMismatch").encode("RootMismatch")
-      case "Encoding" => Codec.literalText["Encoding"]("Encoding").encode("Encoding")
-      case "TooLarge" => Codec.literalText["TooLarge"]("TooLarge").encode("TooLarge")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[MerkleErrorKind](v, List(
-
-      ), List(("IndexOutOfRange", "IndexOutOfRange": MerkleErrorKind), ("InvalidSizes", "InvalidSizes": MerkleErrorKind), ("InvalidProof", "InvalidProof": MerkleErrorKind), ("RootMismatch", "RootMismatch": MerkleErrorKind), ("Encoding", "Encoding": MerkleErrorKind), ("TooLarge", "TooLarge": MerkleErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[MerkleErrorKind](v, List(), List(("IndexOutOfRange", MerkleErrorKind.IndexOutOfRange), ("InvalidSizes", MerkleErrorKind.InvalidSizes), ("InvalidProof", MerkleErrorKind.InvalidProof), ("RootMismatch", MerkleErrorKind.RootMismatch), ("Encoding", MerkleErrorKind.Encoding), ("TooLarge", MerkleErrorKind.TooLarge)))
   )
 }
 
@@ -127,7 +127,7 @@ object PoseidonError {
    * @param max The most allowed (PoseidonMaxInputs).
    */
   final case class InputCount(count: Long, max: Long) extends PoseidonError {
-    def kind: PoseidonErrorKind = "InputCount"
+    def kind: PoseidonErrorKind = PoseidonErrorKind.InputCount
   }
 
   /**
@@ -136,26 +136,26 @@ object PoseidonError {
    * @param bits The value's bit length, never its digits, whose size the caller chose; a negative value's is that of -v - 1 (Java's BigInteger.bitLength), so -1 has 0 bits and -2^k has k.
    */
   final case class NonCanonical(bits: Long) extends PoseidonError {
-    def kind: PoseidonErrorKind = "NonCanonical"
+    def kind: PoseidonErrorKind = PoseidonErrorKind.NonCanonical
   }
 }
 
 /** Every kind of PoseidonError, in the family's order. */
-type PoseidonErrorKind = "InputCount" | "NonCanonical"
+enum PoseidonErrorKind(val wire: String) {
+  case InputCount extends PoseidonErrorKind("InputCount")
+  case NonCanonical extends PoseidonErrorKind("NonCanonical")
+}
 
 object PoseidonErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[PoseidonErrorKind] = Vector("InputCount", "NonCanonical")
+
+  private lazy val byWire = PoseidonErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[PoseidonErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[PoseidonErrorKind] = Codec(
-    {
-      case "InputCount" => Codec.literalText["InputCount"]("InputCount").encode("InputCount")
-      case "NonCanonical" => Codec.literalText["NonCanonical"]("NonCanonical").encode("NonCanonical")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[PoseidonErrorKind](v, List(
-
-      ), List(("InputCount", "InputCount": PoseidonErrorKind), ("NonCanonical", "NonCanonical": PoseidonErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[PoseidonErrorKind](v, List(), List(("InputCount", PoseidonErrorKind.InputCount), ("NonCanonical", PoseidonErrorKind.NonCanonical)))
   )
 }
 
@@ -178,7 +178,7 @@ object PoseidonMerkleError {
    * @param depth The depth (the number of siblings, or the tree's depth): normative (conformance.md section 3).
    */
   final case class Position(positionBits: Long, depth: Long) extends PoseidonMerkleError {
-    def kind: PoseidonMerkleErrorKind = "Position"
+    def kind: PoseidonMerkleErrorKind = PoseidonMerkleErrorKind.Position
   }
 
   /**
@@ -187,7 +187,7 @@ object PoseidonMerkleError {
    * @param depth The depth asked for, which may be negative.
    */
   final case class Depth(depth: Long) extends PoseidonMerkleError {
-    def kind: PoseidonMerkleErrorKind = "Depth"
+    def kind: PoseidonMerkleErrorKind = PoseidonMerkleErrorKind.Depth
   }
 
   /**
@@ -196,7 +196,7 @@ object PoseidonMerkleError {
    * @param positionBits The position's bit length.
    */
   final case class OccupiedPosition(positionBits: Long) extends PoseidonMerkleError {
-    def kind: PoseidonMerkleErrorKind = "OccupiedPosition"
+    def kind: PoseidonMerkleErrorKind = PoseidonMerkleErrorKind.OccupiedPosition
   }
 
   /**
@@ -205,28 +205,28 @@ object PoseidonMerkleError {
    * @param reason Why.
    */
   final case class Encoding(reason: String) extends PoseidonMerkleError {
-    def kind: PoseidonMerkleErrorKind = "Encoding"
+    def kind: PoseidonMerkleErrorKind = PoseidonMerkleErrorKind.Encoding
   }
 }
 
 /** Every kind of PoseidonMerkleError, in the family's order. */
-type PoseidonMerkleErrorKind = "Position" | "Depth" | "OccupiedPosition" | "Encoding"
+enum PoseidonMerkleErrorKind(val wire: String) {
+  case Position extends PoseidonMerkleErrorKind("Position")
+  case Depth extends PoseidonMerkleErrorKind("Depth")
+  case OccupiedPosition extends PoseidonMerkleErrorKind("OccupiedPosition")
+  case Encoding extends PoseidonMerkleErrorKind("Encoding")
+}
 
 object PoseidonMerkleErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[PoseidonMerkleErrorKind] = Vector("Position", "Depth", "OccupiedPosition", "Encoding")
+
+  private lazy val byWire = PoseidonMerkleErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[PoseidonMerkleErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[PoseidonMerkleErrorKind] = Codec(
-    {
-      case "Position" => Codec.literalText["Position"]("Position").encode("Position")
-      case "Depth" => Codec.literalText["Depth"]("Depth").encode("Depth")
-      case "OccupiedPosition" => Codec.literalText["OccupiedPosition"]("OccupiedPosition").encode("OccupiedPosition")
-      case "Encoding" => Codec.literalText["Encoding"]("Encoding").encode("Encoding")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[PoseidonMerkleErrorKind](v, List(
-
-      ), List(("Position", "Position": PoseidonMerkleErrorKind), ("Depth", "Depth": PoseidonMerkleErrorKind), ("OccupiedPosition", "OccupiedPosition": PoseidonMerkleErrorKind), ("Encoding", "Encoding": PoseidonMerkleErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[PoseidonMerkleErrorKind](v, List(), List(("Position", PoseidonMerkleErrorKind.Position), ("Depth", PoseidonMerkleErrorKind.Depth), ("OccupiedPosition", PoseidonMerkleErrorKind.OccupiedPosition), ("Encoding", PoseidonMerkleErrorKind.Encoding)))
   )
 }
 
@@ -249,7 +249,7 @@ object TrieError {
    * @param reason Why.
    */
   final case class InvalidKey(reason: String) extends TrieError {
-    def kind: TrieErrorKind = "InvalidKey"
+    def kind: TrieErrorKind = TrieErrorKind.InvalidKey
   }
 
   /**
@@ -258,7 +258,7 @@ object TrieError {
    * @param hash The node's hash, hex.
    */
   final case class MissingNode(hash: String) extends TrieError {
-    def kind: TrieErrorKind = "MissingNode"
+    def kind: TrieErrorKind = TrieErrorKind.MissingNode
   }
 
   /**
@@ -267,7 +267,7 @@ object TrieError {
    * @param reason Why.
    */
   final case class InvalidNode(reason: String) extends TrieError {
-    def kind: TrieErrorKind = "InvalidNode"
+    def kind: TrieErrorKind = TrieErrorKind.InvalidNode
   }
 
   /**
@@ -276,7 +276,7 @@ object TrieError {
    * @param reason Why.
    */
   final case class InvalidProof(reason: String) extends TrieError {
-    def kind: TrieErrorKind = "InvalidProof"
+    def kind: TrieErrorKind = TrieErrorKind.InvalidProof
   }
 
   /**
@@ -286,7 +286,7 @@ object TrieError {
    * @param computed The recomputed root, hex.
    */
   final case class RootMismatch(expected: String, computed: String) extends TrieError {
-    def kind: TrieErrorKind = "RootMismatch"
+    def kind: TrieErrorKind = TrieErrorKind.RootMismatch
   }
 
   /**
@@ -295,7 +295,7 @@ object TrieError {
    * @param reason Why.
    */
   final case class Encoding(reason: String) extends TrieError {
-    def kind: TrieErrorKind = "Encoding"
+    def kind: TrieErrorKind = TrieErrorKind.Encoding
   }
 
   /**
@@ -304,7 +304,7 @@ object TrieError {
    * @param what What was queried.
    */
   final case class NotCovered(what: String) extends TrieError {
-    def kind: TrieErrorKind = "NotCovered"
+    def kind: TrieErrorKind = TrieErrorKind.NotCovered
   }
 
   /**
@@ -314,32 +314,32 @@ object TrieError {
    * @param limit The limit: MaxProofWeight (normative), or an SDK's own lower commitment ceiling.
    */
   final case class TooLarge(limit: Long) extends TrieError {
-    def kind: TrieErrorKind = "TooLarge"
+    def kind: TrieErrorKind = TrieErrorKind.TooLarge
   }
 }
 
 /** Every kind of TrieError, in the family's order. */
-type TrieErrorKind = "InvalidKey" | "MissingNode" | "InvalidNode" | "InvalidProof" | "RootMismatch" | "Encoding" | "NotCovered" | "TooLarge"
+enum TrieErrorKind(val wire: String) {
+  case InvalidKey extends TrieErrorKind("InvalidKey")
+  case MissingNode extends TrieErrorKind("MissingNode")
+  case InvalidNode extends TrieErrorKind("InvalidNode")
+  case InvalidProof extends TrieErrorKind("InvalidProof")
+  case RootMismatch extends TrieErrorKind("RootMismatch")
+  case Encoding extends TrieErrorKind("Encoding")
+  case NotCovered extends TrieErrorKind("NotCovered")
+  case TooLarge extends TrieErrorKind("TooLarge")
+}
 
 object TrieErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[TrieErrorKind] = Vector("InvalidKey", "MissingNode", "InvalidNode", "InvalidProof", "RootMismatch", "Encoding", "NotCovered", "TooLarge")
+
+  private lazy val byWire = TrieErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[TrieErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[TrieErrorKind] = Codec(
-    {
-      case "InvalidKey" => Codec.literalText["InvalidKey"]("InvalidKey").encode("InvalidKey")
-      case "MissingNode" => Codec.literalText["MissingNode"]("MissingNode").encode("MissingNode")
-      case "InvalidNode" => Codec.literalText["InvalidNode"]("InvalidNode").encode("InvalidNode")
-      case "InvalidProof" => Codec.literalText["InvalidProof"]("InvalidProof").encode("InvalidProof")
-      case "RootMismatch" => Codec.literalText["RootMismatch"]("RootMismatch").encode("RootMismatch")
-      case "Encoding" => Codec.literalText["Encoding"]("Encoding").encode("Encoding")
-      case "NotCovered" => Codec.literalText["NotCovered"]("NotCovered").encode("NotCovered")
-      case "TooLarge" => Codec.literalText["TooLarge"]("TooLarge").encode("TooLarge")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[TrieErrorKind](v, List(
-
-      ), List(("InvalidKey", "InvalidKey": TrieErrorKind), ("MissingNode", "MissingNode": TrieErrorKind), ("InvalidNode", "InvalidNode": TrieErrorKind), ("InvalidProof", "InvalidProof": TrieErrorKind), ("RootMismatch", "RootMismatch": TrieErrorKind), ("Encoding", "Encoding": TrieErrorKind), ("NotCovered", "NotCovered": TrieErrorKind), ("TooLarge", "TooLarge": TrieErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[TrieErrorKind](v, List(), List(("InvalidKey", TrieErrorKind.InvalidKey), ("MissingNode", TrieErrorKind.MissingNode), ("InvalidNode", TrieErrorKind.InvalidNode), ("InvalidProof", TrieErrorKind.InvalidProof), ("RootMismatch", TrieErrorKind.RootMismatch), ("Encoding", TrieErrorKind.Encoding), ("NotCovered", TrieErrorKind.NotCovered), ("TooLarge", TrieErrorKind.TooLarge)))
   )
 }
 
@@ -375,7 +375,7 @@ object VersionedTrieError {
    * @param error The state key's refusal.
    */
   final case class Key(error: xyz.kd5ujc.models.codec_errors.StateKeyError) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "Key"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.Key
   }
 
   /**
@@ -384,12 +384,12 @@ object VersionedTrieError {
    * @param reason Why.
    */
   final case class InvalidVersion(reason: String) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "InvalidVersion"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.InvalidVersion
   }
 
   /** Nothing has been committed yet, so there is no head to read or prove against. */
   case object Empty extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "Empty"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.Empty
   }
 
   /**
@@ -399,7 +399,7 @@ object VersionedTrieError {
    * @param next The refused version's key (normative).
    */
   final case class VersionNotIncreasing(head: VersionKeyHex, next: VersionKeyHex) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "VersionNotIncreasing"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.VersionNotIncreasing
   }
 
   /**
@@ -409,7 +409,7 @@ object VersionedTrieError {
    * @param actual The store's head, by its version key.
    */
   final case class VersionConflict(expected: Option[VersionKeyHex], actual: Option[VersionKeyHex]) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "VersionConflict"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.VersionConflict
   }
 
   /**
@@ -418,7 +418,7 @@ object VersionedTrieError {
    * @param version Its version key.
    */
   final case class CommitRewrite(version: VersionKeyHex) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "CommitRewrite"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.CommitRewrite
   }
 
   /**
@@ -427,7 +427,7 @@ object VersionedTrieError {
    * @param version Its version key.
    */
   final case class NotRetained(version: VersionKeyHex) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "NotRetained"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.NotRetained
   }
 
   /**
@@ -436,7 +436,7 @@ object VersionedTrieError {
    * @param version Its version key (normative).
    */
   final case class UnknownVersion(version: VersionKeyHex) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "UnknownVersion"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.UnknownVersion
   }
 
   /**
@@ -447,7 +447,7 @@ object VersionedTrieError {
    * @param computed The recomputed root, hex (or `none`).
    */
   final case class RootMismatch(component: VtRootComponent, expected: String, computed: String) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "RootMismatch"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.RootMismatch
   }
 
   /**
@@ -456,7 +456,7 @@ object VersionedTrieError {
    * @param what What was queried.
    */
   final case class NotCovered(what: String) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "NotCovered"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.NotCovered
   }
 
   /**
@@ -465,7 +465,7 @@ object VersionedTrieError {
    * @param reason Why.
    */
   final case class Malformed(reason: String) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "Malformed"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.Malformed
   }
 
   /**
@@ -476,7 +476,7 @@ object VersionedTrieError {
    * @param limit The limit (normative): MaxValueBytes or MaxChunkBytes in bytes, or MaxProofWeight in weight.
    */
   final case class TooLarge(what: String, limit: Long) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "TooLarge"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.TooLarge
   }
 
   /**
@@ -487,7 +487,7 @@ object VersionedTrieError {
    * @param limit The limit (normative): MaxValueDepth.
    */
   final case class TooDeep(what: String, depth: Long, limit: Long) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "TooDeep"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.TooDeep
   }
 
   /**
@@ -496,7 +496,7 @@ object VersionedTrieError {
    * @param error The store's refusal.
    */
   final case class Store(error: xyz.kd5ujc.models.store_errors.StoreError) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "Store"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.Store
   }
 
   /**
@@ -505,39 +505,39 @@ object VersionedTrieError {
    * @param error The trie's refusal.
    */
   final case class Trie(error: TrieError) extends VersionedTrieError {
-    def kind: VersionedTrieErrorKind = "Trie"
+    def kind: VersionedTrieErrorKind = VersionedTrieErrorKind.Trie
   }
 }
 
 /** Every kind of VersionedTrieError, in the family's order. */
-type VersionedTrieErrorKind = "Key" | "InvalidVersion" | "Empty" | "VersionNotIncreasing" | "VersionConflict" | "CommitRewrite" | "NotRetained" | "UnknownVersion" | "RootMismatch" | "NotCovered" | "Malformed" | "TooLarge" | "TooDeep" | "Store" | "Trie"
+enum VersionedTrieErrorKind(val wire: String) {
+  case Key extends VersionedTrieErrorKind("Key")
+  case InvalidVersion extends VersionedTrieErrorKind("InvalidVersion")
+  case Empty extends VersionedTrieErrorKind("Empty")
+  case VersionNotIncreasing extends VersionedTrieErrorKind("VersionNotIncreasing")
+  case VersionConflict extends VersionedTrieErrorKind("VersionConflict")
+  case CommitRewrite extends VersionedTrieErrorKind("CommitRewrite")
+  case NotRetained extends VersionedTrieErrorKind("NotRetained")
+  case UnknownVersion extends VersionedTrieErrorKind("UnknownVersion")
+  case RootMismatch extends VersionedTrieErrorKind("RootMismatch")
+  case NotCovered extends VersionedTrieErrorKind("NotCovered")
+  case Malformed extends VersionedTrieErrorKind("Malformed")
+  case TooLarge extends VersionedTrieErrorKind("TooLarge")
+  case TooDeep extends VersionedTrieErrorKind("TooDeep")
+  case Store extends VersionedTrieErrorKind("Store")
+  case Trie extends VersionedTrieErrorKind("Trie")
+}
 
 object VersionedTrieErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[VersionedTrieErrorKind] = Vector("Key", "InvalidVersion", "Empty", "VersionNotIncreasing", "VersionConflict", "CommitRewrite", "NotRetained", "UnknownVersion", "RootMismatch", "NotCovered", "Malformed", "TooLarge", "TooDeep", "Store", "Trie")
+
+  private lazy val byWire = VersionedTrieErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[VersionedTrieErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[VersionedTrieErrorKind] = Codec(
-    {
-      case "Key" => Codec.literalText["Key"]("Key").encode("Key")
-      case "InvalidVersion" => Codec.literalText["InvalidVersion"]("InvalidVersion").encode("InvalidVersion")
-      case "Empty" => Codec.literalText["Empty"]("Empty").encode("Empty")
-      case "VersionNotIncreasing" => Codec.literalText["VersionNotIncreasing"]("VersionNotIncreasing").encode("VersionNotIncreasing")
-      case "VersionConflict" => Codec.literalText["VersionConflict"]("VersionConflict").encode("VersionConflict")
-      case "CommitRewrite" => Codec.literalText["CommitRewrite"]("CommitRewrite").encode("CommitRewrite")
-      case "NotRetained" => Codec.literalText["NotRetained"]("NotRetained").encode("NotRetained")
-      case "UnknownVersion" => Codec.literalText["UnknownVersion"]("UnknownVersion").encode("UnknownVersion")
-      case "RootMismatch" => Codec.literalText["RootMismatch"]("RootMismatch").encode("RootMismatch")
-      case "NotCovered" => Codec.literalText["NotCovered"]("NotCovered").encode("NotCovered")
-      case "Malformed" => Codec.literalText["Malformed"]("Malformed").encode("Malformed")
-      case "TooLarge" => Codec.literalText["TooLarge"]("TooLarge").encode("TooLarge")
-      case "TooDeep" => Codec.literalText["TooDeep"]("TooDeep").encode("TooDeep")
-      case "Store" => Codec.literalText["Store"]("Store").encode("Store")
-      case "Trie" => Codec.literalText["Trie"]("Trie").encode("Trie")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[VersionedTrieErrorKind](v, List(
-
-      ), List(("Key", "Key": VersionedTrieErrorKind), ("InvalidVersion", "InvalidVersion": VersionedTrieErrorKind), ("Empty", "Empty": VersionedTrieErrorKind), ("VersionNotIncreasing", "VersionNotIncreasing": VersionedTrieErrorKind), ("VersionConflict", "VersionConflict": VersionedTrieErrorKind), ("CommitRewrite", "CommitRewrite": VersionedTrieErrorKind), ("NotRetained", "NotRetained": VersionedTrieErrorKind), ("UnknownVersion", "UnknownVersion": VersionedTrieErrorKind), ("RootMismatch", "RootMismatch": VersionedTrieErrorKind), ("NotCovered", "NotCovered": VersionedTrieErrorKind), ("Malformed", "Malformed": VersionedTrieErrorKind), ("TooLarge", "TooLarge": VersionedTrieErrorKind), ("TooDeep", "TooDeep": VersionedTrieErrorKind), ("Store", "Store": VersionedTrieErrorKind), ("Trie", "Trie": VersionedTrieErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[VersionedTrieErrorKind](v, List(), List(("Key", VersionedTrieErrorKind.Key), ("InvalidVersion", VersionedTrieErrorKind.InvalidVersion), ("Empty", VersionedTrieErrorKind.Empty), ("VersionNotIncreasing", VersionedTrieErrorKind.VersionNotIncreasing), ("VersionConflict", VersionedTrieErrorKind.VersionConflict), ("CommitRewrite", VersionedTrieErrorKind.CommitRewrite), ("NotRetained", VersionedTrieErrorKind.NotRetained), ("UnknownVersion", VersionedTrieErrorKind.UnknownVersion), ("RootMismatch", VersionedTrieErrorKind.RootMismatch), ("NotCovered", VersionedTrieErrorKind.NotCovered), ("Malformed", VersionedTrieErrorKind.Malformed), ("TooLarge", VersionedTrieErrorKind.TooLarge), ("TooDeep", VersionedTrieErrorKind.TooDeep), ("Store", VersionedTrieErrorKind.Store), ("Trie", VersionedTrieErrorKind.Trie)))
   )
 }
 
@@ -545,22 +545,22 @@ object VersionedTrieErrorKind {
  * Which recomputed root differs from the claimed or trusted one: the commitment root, the state trie's, the history
  * trie's, or a delta's parent.
  */
-type VtRootComponent = "root" | "state" | "history" | "parent"
+enum VtRootComponent(val wire: String) {
+  case Root extends VtRootComponent("root")
+  case State extends VtRootComponent("state")
+  case History extends VtRootComponent("history")
+  case Parent extends VtRootComponent("parent")
+}
 
 object VtRootComponent {
-  /** Every alternative, in schema order. */
-  val values: Vector[VtRootComponent] = Vector("root", "state", "history", "parent")
+
+  private lazy val byWire = VtRootComponent.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[VtRootComponent] = byWire.get(wire)
 
   lazy val codec: Codec[VtRootComponent] = Codec(
-    {
-      case "root" => Codec.literalText["root"]("root").encode("root")
-      case "state" => Codec.literalText["state"]("state").encode("state")
-      case "history" => Codec.literalText["history"]("history").encode("history")
-      case "parent" => Codec.literalText["parent"]("parent").encode("parent")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[VtRootComponent](v, List(
-
-      ), List(("root", "root": VtRootComponent), ("state", "state": VtRootComponent), ("history", "history": VtRootComponent), ("parent", "parent": VtRootComponent)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[VtRootComponent](v, List(), List(("root", VtRootComponent.Root), ("state", VtRootComponent.State), ("history", VtRootComponent.History), ("parent", VtRootComponent.Parent)))
   )
 }

@@ -85,7 +85,7 @@ object CanonicalCirce {
       case CInt(n)      => Eval.now(Json.fromBigInt(n).asRight)
       case r: CRational => Eval.now(CanonicalJson.rationalText(r).map(d => Json.fromBigDecimal(BigDecimal(d))))
       case t: CText     => Eval.now(Json.fromString(t.value).asRight)
-      case CBytes(_)    => Eval.now(NotJsonRepresentable("bytes").asLeft)
+      case CBytes(_)    => Eval.now(NotJsonRepresentable(xyz.kd5ujc.models.codec_errors.NotJson.Bytes).asLeft)
       case CArray(vs)   => Eval.defer(vs.traverse(toCirceEval)).map(_.sequence.map(Json.fromValues))
       case CMap(m) =>
         Eval

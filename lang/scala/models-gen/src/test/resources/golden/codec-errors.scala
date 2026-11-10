@@ -20,7 +20,7 @@ sealed trait CanonicalError extends Product with Serializable {
 object CanonicalError {
   /** Text with an unpaired UTF-16 surrogate; only JSON `\u` escapes can produce one. */
   case object UnpairedSurrogate extends CanonicalError {
-    def kind: CanonicalErrorKind = "UnpairedSurrogate"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.UnpairedSurrogate
   }
 
   /**
@@ -29,7 +29,7 @@ object CanonicalError {
    * @param key The repeated key.
    */
   final case class DuplicateKey(key: xyz.kd5ujc.core.canonical.Preview) extends CanonicalError {
-    def kind: CanonicalErrorKind = "DuplicateKey"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.DuplicateKey
   }
 
   /**
@@ -38,7 +38,7 @@ object CanonicalError {
    * @param limit The bound, in bits (MaxRationalBits).
    */
   final case class RationalTooWide(limit: Long) extends CanonicalError {
-    def kind: CanonicalErrorKind = "RationalTooWide"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.RationalTooWide
   }
 
   /**
@@ -47,7 +47,7 @@ object CanonicalError {
    * @param limit The bound, in bits (MaxIntegerBits).
    */
   final case class IntegerTooWide(limit: Long) extends CanonicalError {
-    def kind: CanonicalErrorKind = "IntegerTooWide"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.IntegerTooWide
   }
 
   /**
@@ -57,7 +57,7 @@ object CanonicalError {
    * @param reason The rule that failed.
    */
   final case class JsonSyntax(offset: Long, reason: JsonSyntaxReason) extends CanonicalError {
-    def kind: CanonicalErrorKind = "JsonSyntax"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.JsonSyntax
   }
 
   /**
@@ -68,7 +68,7 @@ object CanonicalError {
    * @param bound The bound it exceeds, when that is the problem; absent for a malformed number.
    */
   final case class InvalidNumber(length: Option[Long], offset: Option[Long], bound: Option[NumberBound]) extends CanonicalError {
-    def kind: CanonicalErrorKind = "InvalidNumber"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.InvalidNumber
   }
 
   /**
@@ -77,7 +77,7 @@ object CanonicalError {
    * @param what What JSON could not hold.
    */
   final case class NotJsonRepresentable(what: NotJson) extends CanonicalError {
-    def kind: CanonicalErrorKind = "NotJsonRepresentable"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.NotJsonRepresentable
   }
 
   /**
@@ -86,7 +86,7 @@ object CanonicalError {
    * @param reason What does not fit, never the value itself.
    */
   final case class TypeMismatch(reason: String) extends CanonicalError {
-    def kind: CanonicalErrorKind = "TypeMismatch"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.TypeMismatch
   }
 
   /**
@@ -95,7 +95,7 @@ object CanonicalError {
    * @param offset Where more input was needed.
    */
   final case class UnexpectedEnd(offset: Long) extends CanonicalError {
-    def kind: CanonicalErrorKind = "UnexpectedEnd"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.UnexpectedEnd
   }
 
   /**
@@ -104,7 +104,7 @@ object CanonicalError {
    * @param offset The first trailing byte.
    */
   final case class TrailingBytes(offset: Long) extends CanonicalError {
-    def kind: CanonicalErrorKind = "TrailingBytes"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.TrailingBytes
   }
 
   /**
@@ -113,7 +113,7 @@ object CanonicalError {
    * @param limit The limit in force.
    */
   final case class DepthExceeded(limit: Long) extends CanonicalError {
-    def kind: CanonicalErrorKind = "DepthExceeded"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.DepthExceeded
   }
 
   /**
@@ -123,7 +123,7 @@ object CanonicalError {
    * @param reason Which rule it breaks.
    */
   final case class NonCanonical(offset: Long, reason: NonCanonicalReason) extends CanonicalError {
-    def kind: CanonicalErrorKind = "NonCanonical"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.NonCanonical
   }
 
   /**
@@ -133,7 +133,7 @@ object CanonicalError {
    * @param item What it is.
    */
   final case class Unsupported(offset: Long, item: UnsupportedItem) extends CanonicalError {
-    def kind: CanonicalErrorKind = "Unsupported"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.Unsupported
   }
 
   /**
@@ -142,38 +142,38 @@ object CanonicalError {
    * @param offset The string's content.
    */
   final case class InvalidUtf8(offset: Long) extends CanonicalError {
-    def kind: CanonicalErrorKind = "InvalidUtf8"
+    def kind: CanonicalErrorKind = CanonicalErrorKind.InvalidUtf8
   }
 }
 
 /** Every kind of CanonicalError, in the family's order. */
-type CanonicalErrorKind = "UnpairedSurrogate" | "DuplicateKey" | "RationalTooWide" | "IntegerTooWide" | "JsonSyntax" | "InvalidNumber" | "NotJsonRepresentable" | "TypeMismatch" | "UnexpectedEnd" | "TrailingBytes" | "DepthExceeded" | "NonCanonical" | "Unsupported" | "InvalidUtf8"
+enum CanonicalErrorKind(val wire: String) {
+  case UnpairedSurrogate extends CanonicalErrorKind("UnpairedSurrogate")
+  case DuplicateKey extends CanonicalErrorKind("DuplicateKey")
+  case RationalTooWide extends CanonicalErrorKind("RationalTooWide")
+  case IntegerTooWide extends CanonicalErrorKind("IntegerTooWide")
+  case JsonSyntax extends CanonicalErrorKind("JsonSyntax")
+  case InvalidNumber extends CanonicalErrorKind("InvalidNumber")
+  case NotJsonRepresentable extends CanonicalErrorKind("NotJsonRepresentable")
+  case TypeMismatch extends CanonicalErrorKind("TypeMismatch")
+  case UnexpectedEnd extends CanonicalErrorKind("UnexpectedEnd")
+  case TrailingBytes extends CanonicalErrorKind("TrailingBytes")
+  case DepthExceeded extends CanonicalErrorKind("DepthExceeded")
+  case NonCanonical extends CanonicalErrorKind("NonCanonical")
+  case Unsupported extends CanonicalErrorKind("Unsupported")
+  case InvalidUtf8 extends CanonicalErrorKind("InvalidUtf8")
+}
 
 object CanonicalErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[CanonicalErrorKind] = Vector("UnpairedSurrogate", "DuplicateKey", "RationalTooWide", "IntegerTooWide", "JsonSyntax", "InvalidNumber", "NotJsonRepresentable", "TypeMismatch", "UnexpectedEnd", "TrailingBytes", "DepthExceeded", "NonCanonical", "Unsupported", "InvalidUtf8")
+
+  private lazy val byWire = CanonicalErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[CanonicalErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[CanonicalErrorKind] = Codec(
-    {
-      case "UnpairedSurrogate" => Codec.literalText["UnpairedSurrogate"]("UnpairedSurrogate").encode("UnpairedSurrogate")
-      case "DuplicateKey" => Codec.literalText["DuplicateKey"]("DuplicateKey").encode("DuplicateKey")
-      case "RationalTooWide" => Codec.literalText["RationalTooWide"]("RationalTooWide").encode("RationalTooWide")
-      case "IntegerTooWide" => Codec.literalText["IntegerTooWide"]("IntegerTooWide").encode("IntegerTooWide")
-      case "JsonSyntax" => Codec.literalText["JsonSyntax"]("JsonSyntax").encode("JsonSyntax")
-      case "InvalidNumber" => Codec.literalText["InvalidNumber"]("InvalidNumber").encode("InvalidNumber")
-      case "NotJsonRepresentable" => Codec.literalText["NotJsonRepresentable"]("NotJsonRepresentable").encode("NotJsonRepresentable")
-      case "TypeMismatch" => Codec.literalText["TypeMismatch"]("TypeMismatch").encode("TypeMismatch")
-      case "UnexpectedEnd" => Codec.literalText["UnexpectedEnd"]("UnexpectedEnd").encode("UnexpectedEnd")
-      case "TrailingBytes" => Codec.literalText["TrailingBytes"]("TrailingBytes").encode("TrailingBytes")
-      case "DepthExceeded" => Codec.literalText["DepthExceeded"]("DepthExceeded").encode("DepthExceeded")
-      case "NonCanonical" => Codec.literalText["NonCanonical"]("NonCanonical").encode("NonCanonical")
-      case "Unsupported" => Codec.literalText["Unsupported"]("Unsupported").encode("Unsupported")
-      case "InvalidUtf8" => Codec.literalText["InvalidUtf8"]("InvalidUtf8").encode("InvalidUtf8")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[CanonicalErrorKind](v, List(
-
-      ), List(("UnpairedSurrogate", "UnpairedSurrogate": CanonicalErrorKind), ("DuplicateKey", "DuplicateKey": CanonicalErrorKind), ("RationalTooWide", "RationalTooWide": CanonicalErrorKind), ("IntegerTooWide", "IntegerTooWide": CanonicalErrorKind), ("JsonSyntax", "JsonSyntax": CanonicalErrorKind), ("InvalidNumber", "InvalidNumber": CanonicalErrorKind), ("NotJsonRepresentable", "NotJsonRepresentable": CanonicalErrorKind), ("TypeMismatch", "TypeMismatch": CanonicalErrorKind), ("UnexpectedEnd", "UnexpectedEnd": CanonicalErrorKind), ("TrailingBytes", "TrailingBytes": CanonicalErrorKind), ("DepthExceeded", "DepthExceeded": CanonicalErrorKind), ("NonCanonical", "NonCanonical": CanonicalErrorKind), ("Unsupported", "Unsupported": CanonicalErrorKind), ("InvalidUtf8", "InvalidUtf8": CanonicalErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[CanonicalErrorKind](v, List(), List(("UnpairedSurrogate", CanonicalErrorKind.UnpairedSurrogate), ("DuplicateKey", CanonicalErrorKind.DuplicateKey), ("RationalTooWide", CanonicalErrorKind.RationalTooWide), ("IntegerTooWide", CanonicalErrorKind.IntegerTooWide), ("JsonSyntax", CanonicalErrorKind.JsonSyntax), ("InvalidNumber", CanonicalErrorKind.InvalidNumber), ("NotJsonRepresentable", CanonicalErrorKind.NotJsonRepresentable), ("TypeMismatch", CanonicalErrorKind.TypeMismatch), ("UnexpectedEnd", CanonicalErrorKind.UnexpectedEnd), ("TrailingBytes", CanonicalErrorKind.TrailingBytes), ("DepthExceeded", CanonicalErrorKind.DepthExceeded), ("NonCanonical", CanonicalErrorKind.NonCanonical), ("Unsupported", CanonicalErrorKind.Unsupported), ("InvalidUtf8", CanonicalErrorKind.InvalidUtf8)))
   )
 }
 
@@ -181,28 +181,28 @@ object CanonicalErrorKind {
  * The JSON syntax rule that failed: a value, a member name, `:`, `,` or `]`, `,` or `}` expected; content after the
  * top-level value; a string with no closing quote; a control character inside a string; an unknown or truncated escape.
  */
-type JsonSyntaxReason = "expectedValue" | "expectedMemberName" | "expectedColon" | "expectedCommaOrBracket" | "expectedCommaOrBrace" | "trailingContent" | "unterminatedString" | "controlCharacter" | "invalidEscape"
+enum JsonSyntaxReason(val wire: String) {
+  case ExpectedValue extends JsonSyntaxReason("expectedValue")
+  case ExpectedMemberName extends JsonSyntaxReason("expectedMemberName")
+  case ExpectedColon extends JsonSyntaxReason("expectedColon")
+  case ExpectedCommaOrBracket extends JsonSyntaxReason("expectedCommaOrBracket")
+  case ExpectedCommaOrBrace extends JsonSyntaxReason("expectedCommaOrBrace")
+  case TrailingContent extends JsonSyntaxReason("trailingContent")
+  case UnterminatedString extends JsonSyntaxReason("unterminatedString")
+  case ControlCharacter extends JsonSyntaxReason("controlCharacter")
+  case InvalidEscape extends JsonSyntaxReason("invalidEscape")
+}
 
 object JsonSyntaxReason {
-  /** Every alternative, in schema order. */
-  val values: Vector[JsonSyntaxReason] = Vector("expectedValue", "expectedMemberName", "expectedColon", "expectedCommaOrBracket", "expectedCommaOrBrace", "trailingContent", "unterminatedString", "controlCharacter", "invalidEscape")
+
+  private lazy val byWire = JsonSyntaxReason.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[JsonSyntaxReason] = byWire.get(wire)
 
   lazy val codec: Codec[JsonSyntaxReason] = Codec(
-    {
-      case "expectedValue" => Codec.literalText["expectedValue"]("expectedValue").encode("expectedValue")
-      case "expectedMemberName" => Codec.literalText["expectedMemberName"]("expectedMemberName").encode("expectedMemberName")
-      case "expectedColon" => Codec.literalText["expectedColon"]("expectedColon").encode("expectedColon")
-      case "expectedCommaOrBracket" => Codec.literalText["expectedCommaOrBracket"]("expectedCommaOrBracket").encode("expectedCommaOrBracket")
-      case "expectedCommaOrBrace" => Codec.literalText["expectedCommaOrBrace"]("expectedCommaOrBrace").encode("expectedCommaOrBrace")
-      case "trailingContent" => Codec.literalText["trailingContent"]("trailingContent").encode("trailingContent")
-      case "unterminatedString" => Codec.literalText["unterminatedString"]("unterminatedString").encode("unterminatedString")
-      case "controlCharacter" => Codec.literalText["controlCharacter"]("controlCharacter").encode("controlCharacter")
-      case "invalidEscape" => Codec.literalText["invalidEscape"]("invalidEscape").encode("invalidEscape")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[JsonSyntaxReason](v, List(
-
-      ), List(("expectedValue", "expectedValue": JsonSyntaxReason), ("expectedMemberName", "expectedMemberName": JsonSyntaxReason), ("expectedColon", "expectedColon": JsonSyntaxReason), ("expectedCommaOrBracket", "expectedCommaOrBracket": JsonSyntaxReason), ("expectedCommaOrBrace", "expectedCommaOrBrace": JsonSyntaxReason), ("trailingContent", "trailingContent": JsonSyntaxReason), ("unterminatedString", "unterminatedString": JsonSyntaxReason), ("controlCharacter", "controlCharacter": JsonSyntaxReason), ("invalidEscape", "invalidEscape": JsonSyntaxReason)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[JsonSyntaxReason](v, List(), List(("expectedValue", JsonSyntaxReason.ExpectedValue), ("expectedMemberName", JsonSyntaxReason.ExpectedMemberName), ("expectedColon", JsonSyntaxReason.ExpectedColon), ("expectedCommaOrBracket", JsonSyntaxReason.ExpectedCommaOrBracket), ("expectedCommaOrBrace", JsonSyntaxReason.ExpectedCommaOrBrace), ("trailingContent", JsonSyntaxReason.TrailingContent), ("unterminatedString", JsonSyntaxReason.UnterminatedString), ("controlCharacter", JsonSyntaxReason.ControlCharacter), ("invalidEscape", JsonSyntaxReason.InvalidEscape)))
   )
 }
 
@@ -213,29 +213,29 @@ object JsonSyntaxReason {
  * a byte string; tag 30 around something other than a 2-element array; a rational part that is not an integer; a
  * denominator below 2; a rational not in lowest terms.
  */
-type NonCanonicalReason = "nonShortestArgument" | "keyOrder" | "nullMapValue" | "bignumLeadingZero" | "bignumInRange" | "bignumNotBytes" | "rationalNotPair" | "rationalNotInteger" | "rationalDenominator" | "rationalNotReduced"
+enum NonCanonicalReason(val wire: String) {
+  case NonShortestArgument extends NonCanonicalReason("nonShortestArgument")
+  case KeyOrder extends NonCanonicalReason("keyOrder")
+  case NullMapValue extends NonCanonicalReason("nullMapValue")
+  case BignumLeadingZero extends NonCanonicalReason("bignumLeadingZero")
+  case BignumInRange extends NonCanonicalReason("bignumInRange")
+  case BignumNotBytes extends NonCanonicalReason("bignumNotBytes")
+  case RationalNotPair extends NonCanonicalReason("rationalNotPair")
+  case RationalNotInteger extends NonCanonicalReason("rationalNotInteger")
+  case RationalDenominator extends NonCanonicalReason("rationalDenominator")
+  case RationalNotReduced extends NonCanonicalReason("rationalNotReduced")
+}
 
 object NonCanonicalReason {
-  /** Every alternative, in schema order. */
-  val values: Vector[NonCanonicalReason] = Vector("nonShortestArgument", "keyOrder", "nullMapValue", "bignumLeadingZero", "bignumInRange", "bignumNotBytes", "rationalNotPair", "rationalNotInteger", "rationalDenominator", "rationalNotReduced")
+
+  private lazy val byWire = NonCanonicalReason.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[NonCanonicalReason] = byWire.get(wire)
 
   lazy val codec: Codec[NonCanonicalReason] = Codec(
-    {
-      case "nonShortestArgument" => Codec.literalText["nonShortestArgument"]("nonShortestArgument").encode("nonShortestArgument")
-      case "keyOrder" => Codec.literalText["keyOrder"]("keyOrder").encode("keyOrder")
-      case "nullMapValue" => Codec.literalText["nullMapValue"]("nullMapValue").encode("nullMapValue")
-      case "bignumLeadingZero" => Codec.literalText["bignumLeadingZero"]("bignumLeadingZero").encode("bignumLeadingZero")
-      case "bignumInRange" => Codec.literalText["bignumInRange"]("bignumInRange").encode("bignumInRange")
-      case "bignumNotBytes" => Codec.literalText["bignumNotBytes"]("bignumNotBytes").encode("bignumNotBytes")
-      case "rationalNotPair" => Codec.literalText["rationalNotPair"]("rationalNotPair").encode("rationalNotPair")
-      case "rationalNotInteger" => Codec.literalText["rationalNotInteger"]("rationalNotInteger").encode("rationalNotInteger")
-      case "rationalDenominator" => Codec.literalText["rationalDenominator"]("rationalDenominator").encode("rationalDenominator")
-      case "rationalNotReduced" => Codec.literalText["rationalNotReduced"]("rationalNotReduced").encode("rationalNotReduced")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[NonCanonicalReason](v, List(
-
-      ), List(("nonShortestArgument", "nonShortestArgument": NonCanonicalReason), ("keyOrder", "keyOrder": NonCanonicalReason), ("nullMapValue", "nullMapValue": NonCanonicalReason), ("bignumLeadingZero", "bignumLeadingZero": NonCanonicalReason), ("bignumInRange", "bignumInRange": NonCanonicalReason), ("bignumNotBytes", "bignumNotBytes": NonCanonicalReason), ("rationalNotPair", "rationalNotPair": NonCanonicalReason), ("rationalNotInteger", "rationalNotInteger": NonCanonicalReason), ("rationalDenominator", "rationalDenominator": NonCanonicalReason), ("rationalNotReduced", "rationalNotReduced": NonCanonicalReason)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[NonCanonicalReason](v, List(), List(("nonShortestArgument", NonCanonicalReason.NonShortestArgument), ("keyOrder", NonCanonicalReason.KeyOrder), ("nullMapValue", NonCanonicalReason.NullMapValue), ("bignumLeadingZero", NonCanonicalReason.BignumLeadingZero), ("bignumInRange", NonCanonicalReason.BignumInRange), ("bignumNotBytes", NonCanonicalReason.BignumNotBytes), ("rationalNotPair", NonCanonicalReason.RationalNotPair), ("rationalNotInteger", NonCanonicalReason.RationalNotInteger), ("rationalDenominator", NonCanonicalReason.RationalDenominator), ("rationalNotReduced", NonCanonicalReason.RationalNotReduced)))
   )
 }
 
@@ -244,22 +244,22 @@ object NonCanonicalReason {
  * pass the digit or scale bound, so it could not be read back. A rendering past a byte limit is no CanonicalError in any
  * SDK: it is TooLarge, with the limit (the reference's render past MaxRenderBytes too).
  */
-type NotJson = "bytes" | "non-terminating rational" | "over-long number"
+enum NotJson(val wire: String) {
+  case Bytes extends NotJson("bytes")
+  case NonTerminatingRational extends NotJson("non-terminating rational")
+  case OverLongNumber extends NotJson("over-long number")
+}
 
 object NotJson {
-  /** Every alternative, in schema order. */
-  val values: Vector[NotJson] = Vector("bytes", "non-terminating rational", "over-long number")
+
+  private lazy val byWire = NotJson.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[NotJson] = byWire.get(wire)
 
   lazy val codec: Codec[NotJson] = Codec(
-    {
-      case "bytes" => Codec.literalText["bytes"]("bytes").encode("bytes")
-      case "non-terminating rational" => Codec.literalText["non-terminating rational"]("non-terminating rational").encode("non-terminating rational")
-      case "over-long number" => Codec.literalText["over-long number"]("over-long number").encode("over-long number")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[NotJson](v, List(
-
-      ), List(("bytes", "bytes": NotJson), ("non-terminating rational", "non-terminating rational": NotJson), ("over-long number", "over-long number": NotJson)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[NotJson](v, List(), List(("bytes", NotJson.Bytes), ("non-terminating rational", NotJson.NonTerminatingRational), ("over-long number", NotJson.OverLongNumber)))
   )
 }
 
@@ -282,7 +282,7 @@ object NumberBound {
    * @param limit The most accepted.
    */
   final case class Digits(digits: Long, limit: Long) extends NumberBound {
-    def kind: NumberBoundKind = "Digits"
+    def kind: NumberBoundKind = NumberBoundKind.Digits
   }
 
   /**
@@ -292,7 +292,7 @@ object NumberBound {
    * @param limit The largest accepted magnitude.
    */
   final case class Scale(scale: Int, limit: Long) extends NumberBound {
-    def kind: NumberBoundKind = "Scale"
+    def kind: NumberBoundKind = NumberBoundKind.Scale
   }
 
   /**
@@ -302,26 +302,26 @@ object NumberBound {
    * @param limit The budget (limits.cddl canonical-max-json-exponents).
    */
   final case class Exponents(exponents: Long, limit: Long) extends NumberBound {
-    def kind: NumberBoundKind = "Exponents"
+    def kind: NumberBoundKind = NumberBoundKind.Exponents
   }
 }
 
-type NumberBoundKind = "Digits" | "Scale" | "Exponents"
+enum NumberBoundKind(val wire: String) {
+  case Digits extends NumberBoundKind("Digits")
+  case Scale extends NumberBoundKind("Scale")
+  case Exponents extends NumberBoundKind("Exponents")
+}
 
 object NumberBoundKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[NumberBoundKind] = Vector("Digits", "Scale", "Exponents")
+
+  private lazy val byWire = NumberBoundKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[NumberBoundKind] = byWire.get(wire)
 
   lazy val codec: Codec[NumberBoundKind] = Codec(
-    {
-      case "Digits" => Codec.literalText["Digits"]("Digits").encode("Digits")
-      case "Scale" => Codec.literalText["Scale"]("Scale").encode("Scale")
-      case "Exponents" => Codec.literalText["Exponents"]("Exponents").encode("Exponents")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[NumberBoundKind](v, List(
-
-      ), List(("Digits", "Digits": NumberBoundKind), ("Scale", "Scale": NumberBoundKind), ("Exponents", "Exponents": NumberBoundKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[NumberBoundKind](v, List(), List(("Digits", NumberBoundKind.Digits), ("Scale", NumberBoundKind.Scale), ("Exponents", NumberBoundKind.Exponents)))
   )
 }
 
@@ -340,7 +340,7 @@ sealed trait StateKeyError extends Product with Serializable {
 object StateKeyError {
   /** The empty text. */
   case object Empty extends StateKeyError {
-    def kind: StateKeyErrorKind = "Empty"
+    def kind: StateKeyErrorKind = StateKeyErrorKind.Empty
   }
 
   /**
@@ -349,12 +349,12 @@ object StateKeyError {
    * @param limit The most UTF-8 bytes a key holds (StateKeyMaxLength).
    */
   final case class TooLong(limit: Long) extends StateKeyError {
-    def kind: StateKeyErrorKind = "TooLong"
+    def kind: StateKeyErrorKind = StateKeyErrorKind.TooLong
   }
 
   /** Trie-key bytes that are not well-formed UTF-8. */
   case object NotUtf8 extends StateKeyError {
-    def kind: StateKeyErrorKind = "NotUtf8"
+    def kind: StateKeyErrorKind = StateKeyErrorKind.NotUtf8
   }
 
   /**
@@ -364,7 +364,7 @@ object StateKeyError {
    * @param limit The most segments a key holds (StateKeyMaxSegments).
    */
   final case class TooManySegments(key: xyz.kd5ujc.core.canonical.Preview, limit: Long) extends StateKeyError {
-    def kind: StateKeyErrorKind = "TooManySegments"
+    def kind: StateKeyErrorKind = StateKeyErrorKind.TooManySegments
   }
 
   /**
@@ -374,7 +374,7 @@ object StateKeyError {
    * @param segment The segment's position, from 0 (normative).
    */
   final case class InvalidSegment(key: xyz.kd5ujc.core.canonical.Preview, segment: Long) extends StateKeyError {
-    def kind: StateKeyErrorKind = "InvalidSegment"
+    def kind: StateKeyErrorKind = StateKeyErrorKind.InvalidSegment
   }
 
   /**
@@ -385,7 +385,7 @@ object StateKeyError {
    * @param limit The most characters a segment holds (StateKeyMaxSegmentLength).
    */
   final case class SegmentTooLong(key: xyz.kd5ujc.core.canonical.Preview, segment: Long, limit: Long) extends StateKeyError {
-    def kind: StateKeyErrorKind = "SegmentTooLong"
+    def kind: StateKeyErrorKind = StateKeyErrorKind.SegmentTooLong
   }
 
   /**
@@ -394,31 +394,31 @@ object StateKeyError {
    * @param namespace The namespace.
    */
   final case class NamespaceFull(namespace: xyz.kd5ujc.core.canonical.Preview) extends StateKeyError {
-    def kind: StateKeyErrorKind = "NamespaceFull"
+    def kind: StateKeyErrorKind = StateKeyErrorKind.NamespaceFull
   }
 }
 
 /** Every kind of StateKeyError, in the family's order. */
-type StateKeyErrorKind = "Empty" | "TooLong" | "NotUtf8" | "TooManySegments" | "InvalidSegment" | "SegmentTooLong" | "NamespaceFull"
+enum StateKeyErrorKind(val wire: String) {
+  case Empty extends StateKeyErrorKind("Empty")
+  case TooLong extends StateKeyErrorKind("TooLong")
+  case NotUtf8 extends StateKeyErrorKind("NotUtf8")
+  case TooManySegments extends StateKeyErrorKind("TooManySegments")
+  case InvalidSegment extends StateKeyErrorKind("InvalidSegment")
+  case SegmentTooLong extends StateKeyErrorKind("SegmentTooLong")
+  case NamespaceFull extends StateKeyErrorKind("NamespaceFull")
+}
 
 object StateKeyErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[StateKeyErrorKind] = Vector("Empty", "TooLong", "NotUtf8", "TooManySegments", "InvalidSegment", "SegmentTooLong", "NamespaceFull")
+
+  private lazy val byWire = StateKeyErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[StateKeyErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[StateKeyErrorKind] = Codec(
-    {
-      case "Empty" => Codec.literalText["Empty"]("Empty").encode("Empty")
-      case "TooLong" => Codec.literalText["TooLong"]("TooLong").encode("TooLong")
-      case "NotUtf8" => Codec.literalText["NotUtf8"]("NotUtf8").encode("NotUtf8")
-      case "TooManySegments" => Codec.literalText["TooManySegments"]("TooManySegments").encode("TooManySegments")
-      case "InvalidSegment" => Codec.literalText["InvalidSegment"]("InvalidSegment").encode("InvalidSegment")
-      case "SegmentTooLong" => Codec.literalText["SegmentTooLong"]("SegmentTooLong").encode("SegmentTooLong")
-      case "NamespaceFull" => Codec.literalText["NamespaceFull"]("NamespaceFull").encode("NamespaceFull")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[StateKeyErrorKind](v, List(
-
-      ), List(("Empty", "Empty": StateKeyErrorKind), ("TooLong", "TooLong": StateKeyErrorKind), ("NotUtf8", "NotUtf8": StateKeyErrorKind), ("TooManySegments", "TooManySegments": StateKeyErrorKind), ("InvalidSegment", "InvalidSegment": StateKeyErrorKind), ("SegmentTooLong", "SegmentTooLong": StateKeyErrorKind), ("NamespaceFull", "NamespaceFull": StateKeyErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[StateKeyErrorKind](v, List(), List(("Empty", StateKeyErrorKind.Empty), ("TooLong", StateKeyErrorKind.TooLong), ("NotUtf8", StateKeyErrorKind.NotUtf8), ("TooManySegments", StateKeyErrorKind.TooManySegments), ("InvalidSegment", StateKeyErrorKind.InvalidSegment), ("SegmentTooLong", StateKeyErrorKind.SegmentTooLong), ("NamespaceFull", StateKeyErrorKind.NamespaceFull)))
   )
 }
 
@@ -440,7 +440,7 @@ object UnsupportedItem {
    * @param info Its additional information.
    */
   final case class FloatOrSimple(info: Int) extends UnsupportedItem {
-    def kind: UnsupportedItemKind = "FloatOrSimple"
+    def kind: UnsupportedItemKind = UnsupportedItemKind.FloatOrSimple
   }
 
   /**
@@ -449,12 +449,12 @@ object UnsupportedItem {
    * @param value Its number.
    */
   final case class SimpleValue(value: Int) extends UnsupportedItem {
-    def kind: UnsupportedItemKind = "SimpleValue"
+    def kind: UnsupportedItemKind = UnsupportedItemKind.SimpleValue
   }
 
   /** An indefinite-length item. */
   case object IndefiniteLength extends UnsupportedItem {
-    def kind: UnsupportedItemKind = "IndefiniteLength"
+    def kind: UnsupportedItemKind = UnsupportedItemKind.IndefiniteLength
   }
 
   /**
@@ -463,7 +463,7 @@ object UnsupportedItem {
    * @param info The additional information.
    */
   final case class ReservedInfo(info: Int) extends UnsupportedItem {
-    def kind: UnsupportedItemKind = "ReservedInfo"
+    def kind: UnsupportedItemKind = UnsupportedItemKind.ReservedInfo
   }
 
   /**
@@ -472,33 +472,33 @@ object UnsupportedItem {
    * @param tag Its number.
    */
   final case class Tag(tag: BigInt) extends UnsupportedItem {
-    def kind: UnsupportedItemKind = "Tag"
+    def kind: UnsupportedItemKind = UnsupportedItemKind.Tag
   }
 
   /** A map key that is not text. */
   case object NonTextKey extends UnsupportedItem {
-    def kind: UnsupportedItemKind = "NonTextKey"
+    def kind: UnsupportedItemKind = UnsupportedItemKind.NonTextKey
   }
 }
 
-type UnsupportedItemKind = "FloatOrSimple" | "SimpleValue" | "IndefiniteLength" | "ReservedInfo" | "Tag" | "NonTextKey"
+enum UnsupportedItemKind(val wire: String) {
+  case FloatOrSimple extends UnsupportedItemKind("FloatOrSimple")
+  case SimpleValue extends UnsupportedItemKind("SimpleValue")
+  case IndefiniteLength extends UnsupportedItemKind("IndefiniteLength")
+  case ReservedInfo extends UnsupportedItemKind("ReservedInfo")
+  case Tag extends UnsupportedItemKind("Tag")
+  case NonTextKey extends UnsupportedItemKind("NonTextKey")
+}
 
 object UnsupportedItemKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[UnsupportedItemKind] = Vector("FloatOrSimple", "SimpleValue", "IndefiniteLength", "ReservedInfo", "Tag", "NonTextKey")
+
+  private lazy val byWire = UnsupportedItemKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[UnsupportedItemKind] = byWire.get(wire)
 
   lazy val codec: Codec[UnsupportedItemKind] = Codec(
-    {
-      case "FloatOrSimple" => Codec.literalText["FloatOrSimple"]("FloatOrSimple").encode("FloatOrSimple")
-      case "SimpleValue" => Codec.literalText["SimpleValue"]("SimpleValue").encode("SimpleValue")
-      case "IndefiniteLength" => Codec.literalText["IndefiniteLength"]("IndefiniteLength").encode("IndefiniteLength")
-      case "ReservedInfo" => Codec.literalText["ReservedInfo"]("ReservedInfo").encode("ReservedInfo")
-      case "Tag" => Codec.literalText["Tag"]("Tag").encode("Tag")
-      case "NonTextKey" => Codec.literalText["NonTextKey"]("NonTextKey").encode("NonTextKey")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[UnsupportedItemKind](v, List(
-
-      ), List(("FloatOrSimple", "FloatOrSimple": UnsupportedItemKind), ("SimpleValue", "SimpleValue": UnsupportedItemKind), ("IndefiniteLength", "IndefiniteLength": UnsupportedItemKind), ("ReservedInfo", "ReservedInfo": UnsupportedItemKind), ("Tag", "Tag": UnsupportedItemKind), ("NonTextKey", "NonTextKey": UnsupportedItemKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[UnsupportedItemKind](v, List(), List(("FloatOrSimple", UnsupportedItemKind.FloatOrSimple), ("SimpleValue", UnsupportedItemKind.SimpleValue), ("IndefiniteLength", UnsupportedItemKind.IndefiniteLength), ("ReservedInfo", UnsupportedItemKind.ReservedInfo), ("Tag", UnsupportedItemKind.Tag), ("NonTextKey", UnsupportedItemKind.NonTextKey)))
   )
 }
