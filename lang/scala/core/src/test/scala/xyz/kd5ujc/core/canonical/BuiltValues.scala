@@ -17,6 +17,13 @@ import scodec.bits.ByteVector
  */
 object BuiltValues {
 
+  enum ReadError {
+    case InvalidHex(input: Preview)
+    case Canonical(cause: CanonicalError)
+    case Decode(cause: DecodeFailure)
+    case CountOutOfRange(bits: Int, negative: Boolean)
+  }
+
   sealed trait Step extends Product with Serializable
   final case class Wrap(template: CanonicalValue, times: Int) extends Step
   final case class Copies(n: Int) extends Step
@@ -68,11 +75,12 @@ object BuiltValues {
   def value(b: Built): CanonicalValue = get(BuiltValue.codec.encode(model(b)))
 
   /** A recipe from the schemas' `built-value`. */
-  def fromModel(m: BuiltValue): Either[String, Built] = {
-    def decoded(hex: String): Either[String, CanonicalValue] =
-      ByteVector.fromHexDescriptive(hex).flatMap(Cbor.decode(_).leftMap(_.toString))
-    def count(n: BigInt): Either[String, Int] = Either.cond(n.isValidInt, n.toInt, s"a count of ${n.bitLength} bits")
-    def step(s: BuiltStep): Either[String, Step] =
+  def fromModel(m: BuiltValue): Either[ReadError, Built] = {
+    def decoded(hex: String): Either[ReadError, CanonicalValue] =
+      ByteVector.fromHex(hex).toRight(ReadError.InvalidHex(Preview.of(hex))).flatMap(Cbor.decode(_).leftMap(ReadError.Canonical(_)))
+    def count(n: BigInt): Either[ReadError, Int] =
+      Either.cond(n.isValidInt && n >= 0, n.toInt, ReadError.CountOutOfRange(n.bitLength, n < 0))
+    def step(s: BuiltStep): Either[ReadError, Step] =
       s match {
         case BuiltWrap(t, n) => (decoded(t), count(n)).mapN(Wrap(_, _))
         case BuiltCopies(n)  => count(n).map(Copies(_))
@@ -82,11 +90,11 @@ object BuiltValues {
   }
 
   /** A recipe from a vector file's `built-value`, read by the canonical parser. */
-  def fromValue(v: CanonicalValue): Either[String, Built] =
-    BuiltValue.codec.decoder.decode(v).leftMap(_.message).flatMap(fromModel)
+  def fromValue(v: CanonicalValue): Either[ReadError, Built] =
+    BuiltValue.codec.decoder.decode(v).leftMap(ReadError.Decode(_)).flatMap(fromModel)
 
   /** The value a `built-value` describes. */
-  def built(v: CanonicalValue): Either[String, CanonicalValue] = fromValue(v).flatMap(build(_).leftMap(_.toString))
+  def built(v: CanonicalValue): Either[ReadError, CanonicalValue] = fromValue(v).flatMap(build(_).leftMap(ReadError.Canonical(_)))
 
   /**
    * A recipe whose value weighs exactly `target` (at least 1): from a leaf of weight 1 or 2, steps `[$, $]` (`w` to

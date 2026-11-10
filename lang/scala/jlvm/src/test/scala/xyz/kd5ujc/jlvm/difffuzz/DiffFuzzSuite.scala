@@ -8,6 +8,7 @@ import cats.syntax.all._
 
 import scala.concurrent.duration._
 
+import xyz.kd5ujc.core.canonical.{BuiltValues, DecodeFailure, DecodeReason, Preview}
 import xyz.kd5ujc.jlvm.{Jlvm, JlvmVectors, Op}
 
 import io.circe.Json
@@ -22,11 +23,9 @@ import weaver.IOSuite
 object DiffFuzzSuite extends IOSuite {
 
   final case class Res(jlvm: Jlvm, corpus: Corpus, rows: Map[String, Json]) {
-    def reference(c: FuzzCase): Record =
-      Evaluate
-        .record(jlvm, c)
-        .fold(e => Record(c.name, None, Record.Outcome.Error(s"fault: $e", None, None), None, 0L, Vector.empty), identity)
-    def generator: Generator = new Generator(corpus, reference)
+    def attempt(c:   FuzzCase): Either[Fault, Record] = Evaluate.record(jlvm, c).leftMap(Fault.Evaluation(_))
+    def reference(c: FuzzCase): Record = attempt(c).fold(e => throw Fault.Failure(e), identity)
+    def generator: Generator = new Generator(corpus, attempt)
   }
 
   private val rows: IO[Map[String, Json]] =
@@ -40,6 +39,91 @@ object DiffFuzzSuite extends IOSuite {
   def sharedResource: Resource[IO, Res] = Resource.eval((Jlvm.load[IO], Corpus.load, rows).mapN(Res.apply))
 
   private val seed = 20261109L
+
+  pureTest("a fault message cannot masquerade as the deadline") {
+    val fault = Fault.ReferenceThrew(new IllegalStateException("cut off by the run's deadline"))
+    val failed = Replies(Left(fault), Vector("rust" -> Left(fault)))
+    val late = Replies(Left(fault), Vector("rust" -> Left(Fault.Transport(Child.Error.Deadline))))
+    expect(!failed.late, "a reference exception remains a fault")
+      .and(expect(late.late, "the typed deadline marks an unanswered case"))
+      .and(expect.same(Set(Diff("scala", Field.Fault)), DiffFuzz.signature(failed)))
+  }
+
+  pureTest("transport source ambiguity retains which source fields were supplied") {
+    val both = """{"name":"x","program":"31","form":"01","data":"6e756c6c"}"""
+    val neither = """{"name":"x","data":"6e756c6c"}"""
+    expect
+      .same(Left(WireError.SourceChoice("x", true, true)), FuzzCase.fromTransport(both))
+      .and(expect.same(Left(WireError.SourceChoice("x", false, false)), FuzzCase.fromTransport(neither)))
+  }
+
+  test("a malformed built binding remains a runner fault with its exact cause") { res =>
+    IO {
+      val c = FuzzCase(
+        "invalid recipe",
+        FuzzCase.Source.Surface("1"),
+        "null",
+        built = Vector("a" -> Json.obj("leaf" -> Json.fromString("zz")))
+      )
+      expect.same(
+        Left(
+          Evaluate.Error.Binding(
+            "a",
+            BuiltValues.ReadError.Decode(
+              DecodeFailure(List(Preview.of("leaf")), DecodeReason.PatternMismatch("([0-9a-f]{2})*", Preview.of("zz")))
+            )
+          )
+        ),
+        Evaluate.record(res.jlvm, c)
+      )
+    }
+  }
+
+  pureTest("a reference fault during the unlimited metering check is preserved") {
+    val fault = Fault.MissingReply
+    val c = FuzzCase("metered", FuzzCase.Source.Surface("1"), "null", gasLimit = Some(1L))
+    val r = Record(c.name, Some("01"), Record.Outcome.Value("01"), None, 1L, Vector.empty)
+    expect.same(Left(fault), Evaluate.metered(_ => Left(fault), c, r))
+  }
+
+  test("a fault during gas-case generation survives a later successful reply") { res =>
+    IO {
+      val fault = Fault.MissingReply
+      val gen = new Generator(res.corpus, _ => Left(fault), Some("grammar"))
+      val generated = (0L until 30L).iterator.map(gen(seed, _)).find(_.referenceFault.nonEmpty)
+      val result = generated.map { g =>
+        val successful = Right(Record(g.c.name, None, Record.Outcome.Value("01"), None, 0L, Vector.empty))
+        g.replies(Replies(successful, Vector("rust" -> successful))).scala
+      }
+      expect.same(Some(Left(fault)), result)
+    }
+  }
+
+  test("a generation-time fault is saved without a contradictory successful shrink replay") { res =>
+    Resource
+      .make(IO.blocking(Files.createTempDirectory("difffuzz-reference-fault"))) { out =>
+        IO.blocking {
+          Files.deleteIfExists(out.resolve("findings.jsonl"))
+          Files.delete(out)
+        }
+      }
+      .use { out =>
+        val fault = Fault.MissingReply
+        val c = FuzzCase("generation fault", FuzzCase.Source.Surface("1"), "null")
+        val g = Generated(c, "grammar", false, Some(fault))
+        val successful = Right(Record(c.name, None, Record.Outcome.Value("01"), None, 0L, Vector.empty))
+        val replies = g.replies(Replies(successful, Vector("rust" -> successful)))
+        val options = Options(out = out, shrinkBudget = 1)
+        for {
+          stats <- DiffFuzz.judge(options, new DiffFuzz.Runners(res.jlvm, Vector.empty), Child.Never, Vector(g), Vector(replies), Stats())
+          saved <- IO.blocking(new String(Files.readAllBytes(Options.findings(options)), UTF_8))
+          rows  <- saved.linesIterator.toList.traverse(io.circe.parser.parse(_)).liftTo[IO]
+        } yield
+          expect
+            .same(Vector(Finding(Set(Diff("scala", Field.Fault)), c, c, replies, "grammar")), stats.findings)
+            .and(expect.same(List(Right("found")), rows.map(_.hcursor.get[String]("stage"))))
+      }
+  }
 
   test("the reference's record of every jlvm_v1.json case is the case's row: its outcome, gas and warnings") { res =>
     IO {
@@ -92,15 +176,18 @@ object DiffFuzzSuite extends IOSuite {
       val withoutGas = (r: Record) => Record.json(r).mapObject(_.remove("gasUsed")).noSpaces
       val twoFamilies = """{"name":"x","outcome":{"error":"Crypto","op":"sha256","cause":{"zk":"A","vrf":"B"}},"gasUsed":1,"warnings":[]}"""
       val extraInOutcome = """{"name":"x","outcome":{"cbor":"01","json":"1"},"gasUsed":1,"warnings":[]}"""
+      val required = Set("name", "outcome", "gasUsed", "warnings")
+      val optional = Set("program", "available")
+      def keys(r: Record): Set[String] = Record.json(r).asObject.toList.flatMap(_.keys).toSet
       records
         .foldLeft(success) { (acc, r) =>
           acc
             .and(expect.same(Right(r), Record.fromLine(Record.json(r).noSpaces)))
-            .and(expect(Record.fromLine(withExtra(r)).isLeft, "an extra key"))
-            .and(expect(Record.fromLine(withoutGas(r)).isLeft, "a missing key"))
+            .and(expect.same(Left(WireError.Keys(required, optional, keys(r) + "json")), Record.fromLine(withExtra(r))))
+            .and(expect.same(Left(WireError.Keys(required, optional, keys(r) - "gasUsed")), Record.fromLine(withoutGas(r))))
         }
-        .and(expect(Record.fromLine(twoFamilies).isLeft, "two families"))
-        .and(expect(Record.fromLine(extraInOutcome).isLeft, "an extra key in the outcome"))
+        .and(expect.same(Left(WireError.CauseCardinality(2)), Record.fromLine(twoFamilies)))
+        .and(expect.same(Left(WireError.Keys(Set("cbor"), Set.empty, Set("cbor", "json"))), Record.fromLine(extraInOutcome)))
     }
   }
 
@@ -121,7 +208,7 @@ object DiffFuzzSuite extends IOSuite {
         Options
           .parse(List("--replay", in, "--out", out))
           .fold(
-            e => acc.and(failure(e)),
+            e => acc.and(failure(e.toString)),
             o => {
               val written = Options.findings(o).toAbsolutePath.normalize
               acc.and(expect(written != java.nio.file.Paths.get(in).toAbsolutePath.normalize, s"--replay $in --out $out writes $written"))
@@ -144,7 +231,7 @@ object DiffFuzzSuite extends IOSuite {
       .map {
         case (replies, took) =>
           expect
-            .same(Vector.fill(3)(Left(Child.Late)), replies)
+            .same(Vector.fill(3)(Left(Child.Error.Deadline)), replies)
             .and(expect(took < 30.seconds, s"took $took: a stall of 60 s per line would have taken 180 s"))
       }
   }
@@ -192,7 +279,12 @@ object DiffFuzzSuite extends IOSuite {
       val limited = (0L until 3000L).map(gen(seed + 4, _)).filter(_.c.gasLimit.isDefined)
       limited.foldLeft(expect(limited.count(_.boundary) > 200, s"${limited.count(_.boundary)} cases at their exact cost or one below")) {
         (acc, g) =>
-          acc.and(expect(Evaluate.metered(res.reference, g.c, res.reference(g.c)), s"${g.c.name}: ${FuzzCase.row(g.c).noSpaces.take(300)}"))
+          acc.and(
+            expect(
+              Evaluate.metered(res.attempt, g.c, res.reference(g.c)) == Right(true),
+              s"${g.c.name}: ${FuzzCase.row(g.c).noSpaces.take(300)}"
+            )
+          )
       }
     }
   }

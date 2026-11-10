@@ -41,10 +41,10 @@ final class Child private (val lang: String, command: List[String], cwd: Path, l
         }.attempt.void
       })
 
-  private def why(p: Proc): IO[String] =
+  private def why(p: Proc): IO[Child.Termination] =
     IO.blocking(
-      if (p.process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) s"no record, and it exited with ${p.process.exitValue()}"
-      else "no record before the timeout: hung"
+      if (p.process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) Child.Termination.Exited(p.process.exitValue())
+      else Child.Termination.Hung
     )
 
   /**
@@ -58,17 +58,19 @@ final class Child private (val lang: String, command: List[String], cwd: Path, l
     }
 
   /** The records the runner gave, in order, up to the first line it did not answer. */
-  private def once(lines: Vector[String], stall: FiniteDuration, deadline: FiniteDuration): IO[(Vector[String], Option[String])] =
+  private def once(lines: Vector[String], stall: FiniteDuration, deadline: FiniteDuration): IO[(Vector[String], Option[Child.Error])] =
     proc.flatMap { p =>
       val write = IO.blocking {
         lines.foreach(l => p.in.write((l + "\n").getBytes(UTF_8)))
         p.in.flush()
       }.attempt
-      def read(acc: Vector[String], last: Ref[IO, FiniteDuration]): IO[Vector[String]] =
-        if (acc.size == lines.size) IO.pure(acc)
+      def read(acc: Vector[String], last: Ref[IO, FiniteDuration]): IO[(Vector[String], Option[Throwable])] =
+        if (acc.size == lines.size) IO.pure(acc -> None)
         else
           IO.blocking(Option(p.out.readLine())).attempt.flatMap {
-            _.toOption.flatten.fold(IO.pure(acc))(r => IO.monotonic.flatMap(last.set) *> read(acc :+ r, last))
+            case Left(cause)    => IO.pure(acc -> Some(cause))
+            case Right(None)    => IO.pure(acc -> None)
+            case Right(Some(r)) => IO.monotonic.flatMap(last.set) *> read(acc :+ r, last)
           }
       for {
         last   <- IO.monotonic.flatMap(Ref.of[IO, FiniteDuration])
@@ -77,35 +79,37 @@ final class Child private (val lang: String, command: List[String], cwd: Path, l
         // the watchdog stays until the writer is done too: a runner that answers without reading its input blocks the
         // writer on a full pipe, and only the watchdog's kill frees it
         both <- (read(Vector.empty, last), writer.joinWithNever).tupled.guarantee(dog.cancel)
-        (got, written) = both
+        ((got, readFailure), written) = both
         // a runner whose input could not all be written is not reused
-        _     <- stop.whenA(written.isLeft)
-        fault <- if (got.size == lines.size) IO.pure(None) else why(p).flatTap(_ => stop).map(Some(_))
+        _ <- stop.whenA(written.isLeft)
+        fault <-
+          if (got.size == lines.size) IO.pure(None)
+          else why(p).flatTap(_ => stop).map(t => Some(Child.Error.NoRecord(t, readFailure, written.left.toOption)))
       } yield got -> fault
     }
 
   /**
    * One reply per line: the record's line, or the runner's fault on it. A case taking over `stall` has hung. Once
-   * `deadline` passes, the runner is stopped and every line it has not answered is [[Child.Late]]: neither run nor
+   * `deadline` passes, the runner is stopped and every line it has not answered is [[Child.Error.Deadline]]: neither run nor
    * blamed, however many hang, so a run never outlives its `--minutes`.
    */
   def run(
     lines:    Vector[String],
     stall:    FiniteDuration = 60.seconds,
     deadline: FiniteDuration = Child.Never
-  ): IO[Vector[Either[String, String]]] =
+  ): IO[Vector[Either[Child.Error, String]]] =
     if (lines.isEmpty) IO.pure(Vector.empty)
     else
       IO.monotonic.flatMap { now =>
-        if (now >= deadline) IO.pure(lines.map(_ => Child.Late.asLeft))
+        if (now >= deadline) IO.pure(lines.map(_ => Child.Error.Deadline.asLeft))
         else
           once(lines, stall, deadline).flatMap {
             case (got, None) => IO.pure(got.map(_.asRight))
             case (got, Some(fault)) =>
               IO.monotonic.flatMap { after =>
-                if (after >= deadline) IO.pure(got.map(_.asRight) ++ lines.drop(got.size).map(_ => Child.Late.asLeft))
+                if (after >= deadline) IO.pure(got.map(_.asRight) ++ lines.drop(got.size).map(_ => Child.Error.Deadline.asLeft))
                 else
-                  run(lines.drop(got.size + 1), stall, deadline).map(rest => (got.map(_.asRight) :+ s"$lang runner: $fault".asLeft) ++ rest)
+                  run(lines.drop(got.size + 1), stall, deadline).map(rest => (got.map(_.asRight) :+ fault.asLeft) ++ rest)
               }
           }
       }
@@ -114,7 +118,15 @@ final class Child private (val lang: String, command: List[String], cwd: Path, l
 object Child {
 
   /** The reply to a line the run's deadline cut off: not a record, and not a fault of the case. */
-  val Late: String = "cut off by the run's deadline"
+  enum Error {
+    case Deadline
+    case NoRecord(termination: Termination, readFailure: Option[Throwable], writeFailure: Option[Throwable])
+  }
+
+  enum Termination {
+    case Exited(code: Int)
+    case Hung
+  }
 
   /** No deadline. */
   val Never: FiniteDuration = Long.MaxValue.nanos

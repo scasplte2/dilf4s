@@ -13,9 +13,9 @@ import xyz.kd5ujc.accumulators.versioned.Harness.{attempt, commitAll, fresh, int
 import xyz.kd5ujc.accumulators.versioned._
 import xyz.kd5ujc.core.canonical.BuiltValues.{Built, Pair}
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue}
+import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalError, CanonicalValue, Preview}
 import xyz.kd5ujc.core.circe.CanonicalCirce
-import xyz.kd5ujc.core.hash.{Digest, Sha256}
+import xyz.kd5ujc.core.hash.{Digest, HashError, Sha256}
 import xyz.kd5ujc.models.refusal_vectors.{MerkleRefusal, PoseidonRefusal, RefusalOutcome, TrieRefusal, VtKeyCause, VtRefusal, VtTrieCause}
 import xyz.kd5ujc.storage.Batch
 
@@ -31,6 +31,21 @@ import weaver.SimpleIOSuite
  * SDK's loader does. Heavy inputs are recipes (`BuiltValues`), built with sharing and never encoded here.
  */
 object RefusalVectors {
+
+  enum ReadError {
+    case Json(cause: io.circe.Error)
+    case InvalidHex(field: String, input: Preview)
+    case Hash(cause: HashError)
+    case Canonical(cause: CanonicalError)
+    case Built(cause: BuiltValues.ReadError)
+    case MissingBuiltValue
+    case InvalidMode
+    case Trie(cause: TrieError)
+    case Key(cause: StateKeyError)
+    case UnknownCheck(input: Preview)
+  }
+
+  final case class Failure(name: String, error: ReadError) extends RuntimeException(s"$name: $error")
 
   type H = Sha256
 
@@ -106,35 +121,38 @@ object RefusalVectors {
 
   // ---------------------------------------------------------------------------------------------------- reading
 
-  private def field[A: io.circe.Decoder](c: ACursor, name: String): Either[String, A] = c.get[A](name).leftMap(e => s"$name: $e")
+  private def field[A: io.circe.Decoder](c: ACursor, name: String): Either[ReadError, A] = c.get[A](name).leftMap(ReadError.Json(_))
 
-  private def bytes(c: ACursor, name: String): Either[String, ByteVector] =
-    field[String](c, name).flatMap(ByteVector.fromHexDescriptive(_))
+  private def bytes(c: ACursor, name: String): Either[ReadError, ByteVector] =
+    field[String](c, name).flatMap(s => ByteVector.fromHex(s).toRight(ReadError.InvalidHex(name, Preview.of(s))))
 
-  private def digest(c: ACursor, name: String): Either[String, Digest[H]] =
-    bytes(c, name).flatMap(Digest.fromBytes[H](_).leftMap(_.toString))
+  private def digest(c: ACursor, name: String): Either[ReadError, Digest[H]] =
+    bytes(c, name).flatMap(Digest.fromBytes[H](_).leftMap(ReadError.Hash(_)))
 
   /** A `built-value` from its JSON. */
-  def built(j: ACursor): Either[String, CanonicalValue] =
-    j.focus.toRight("no built-value").flatMap(CanonicalCirce.fromCirce(_).leftMap(_.toString)).flatMap(BuiltValues.built)
+  def built(j: ACursor): Either[ReadError, CanonicalValue] =
+    j.focus
+      .toRight(ReadError.MissingBuiltValue)
+      .flatMap(CanonicalCirce.fromCirce(_).leftMap(ReadError.Canonical(_)))
+      .flatMap(BuiltValues.built(_).leftMap(ReadError.Built(_)))
 
   /** A recipe as the schemas' `built-value`. */
   private def builtJson(b: Built): Json = get(CanonicalCirce.toCirce(BuiltValues.value(b)))
 
-  private def mode(c: ACursor): Either[String, KeyMode] = {
+  private def mode(c: ACursor): Either[ReadError, KeyMode] = {
     val m = c.downField("mode")
     m.get[Int]("fixed")
       .toOption
       .map(KeyMode.fixed(_))
       .orElse(m.get[Int]("variable").toOption.map(KeyMode.variable(_)))
-      .toRight("mode")
-      .flatMap(_.leftMap(_.toString))
+      .toRight(ReadError.InvalidMode)
+      .flatMap(_.leftMap(ReadError.Trie(_)))
   }
 
   /** The outcome of one case, read from its JSON as an SDK loader reads it (conformance.md §6 defines each check). */
-  def run(c: ACursor): Either[String, Outcome] = {
+  def run(c: ACursor): Either[ReadError, Outcome] = {
     def input = built(c.downField("input"))
-    def stateKey = field[String](c, "stateKey").flatMap(StateKey.parse(_).leftMap(_.toString))
+    def stateKey = field[String](c, "stateKey").flatMap(StateKey.parse(_).leftMap(ReadError.Key(_)))
     def proof = input.map(VersionedTrieWire.decodeProof[Long, H](_))
     val M = MerkleHashing.tagged[H]
     val T = TrieHashing[H]
@@ -154,7 +172,7 @@ object RefusalVectors {
           outcome(p.flatMap(VersionedTrieVerifier.verifyHistoricalKey(r, _, u)).flatMap(_.lookup(k)))(versioned)
         }
       case "vt-replica" =>
-        c.downField("inputs").as[List[Json]].leftMap(_.toString).flatMap(_.traverse(j => built(j.hcursor))).map { ds =>
+        c.downField("inputs").as[List[Json]].leftMap(ReadError.Json(_)).flatMap(_.traverse(j => built(j.hcursor))).map { ds =>
           outcome(
             Replica
               .empty[Long, H]
@@ -198,14 +216,14 @@ object RefusalVectors {
         val entries = c
           .downField("entries")
           .as[List[Json]]
-          .leftMap(_.toString)
+          .leftMap(ReadError.Json(_))
           .flatMap(_.traverse { e =>
             (bytes(e.hcursor, "key"), built(e.hcursor.downField("value"))).tupled
           })
         (mode(c), bytes(c, "root"), bytes(c, "prefix"), entries, input).mapN { (m, r, p, es, v) =>
           outcome(TrieProofs.verifyPrefixClaims[H](m, r, p, es, v)(using summon[xyz.kd5ujc.core.hash.Hasher[H]], T))(trie)
         }
-      case other => s"unknown check $other".asLeft
+      case other => ReadError.UnknownCheck(Preview.of(other)).asLeft
     }
   }
 
@@ -696,15 +714,15 @@ object RefusalVectors {
    * `vt-commit`: the batch committed at version 1 into an empty store, the reference for the per-commit delta bound
    * (versioned-trie.md §4); every other check is [[run]].
    */
-  def runIO(c: ACursor): IO[Either[String, Outcome]] =
+  def runIO(c: ACursor): IO[Either[ReadError, Outcome]] =
     field[String](c, "check").flatTraverse {
       case "vt-commit" =>
         c.downField("batch")
           .as[List[Json]]
-          .leftMap(_.toString)
+          .leftMap(ReadError.Json(_))
           .flatMap(_.traverse { u =>
             (
-              field[String](u.hcursor, "stateKey").flatMap(StateKey.parse(_).leftMap(_.toString)),
+              field[String](u.hcursor, "stateKey").flatMap(StateKey.parse(_).leftMap(ReadError.Key(_))),
               built(u.hcursor.downField("value"))
             ).tupled
           })
@@ -720,7 +738,7 @@ object RefusalVectors {
       .flatMap(_.traverse { c =>
         runIO(c.json.hcursor).flatMap(
           _.map(o => c.json.deepMerge(Json.obj("outcome" -> outcomeJson(o))))
-            .leftMap(e => new IllegalStateException(s"${c.name}: $e"))
+            .leftMap(Failure(c.name, _))
             .liftTo[IO]
         )
       })

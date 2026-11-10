@@ -70,7 +70,7 @@ object JlvmVectors {
           case (k, b) =>
             k -> CanonicalCirce
               .fromCirce(b)
-              .leftMap(_.toString)
+              .leftMap(BuiltValues.ReadError.Canonical(_))
               .flatMap(BuiltValues.built)
               .fold(e => sys.error(s"${i.name}: $k: $e"), identity)
         }

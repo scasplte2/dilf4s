@@ -5,9 +5,27 @@ import java.nio.charset.StandardCharsets.UTF_8
 
 import cats.syntax.all._
 
+import xyz.kd5ujc.core.canonical.Preview
+
 import io.circe.syntax._
-import io.circe.{ACursor, Decoder, HCursor, Json}
+import io.circe.{ACursor, HCursor, Json}
 import scodec.bits.ByteVector
+
+enum WireError {
+  case Json(cause: io.circe.Error)
+  case InvalidHex(input: Preview)
+  case InvalidUtf8(cause: Throwable)
+  case SourceChoice(name: String, program: Boolean, form: Boolean)
+  case Keys(required: Set[String], optional: Set[String], actual: Set[String])
+  case CauseCardinality(actual: Int)
+}
+
+object WireError {
+  final case class Failure(error: WireError) extends RuntimeException(error.toString)
+
+  def bytes(hex: String): Either[WireError, ByteVector] =
+    ByteVector.fromHex(hex).toRight(InvalidHex(Preview.of(hex)))
+}
 
 /**
  * One case of a differential batch: a program (its JSON surface text, or a canonical form's CBOR read by `decode`), the
@@ -39,10 +57,10 @@ object FuzzCase {
   def hexOf(s: String): String = ByteVector(s.getBytes(UTF_8)).toHex
 
   /** Hex of UTF-8 back to text: ill-formed UTF-8 is refused, never replaced. */
-  def textOf(hex: String): Either[String, String] =
-    ByteVector
-      .fromHexDescriptive(hex)
-      .flatMap(b => Either.catchNonFatal(UTF_8.newDecoder().decode(ByteBuffer.wrap(b.toArray)).toString).leftMap(_ => "ill-formed UTF-8"))
+  def textOf(hex: String): Either[WireError, String] =
+    WireError
+      .bytes(hex)
+      .flatMap(b => Either.catchNonFatal(UTF_8.newDecoder().decode(ByteBuffer.wrap(b.toArray)).toString).leftMap(WireError.InvalidUtf8(_)))
 
   /**
    * The transport line the three runners read (tools/difffuzz/README.md): every text as the hex of its UTF-8, the
@@ -63,26 +81,28 @@ object FuzzCase {
       )
       .noSpaces
 
-  private def pairs(c: ACursor, f: String => Either[String, String]): Either[String, Vector[(String, Json)]] =
-    c.as[Option[Vector[(String, Json)]]].leftMap(_.message).flatMap(_.getOrElse(Vector.empty).traverse { case (k, v) => f(k).map(_ -> v) })
+  private def pairs(c: ACursor, f: String => Either[WireError, String]): Either[WireError, Vector[(String, Json)]] =
+    c.as[Option[Vector[(String, Json)]]]
+      .leftMap(WireError.Json(_))
+      .flatMap(_.getOrElse(Vector.empty).traverse { case (k, v) => f(k).map(_ -> v) })
 
   /** A transport line read back. */
-  def fromTransport(line: String): Either[String, FuzzCase] =
-    io.circe.parser.parse(line).leftMap(_.message).flatMap { j =>
+  def fromTransport(line: String): Either[WireError, FuzzCase] =
+    io.circe.parser.parse(line).leftMap(WireError.Json(_)).flatMap { j =>
       val c = j.hcursor
       for {
-        name <- c.get[String]("name").leftMap(_.message)
-        source <- (c.get[Option[String]]("program"), c.get[Option[String]]("form")).tupled.leftMap(_.message).flatMap {
+        name <- c.get[String]("name").leftMap(WireError.Json(_))
+        source <- (c.get[Option[String]]("program"), c.get[Option[String]]("form")).tupled.leftMap(WireError.Json(_)).flatMap {
           case (Some(p), None) => textOf(p).map(Source.Surface(_))
-          case (None, Some(f)) => ByteVector.fromHexDescriptive(f).map(Source.Form(_))
-          case _               => Left("exactly one of program and form")
+          case (None, Some(f)) => WireError.bytes(f).map(Source.Form(_))
+          case (p, f)          => Left(WireError.SourceChoice(name, p.isDefined, f.isDefined))
         }
-        data <- c.get[String]("data").leftMap(_.message).flatMap(textOf)
+        data <- c.get[String]("data").leftMap(WireError.Json(_)).flatMap(textOf)
         env <- pairs(c.downField("env"), textOf).flatMap(_.traverse {
-          case (k, v) => v.as[String].leftMap(_.message).flatMap(textOf).map(k -> _)
+          case (k, v) => v.as[String].leftMap(WireError.Json(_)).flatMap(textOf).map(k -> _)
         })
         built <- pairs(c.downField("built"), textOf)
-        gas   <- c.get[Option[Long]]("gasLimit").leftMap(_.message)
+        gas   <- c.get[Option[Long]]("gasLimit").leftMap(WireError.Json(_))
       } yield FuzzCase(name, source, data, env, built, gas)
     }
 
@@ -104,18 +124,18 @@ object FuzzCase {
     )
 
   /** A `jlvm_v1.json` case, or a finding row, as a case; extra fields (an outcome, gas) are ignored. */
-  def fromRow(c: HCursor): Either[String, FuzzCase] =
+  def fromRow(c: HCursor): Either[WireError, FuzzCase] =
     for {
-      name <- c.get[String]("name").leftMap(_.message)
-      source <- (c.get[Option[String]]("program"), c.get[Option[String]]("form")).tupled.leftMap(_.message).flatMap {
+      name <- c.get[String]("name").leftMap(WireError.Json(_))
+      source <- (c.get[Option[String]]("program"), c.get[Option[String]]("form")).tupled.leftMap(WireError.Json(_)).flatMap {
         case (Some(p), None) => Right(Source.Surface(p))
-        case (None, Some(f)) => ByteVector.fromHexDescriptive(f).map(Source.Form(_))
-        case _               => Left(s"$name: exactly one of program and form")
+        case (None, Some(f)) => WireError.bytes(f).map(Source.Form(_))
+        case (p, f)          => Left(WireError.SourceChoice(name, p.isDefined, f.isDefined))
       }
-      data  <- c.get[String]("data").leftMap(_.message)
-      env   <- c.get[Option[Map[String, String]]]("env").leftMap(_.message)
-      built <- c.get[Option[Map[String, Json]]]("built").leftMap(_.message)
-      gas   <- c.get[Option[Long]]("gasLimit").leftMap(_.message)
+      data  <- c.get[String]("data").leftMap(WireError.Json(_))
+      env   <- c.get[Option[Map[String, String]]]("env").leftMap(WireError.Json(_))
+      built <- c.get[Option[Map[String, Json]]]("built").leftMap(WireError.Json(_))
+      gas   <- c.get[Option[Long]]("gasLimit").leftMap(WireError.Json(_))
     } yield
       FuzzCase(
         name,
@@ -171,45 +191,43 @@ object Record {
     )
 
   /** Exactly these keys, so a runner reporting something more (or less) is a fault, not a pass. */
-  private def exactly(c: HCursor, required: Set[String], optional: Set[String]): Either[String, Unit] = {
+  private def exactly(c: HCursor, required: Set[String], optional: Set[String]): Either[WireError, Unit] = {
     val keys = c.keys.fold(Set.empty[String])(_.toSet)
     Either.cond(
       required.subsetOf(keys) && keys.subsetOf(required ++ optional),
       (),
-      s"keys ${keys.toList.sorted.mkString(",")}, expected ${required.toList.sorted.mkString(",")} and optionally ${optional.toList.sorted.mkString(",")}"
+      WireError.Keys(required, optional, keys)
     )
   }
 
-  private val outcomeDecoder: Decoder[Outcome] = Decoder.instance { c =>
-    val check = (r: Set[String], o: Set[String]) => exactly(c, r, o).leftMap(io.circe.DecodingFailure(_, c.history))
+  private def readOutcome(c: HCursor): Either[WireError, Outcome] =
     c.downField("cbor")
       .success
       .fold {
         for {
-          _    <- check(Set("error"), Set("op", "cause"))
-          kind <- c.get[String]("error")
-          op   <- c.get[Option[String]]("op")
-          cause <- c.get[Option[Map[String, String]]]("cause").flatMap {
+          _    <- exactly(c, Set("error"), Set("op", "cause"))
+          kind <- c.get[String]("error").leftMap(WireError.Json(_))
+          op   <- c.get[Option[String]]("op").leftMap(WireError.Json(_))
+          cause <- c.get[Option[Map[String, String]]]("cause").leftMap(WireError.Json(_)).flatMap {
             case None                     => Right(None)
             case Some(m) if m.sizeIs == 1 => Right(m.headOption)
-            case Some(_)                  => Left(io.circe.DecodingFailure("a cause has one family", c.history))
+            case Some(m)                  => Left(WireError.CauseCardinality(m.size))
           }
         } yield Outcome.Error(kind, op, cause)
-      }(v => check(Set("cbor"), Set.empty) *> v.as[String].map(Outcome.Value(_)))
-  }
+      }(v => exactly(c, Set("cbor"), Set.empty) *> v.as[String].leftMap(WireError.Json(_)).map(Outcome.Value(_)))
 
-  def fromLine(line: String): Either[String, Record] =
-    io.circe.parser.parse(line).leftMap(_.message).flatMap { j =>
+  def fromLine(line: String): Either[WireError, Record] =
+    io.circe.parser.parse(line).leftMap(WireError.Json(_)).flatMap { j =>
       val c = j.hcursor
-      (for {
-        _ <- exactly(c, Set("name", "outcome", "gasUsed", "warnings"), Set("program", "available"))
-          .leftMap(io.circe.DecodingFailure(_, c.history))
-        name      <- c.get[String]("name")
-        program   <- c.get[Option[String]]("program")
-        outcome   <- c.downField("outcome").as(using outcomeDecoder)
-        available <- c.get[Option[Long]]("available")
-        gas       <- c.get[Long]("gasUsed")
-        warnings  <- c.get[Vector[(String, Long)]]("warnings")
-      } yield Record(name, program, outcome, available, gas, warnings)).leftMap(_.getMessage)
+      for {
+        _           <- exactly(c, Set("name", "outcome", "gasUsed", "warnings"), Set("program", "available"))
+        name        <- c.get[String]("name").leftMap(WireError.Json(_))
+        program     <- c.get[Option[String]]("program").leftMap(WireError.Json(_))
+        outcomeJson <- c.get[Json]("outcome").leftMap(WireError.Json(_))
+        outcome     <- readOutcome(outcomeJson.hcursor)
+        available   <- c.get[Option[Long]]("available").leftMap(WireError.Json(_))
+        gas         <- c.get[Long]("gasUsed").leftMap(WireError.Json(_))
+        warnings    <- c.get[Vector[(String, Long)]]("warnings").leftMap(WireError.Json(_))
+      } yield Record(name, program, outcome, available, gas, warnings)
     }
 }

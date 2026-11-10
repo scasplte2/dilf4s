@@ -9,7 +9,9 @@ import Gen._
 import Sj._
 
 /** A generated case, where it came from, and whether its limit was placed at its exact cost or one below it. */
-final case class Generated(c: FuzzCase, source: String, boundary: Boolean)
+final case class Generated(c: FuzzCase, source: String, boundary: Boolean, referenceFault: Option[Fault] = None) {
+  def replies(actual: Replies): Replies = referenceFault.fold(actual)(f => actual.copy(scala = Left(f)))
+}
 
 /**
  * The deterministic generator: case `i` of seed `s` is a function of `(s, i)` alone (and of the code), so a run is
@@ -25,7 +27,7 @@ final case class Generated(c: FuzzCase, source: String, boundary: Boolean)
  * A fifth of the cases then take a gas limit at their exact cost or one below it, asked of the reference
  * (`reference`, which is deterministic too), so the `OutOfGas` boundary is hit on every kind of program.
  */
-final class Generator(corpus: Corpus, reference: FuzzCase => Record, only: Option[String] = None) {
+final class Generator(corpus: Corpus, reference: FuzzCase => Either[Fault, Record], only: Option[String] = None) {
 
   private val grammar = new Grammar(corpus.crypto)
   private val ops = NonEmptyVector.fromVectorUnsafe(Op.values.toVector)
@@ -171,31 +173,35 @@ final class Generator(corpus: Corpus, reference: FuzzCase => Record, only: Optio
   }
 
   /** The gas limit: the case's own, a small one, one at the exact cost or below it, or one inside the cost. */
-  private def gas(c: FuzzCase): G[(FuzzCase, Boolean)] =
+  private def gas(c: FuzzCase): G[(FuzzCase, Boolean, Option[Fault])] =
     weighted(
-      14 -> pure(c -> false),
-      2  -> between(0, 3000).map(l => c.copy(gasLimit = Some(l.toLong)) -> false),
+      14 -> pure((c, false, None)),
+      2  -> between(0, 3000).map(l => (c.copy(gasLimit = Some(l.toLong)), false, None)),
       5 -> defer {
-        val r = reference(c)
-        val starved = r.outcome match {
-          case Record.Outcome.Error("OutOfGas", _, _) => true
-          case _                                      => false
-        }
-        if (starved || r.gasUsed == 0) pure(c -> false)
-        else
-          weighted(
-            3 -> pure(c.copy(gasLimit = Some(r.gasUsed)) -> true),
-            3 -> pure(c.copy(gasLimit = Some(r.gasUsed - 1)) -> true),
-            1 -> long.map(x => c.copy(gasLimit = Some(java.lang.Long.remainderUnsigned(x, r.gasUsed))) -> false)
-          )
+        reference(c).fold(
+          f => pure((c, false, Some(f))),
+          r => {
+            val starved = r.outcome match {
+              case Record.Outcome.Error("OutOfGas", _, _) => true
+              case _                                      => false
+            }
+            if (starved || r.gasUsed == 0) pure((c, false, None))
+            else
+              weighted(
+                3 -> pure((c.copy(gasLimit = Some(r.gasUsed)), true, None)),
+                3 -> pure((c.copy(gasLimit = Some(r.gasUsed - 1)), true, None)),
+                1 -> long.map(x => (c.copy(gasLimit = Some(java.lang.Long.remainderUnsigned(x, r.gasUsed))), false, None))
+              )
+          }
+        )
       }
     )
 
   def apply(seed: Long, index: Long): Generated = {
-    val (_, ((source, _), (cased, boundary))) =
+    val (_, ((source, _), (cased, boundary, fault))) =
       sources.flatMap { case (s, c) => gas(c).map(g => (s, c) -> g) }
         .run(GenState(Rng.seedOf(seed, index), Vector.empty, Vector.empty))
         .value
-    Generated(cased.copy(name = s"$source $seed/$index"), source, boundary)
+    Generated(cased.copy(name = s"$source $seed/$index"), source, boundary, fault)
   }
 }
