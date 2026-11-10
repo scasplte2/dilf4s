@@ -23,7 +23,7 @@ use dilf4s_core::generated::jlvm::JlvmOp;
 use dilf4s_core::generated::jlvm_errors::JlvmSite;
 use dilf4s_core::generated::jlvm_vectors::{JlvmCase, JlvmError, JlvmErrorKind, JlvmOutcome, JlvmValue};
 use dilf4s_zk_cases::vectors::{self, Expect, Named, Shows};
-use dilf4s_zk_cases::{Body, Case, Request, run};
+use dilf4s_zk_cases::{Body, Case, Output, Request, Warning, run};
 use dilf4s_zk_host::execute;
 use sp1_core_executor::SyscallCode;
 use sp1_sdk::ExecutionReport;
@@ -493,6 +493,38 @@ fn every_operation_runs_in_the_guest() {
     assert!(failures.is_empty(), "{} failures:\n{}", failures.len(), failures.join("\n"));
 }
 
+#[test]
+fn the_jlvm_sample_keeps_every_warning_row() {
+    let sample = vectors::jlvm(real_inputs).unwrap();
+    let warnings: Vec<_> = sample
+        .rows
+        .iter()
+        .filter_map(|row| match &row.named.expect {
+            Expect::Jlvm { warnings, .. } if !warnings.is_empty() => Some(warnings),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(warnings.len(), 7, "every warning-bearing row is executed");
+    assert_eq!(warnings.iter().map(|w| w.len()).sum::<usize>(), 71, "all warning entries are checked");
+}
+
+#[test]
+fn warning_expectations_reject_changed_contents_with_the_same_count() {
+    let warning = |head: &str, length, truncated| Warning::AmbiguousPath { head: head.into(), length, truncated };
+    let wanted = vec![warning("x", 1, false), warning("y", 1, false)];
+    let expected = Expect::Jlvm { result: Ok(Vec::new()), gas: 1, warnings: wanted.clone() };
+    let outcome = |warnings| Ok(Output::Jlvm { result: Ok(Vec::new()), gas: 1, warnings });
+    assert!(expected.holds(&outcome(wanted)));
+    for altered in [
+        vec![warning("z", 1, false), warning("y", 1, false)],
+        vec![warning("x", 2, false), warning("y", 1, false)],
+        vec![warning("x", 1, true), warning("y", 1, false)],
+        vec![warning("y", 1, false), warning("x", 1, false)],
+    ] {
+        assert!(!expected.holds(&outcome(altered)));
+    }
+}
+
 /// A row as `jlvm_v1.json` has it, of the given program and data texts.
 fn row(program: &str, data: &str, outcome: JlvmOutcome) -> JlvmCase {
     JlvmCase {
@@ -504,7 +536,7 @@ fn row(program: &str, data: &str, outcome: JlvmOutcome) -> JlvmCase {
         gas_limit: None,
         outcome,
         gas_used: 0,
-        warnings: 0,
+        warnings: Vec::new(),
     }
 }
 

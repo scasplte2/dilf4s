@@ -5,7 +5,7 @@ Runs the Lean model against the pinned vectors:
 - shared/vectors/canonical_encoding_v1.json: every `json` row (strict parsing, then canonical CBOR, or the refusal's
   kind), every `cborRejections` row through the decoder, and each accepted encoding decoded back;
 - shared/vectors/jlvm_v1.json: every case in scope (below), comparing the outcome (the value's canonical CBOR, or the
-  error's kind and `op`), the gas used and the number of warnings exactly.
+  error's kind and `op`), the gas used and the warning kinds and preview contents in order.
 
 A case is in scope when it has no `built` binding and its program text names only operations of the slice: every
 key of a single-key object outside a `{"literal": ...}` is checked, aliases included. The test is on the program's
@@ -93,7 +93,22 @@ def surface (text : String) : Except Err Value :=
   | .ok j => .ok (Json.toValue j)
   | .error _ => .error .malformed
 
-def runCase (case : Json) (fileLimit : Nat) : Option (String × Nat × Nat) := do
+abbrev WarningView := String × String × Nat × Bool
+
+def warningView (p : String × Nat) : WarningView :=
+  ("AmbiguousPath", p.1, p.2, decide (p.1.utf8ByteSize < p.2))
+
+def expectedWarnings (case : Json) : Option (List WarningView) := do
+  let some (.arr rows) := field case "warnings" | none
+  rows.mapM fun w => do
+    let kind ← str? (field w "kind")
+    let path ← field w "path"
+    let head ← str? (field path "head")
+    let length ← nat? (field path "length")
+    let some (.bool truncated) := field path "truncated" | none
+    pure (kind, head, length, truncated)
+
+def runCase (case : Json) (fileLimit : Nat) : Option (String × Nat × List WarningView) := do
   let program ← str? (field case "program")
   let data ← str? (field case "data")
   let env : List (String × String) := match field case "env" with
@@ -108,14 +123,14 @@ def runCase (case : Json) (fileLimit : Nat) : Option (String × Nat × Nat) := d
   -- as the reference does: the program, data and bindings are read, then the limit is checked, then the program is
   -- compiled (JlvmVectors.run, Jlvm.evaluate)
   match parsed with
-  | .error e => pure (render (.error (.err e)), 0, 0)
+  | .error e => pure (render (.error (.err e)), 0, [])
   | .ok (e, d, bs) =>
-    if maxGasLimit < limit then pure (render (.error (.err .limit)), 0, 0)
+    if maxGasLimit < limit then pure (render (.error (.err .limit)), 0, [])
     else match compile e with
-      | .error err => pure (render (.error (.err err)), 0, 0)
+      | .error err => pure (render (.error (.err err)), 0, [])
       | .ok root =>
         let o := evaluate root d bs limit
-        pure (render o.result, o.gasUsed, o.warnings)
+        pure (render o.result, o.gasUsed, o.warnings.map warningView)
 
 def checkJlvm (path : String) : IO Bool := do
   let text ← IO.FS.readFile path
@@ -138,18 +153,18 @@ def checkJlvm (path : String) : IO Bool := do
       let kind := str? ((field c "outcome").bind (field · "error"))
       if kind.isSome then errors := errors + 1
       if kind = some "OutOfGas" then outOfGas := outOfGas + 1
-      let want := (expected ((field c "outcome").getD .null), (nat? (field c "gasUsed")).getD 0,
-        (nat? (field c "warnings")).getD 0)
-      match runCase c fileLimit with
-      | some got =>
-        if got == want then passed := passed + 1
-        else failures := failures.push s!"{(str? (field c "name")).getD "?"}: got {got}, want {want}"
-      | none => failures := failures.push s!"{(str? (field c "name")).getD "?"}: unreadable case"
+      let want := expectedWarnings c |>.map fun warnings =>
+        (expected ((field c "outcome").getD .null), (nat? (field c "gasUsed")).getD 0, warnings)
+      match runCase c fileLimit, want with
+      | some got, some expected =>
+        if got == expected then passed := passed + 1
+        else failures := failures.push s!"{(str? (field c "name")).getD "?"}: got {got}, want {expected}"
+      | _, _ => failures := failures.push s!"{(str? (field c "name")).getD "?"}: unreadable case or warnings"
   IO.println s!"jlvm_v1.json: {cases.length} cases, {inScopeCount} in scope ({inScopeCount - errors} values, {errors} errors, {outOfGas} of them OutOfGas), {passed} pass, {failures.size} fail"
   for f in failures.toList.take 40 do IO.println s!"  FAIL {f}"
-  let counts := [("corpus", cases.length, 3363), ("in scope", inScopeCount, 854),
-    ("excluded", cases.length - inScopeCount, 2509), ("values", inScopeCount - errors, 458),
-    ("errors", errors, 396), ("OutOfGas", outOfGas, 10)]
+  let counts := [("corpus", cases.length, 3371), ("in scope", inScopeCount, 862),
+    ("excluded", cases.length - inScopeCount, 2509), ("values", inScopeCount - errors, 465),
+    ("errors", errors, 397), ("OutOfGas", outOfGas, 10)]
   for (label, got, want) in counts do
     if got != want then IO.println s!"  FAIL {label}: got {got}, want {want}"
   pure (failures.isEmpty && counts.all (fun (_, got, want) => got == want))

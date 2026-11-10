@@ -8,10 +8,12 @@ import cats.syntax.all._
 
 import scala.concurrent.duration._
 
-import xyz.kd5ujc.core.canonical.{BuiltValues, DecodeFailure, DecodeReason, Preview}
+import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalJson, DecodeFailure, DecodeReason, Preview}
+import xyz.kd5ujc.core.circe.CanonicalCirce
 import xyz.kd5ujc.jlvm.{Jlvm, JlvmErrorKind, JlvmVectors, Op}
 import xyz.kd5ujc.models.crypto_errors.CryptoErrorKind
 import xyz.kd5ujc.models.jlvm_vectors.JlvmSigningCause
+import xyz.kd5ujc.models.{jlvm_vectors => vectorModel}
 
 import io.circe.Json
 import scodec.bits.ByteVector
@@ -25,19 +27,30 @@ import weaver.IOSuite
  */
 object DiffFuzzSuite extends IOSuite {
 
-  final case class Res(jlvm: Jlvm, corpus: Corpus, rows: Map[String, Json]) {
+  final case class Res(jlvm: Jlvm, corpus: Corpus, rows: Map[String, (Json, BigInt, Vector[vectorModel.JlvmWarning])]) {
     def attempt(c:   FuzzCase): Either[Fault, Record] = Evaluate.record(jlvm, c).leftMap(Fault.Evaluation(_))
     def reference(c: FuzzCase): Record = attempt(c).fold(e => throw Fault.Failure(e), identity)
     def generator: Generator = new Generator(corpus, attempt)
   }
 
-  private val rows: IO[Map[String, Json]] =
-    IO.blocking(new String(Files.readAllBytes(JlvmVectors.path), UTF_8)).flatMap(io.circe.parser.parse(_).liftTo[IO]).map { j =>
-      j.hcursor
-        .downField("cases")
-        .values
-        .fold(Map.empty[String, Json])(_.toList.flatMap(r => r.hcursor.get[String]("name").toOption.map(_ -> r)).toMap)
-    }
+  private val rows: IO[Map[String, (Json, BigInt, Vector[vectorModel.JlvmWarning])]] =
+    IO.blocking(new String(Files.readAllBytes(JlvmVectors.path), UTF_8))
+      .flatMap(text =>
+        CanonicalJson
+          .parse(text)
+          .leftMap(WireError.Canonical(_))
+          .flatMap(vectorModel.JlvmVectors.codec.decoder.decode(_).leftMap(WireError.Decode(_)))
+          .leftMap(WireError.Failure(_))
+          .liftTo[IO]
+      )
+      .flatMap(_.cases.traverse { row =>
+        vectorModel.JlvmOutcome.codec
+          .encode(row.outcome)
+          .flatMap(CanonicalCirce.toCirce)
+          .leftMap(e => WireError.Failure(WireError.Canonical(e)))
+          .liftTo[IO]
+          .map(out => row.name -> (out.mapObject(_.remove("json")), row.gasUsed, row.warnings))
+      }.map(_.toMap))
 
   def sharedResource: Resource[IO, Res] = Resource.eval((Jlvm.load[IO], Corpus.load, rows).mapN(Res.apply))
 
@@ -155,16 +168,26 @@ object DiffFuzzSuite extends IOSuite {
   }
 
   test("the reference's record of every jlvm_v1.json case is the case's row: its outcome, gas and warnings") { res =>
-    IO {
-      val cases = res.corpus.all
-      cases.foldLeft(expect.same(res.rows.size, cases.size)) { (acc, c) =>
-        val row = res.rows.get(c.name).map(_.hcursor)
-        val record = Evaluate.record(res.jlvm, c)
-        val outcome = row.flatMap(_.get[Json]("outcome").toOption).map(_.mapObject(_.remove("json")))
-        acc
-          .and(expect(record.map(r => Record.outcomeJson(r.outcome)).toOption == outcome, s"${c.name}: outcome"))
-          .and(expect(record.map(_.gasUsed).toOption == row.flatMap(_.get[Long]("gasUsed").toOption), s"${c.name}: gas"))
-          .and(expect(record.map(_.warnings.size.toLong).toOption == row.flatMap(_.get[Long]("warnings").toOption), s"${c.name}: warnings"))
+    val cases = res.corpus.all
+    cases.traverse(c => IO.defer(res.attempt(c).leftMap(Fault.Failure(_)).liftTo[IO]).tupleLeft(c)).map { records =>
+      val coverage = expect
+        .same(3371, cases.size)
+        .and(expect.same(3371, res.rows.size))
+        .and(expect.same(res.rows.keySet, cases.map(_.name).toSet))
+      records.foldLeft(coverage) {
+        case (acc, (c, record)) =>
+          val row = res.rows.get(c.name)
+          val warnings = record.warnings.map {
+            case (head, length) =>
+              vectorModel.JlvmWarning(
+                "AmbiguousPath",
+                vectorModel.JlvmWarningPreview(head, BigInt(length), head.getBytes(UTF_8).length.toLong < length)
+              )
+          }
+          acc
+            .and(expect(Some(Record.outcomeJson(record.outcome)) == row.map(_._1), s"${c.name}: outcome"))
+            .and(expect(Some(BigInt(record.gasUsed)) == row.map(_._2), s"${c.name}: gas"))
+            .and(expect(Some(warnings) == row.map(_._3), s"${c.name}: complete ordered warnings"))
       }
     }
   }

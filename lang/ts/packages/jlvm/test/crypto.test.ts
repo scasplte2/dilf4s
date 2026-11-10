@@ -68,7 +68,7 @@ function run(c: Case, program: string): Outcome {
 
 describe("section 6 operations on containers the machine built", { timeout: 600_000 }, () => {
   it("give every reaching case's outcome", () => {
-    expect(vectors.cases).toHaveLength(3363);
+    expect(vectors.cases).toHaveLength(3371);
     const excluded = { refusal: 0, scope: 0, longNumber: 0 };
     let checked = 0;
     const failures: string[] = [];
@@ -95,7 +95,7 @@ describe("section 6 operations on containers the machine built", { timeout: 600_
       checked++;
     }
     expect(failures).toEqual([]);
-    expect(excluded).toEqual({ refusal: 237, scope: 2706, longNumber: 36 });
+    expect(excluded).toEqual({ refusal: 237, scope: 2714, longNumber: 36 });
     expect(checked, "cases rerun on machine-built arguments").toBe(384);
   });
 });

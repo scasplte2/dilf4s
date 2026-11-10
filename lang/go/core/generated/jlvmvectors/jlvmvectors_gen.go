@@ -309,7 +309,7 @@ type JlvmCase struct {
 	GasUsed uint64
 
 	// Warnings is the `warnings` entry.
-	Warnings uint64
+	Warnings []JlvmWarning
 }
 
 // EncodeJlvmCase is the canonical value of x, encoded at at.
@@ -350,7 +350,7 @@ func EncodeJlvmCase(x JlvmCase, at core.Encoding) (core.Value, error) {
 	if err != nil {
 		return core.Value{}, err
 	}
-	f8, err := core.EncodeUint(x.Warnings, inner)
+	f8, err := core.VecOf[JlvmWarning]{Lo: 0, Hi: -1, Enc: EncodeJlvmWarning, Dec: DecodeJlvmWarning}.Encode(x.Warnings, inner)
 	if err != nil {
 		return core.Value{}, err
 	}
@@ -395,7 +395,7 @@ func DecodeJlvmCase(v core.Value) (JlvmCase, error) {
 	if err != nil {
 		return JlvmCase{}, err
 	}
-	f8, err := core.Required(f, "warnings", core.DecodeUint)
+	f8, err := core.Required(f, "warnings", core.VecOf[JlvmWarning]{Lo: 0, Hi: -1, Enc: EncodeJlvmWarning, Dec: DecodeJlvmWarning}.Decode)
 	if err != nil {
 		return JlvmCase{}, err
 	}
@@ -1133,6 +1133,102 @@ func DecodeJlvmVrfCause(v core.Value) (JlvmVrfCause, error) {
 		return JlvmVrfCause{}, err
 	}
 	return JlvmVrfCause{Vrf: f0}, nil
+}
+
+// JlvmWarning is `jlvm-warning` (shared/schemas/jlvm-vectors.cddl).
+//
+// Warnings in first-observed order, after preview-based deduplication and the warning cap. Every preview field is
+// normative, including whether the full path was truncated.
+type JlvmWarning struct {
+	// Path is the `path` entry.
+	Path JlvmWarningPreview
+}
+
+// EncodeJlvmWarning is the canonical value of x, encoded at at.
+func EncodeJlvmWarning(x JlvmWarning, at core.Encoding) (core.Value, error) {
+	inner, err := at.Nested()
+	if err != nil {
+		return core.Value{}, err
+	}
+	f0, err := core.EncodeLiteralText("AmbiguousPath", inner)
+	if err != nil {
+		return core.Value{}, err
+	}
+	f1, err := EncodeJlvmWarningPreview(x.Path, inner)
+	if err != nil {
+		return core.Value{}, err
+	}
+	return inner.Record(core.Req("kind", f0), core.Req("path", f1))
+}
+
+// DecodeJlvmWarning is the JlvmWarning of v.
+func DecodeJlvmWarning(v core.Value) (JlvmWarning, error) {
+	f, err := core.RecordFields(v, "kind", "path")
+	if err != nil {
+		return JlvmWarning{}, err
+	}
+	if _, err := core.Required(f, "kind", core.LiteralText("AmbiguousPath")); err != nil {
+		return JlvmWarning{}, err
+	}
+	f1, err := core.Required(f, "path", DecodeJlvmWarningPreview)
+	if err != nil {
+		return JlvmWarning{}, err
+	}
+	return JlvmWarning{Path: f1}, nil
+}
+
+// JlvmWarningPreview is `jlvm-warning-preview` (shared/schemas/jlvm-vectors.cddl).
+type JlvmWarningPreview struct {
+	// Head is the `head` entry.
+	Head string
+
+	// Length is the `length` entry.
+	Length uint64
+
+	// Truncated is the `truncated` entry.
+	Truncated bool
+}
+
+// EncodeJlvmWarningPreview is the canonical value of x, encoded at at.
+func EncodeJlvmWarningPreview(x JlvmWarningPreview, at core.Encoding) (core.Value, error) {
+	inner, err := at.Nested()
+	if err != nil {
+		return core.Value{}, err
+	}
+	f0, err := core.EncodeText(x.Head, inner)
+	if err != nil {
+		return core.Value{}, err
+	}
+	f1, err := core.EncodeUint(x.Length, inner)
+	if err != nil {
+		return core.Value{}, err
+	}
+	f2, err := core.EncodeBool(x.Truncated, inner)
+	if err != nil {
+		return core.Value{}, err
+	}
+	return inner.Record(core.Req("head", f0), core.Req("length", f1), core.Req("truncated", f2))
+}
+
+// DecodeJlvmWarningPreview is the JlvmWarningPreview of v.
+func DecodeJlvmWarningPreview(v core.Value) (JlvmWarningPreview, error) {
+	f, err := core.RecordFields(v, "head", "length", "truncated")
+	if err != nil {
+		return JlvmWarningPreview{}, err
+	}
+	f0, err := core.Required(f, "head", core.DecodeText)
+	if err != nil {
+		return JlvmWarningPreview{}, err
+	}
+	f1, err := core.Required(f, "length", core.DecodeUint)
+	if err != nil {
+		return JlvmWarningPreview{}, err
+	}
+	f2, err := core.Required(f, "truncated", core.DecodeBool)
+	if err != nil {
+		return JlvmWarningPreview{}, err
+	}
+	return JlvmWarningPreview{Head: f0, Length: f1, Truncated: f2}, nil
 }
 
 // JlvmZkCause is `jlvm-zk-cause` (shared/schemas/jlvm-vectors.cddl).

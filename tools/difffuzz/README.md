@@ -24,7 +24,7 @@ Each runner turns a case into one record. A record holds what the vectors pin (`
 | `outcome` | `jlvm-vectors.cddl`'s `jlvm-outcome`: a value's canonical CBOR, or an error's kind, its `op` for `Type`, `Arity`, `Arithmetic`, `Domain` and `Crypto`, and a `Crypto` error's `cause` (`{family: kind}`). |
 | `available` | An `OutOfGas` error's `available`, which is the limit (section 3). The vectors leave it out. |
 | `gasUsed` | The gas used. Out of gas, this is the whole limit. |
-| `warnings` | Each `AmbiguousPath` warning's preview, `[head, length]`, in the order recorded. The vectors pin how many there are. |
+| `warnings` | Each `AmbiguousPath` warning's preview, `[head, length]`, in the order recorded. The vectors pin the warning kinds and complete preview contents, including the truncation flag derived from these fields. |
 
 Messages and `OutOfGas.required` are informative, so they are never compared. The summary's tables count, for each
 operation at the root, the values, `false`s, its own refusals and other errors; and for each cryptographic operation,

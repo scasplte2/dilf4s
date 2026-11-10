@@ -182,7 +182,7 @@ pub struct JlvmCase {
     /// The `gasUsed` entry.
     pub gas_used: u64,
     /// The `warnings` entry.
-    pub warnings: u64,
+    pub warnings: Vec<JlvmWarning>,
 }
 
 impl c::Model for JlvmCase {
@@ -197,7 +197,7 @@ impl c::Model for JlvmCase {
             c::optional_field("gasLimit", &c::UINT, self.gas_limit.as_ref(), inner)?,
             c::field("outcome", &c::ModelOf::<JlvmOutcome>::NEW, &self.outcome, inner)?,
             c::field("gasUsed", &c::UINT, &self.gas_used, inner)?,
-            c::field("warnings", &c::UINT, &self.warnings, inner)?,
+            c::field("warnings", &c::VecOf { element: c::ModelOf::<JlvmWarning>::NEW, min: 0, max: None }, &self.warnings, inner)?,
         ])
     }
 
@@ -211,7 +211,7 @@ impl c::Model for JlvmCase {
         let f5 = fields.optional("gasLimit", &c::UINT)?;
         let f6 = fields.required("outcome", &c::ModelOf::<JlvmOutcome>::NEW)?;
         let f7 = fields.required("gasUsed", &c::UINT)?;
-        let f8 = fields.required("warnings", &c::UINT)?;
+        let f8 = fields.required("warnings", &c::VecOf { element: c::ModelOf::<JlvmWarning>::NEW, min: 0, max: None })?;
         Ok(Self { name: f0, program: f1, data: f2, env: f3, built: f4, gas_limit: f5, outcome: f6, gas_used: f7, warnings: f8 })
     }
 }
@@ -647,6 +647,63 @@ impl c::Model for JlvmVrfCause {
         let fields = c::Fields::of(value, &["vrf"])?;
         let f0 = fields.required("vrf", &c::ModelOf::<super::crypto_errors::VrfErrorKind>::NEW)?;
         Ok(Self { vrf: f0 })
+    }
+}
+
+/// `jlvm-warning` (`shared/schemas/jlvm-vectors.cddl`).
+///
+/// Warnings in first-observed order, after preview-based deduplication and the warning cap. Every preview field is
+/// normative, including whether the full path was truncated.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmWarning {
+    /// The `path` entry.
+    pub path: JlvmWarningPreview,
+}
+
+impl c::Model for JlvmWarning {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("kind", &c::LiteralText("AmbiguousPath"), &(), inner)?,
+            c::field("path", &c::ModelOf::<JlvmWarningPreview>::NEW, &self.path, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["kind", "path"])?;
+        fields.required("kind", &c::LiteralText("AmbiguousPath"))?;
+        let f1 = fields.required("path", &c::ModelOf::<JlvmWarningPreview>::NEW)?;
+        Ok(Self { path: f1 })
+    }
+}
+
+/// `jlvm-warning-preview` (`shared/schemas/jlvm-vectors.cddl`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JlvmWarningPreview {
+    /// The `head` entry.
+    pub head: String,
+    /// The `length` entry.
+    pub length: u64,
+    /// The `truncated` entry.
+    pub truncated: bool,
+}
+
+impl c::Model for JlvmWarningPreview {
+    fn to_value_at(&self, depth: usize) -> Result<c::Value, c::CanonicalError> {
+        let inner = c::nested(depth)?;
+        c::record([
+            c::field("head", &c::Text, &self.head, inner)?,
+            c::field("length", &c::UINT, &self.length, inner)?,
+            c::field("truncated", &c::Bool, &self.truncated, inner)?,
+        ])
+    }
+
+    fn from_value(value: &c::Value) -> Result<Self, c::DecodeFailure> {
+        let fields = c::Fields::of(value, &["head", "length", "truncated"])?;
+        let f0 = fields.required("head", &c::Text)?;
+        let f1 = fields.required("length", &c::UINT)?;
+        let f2 = fields.required("truncated", &c::Bool)?;
+        Ok(Self { head: f0, length: f1, truncated: f2 })
     }
 }
 

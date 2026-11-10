@@ -161,7 +161,7 @@ object FuzzCase {
  * decoded to), which is its identity (section 1); `outcome` is a value's canonical CBOR, or an error's kind, its `op`
  * for the kinds that carry one and a `Crypto` error's `cause`; `available` is an `OutOfGas` error's limit; `gasUsed`;
  * and `warnings`, each warning's path preview by its two normative fields (conformance.md section 8), in the order
- * recorded. The vectors pin the warnings' count. Messages and `OutOfGas.required` are informative and never reported.
+ * recorded. The vectors pin the warning kinds and complete previews. Messages and `OutOfGas.required` are informative and never reported.
  */
 final case class Record(
   name:      String,

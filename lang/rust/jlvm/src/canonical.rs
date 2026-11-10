@@ -381,7 +381,7 @@ mod tests {
     #[test]
     fn the_reader_reads_every_form_as_the_generated_decoder_does() {
         let programs = vector_programs();
-        assert_eq!(programs.len(), 3304, "vector programs including aliases");
+        assert_eq!(programs.len(), 3312, "vector programs including aliases");
         let mut forms: Vec<Value> = programs.iter().map(|p| p.canonical().unwrap()).collect();
         for p in programs.iter().step_by(20) {
             let f = p.canonical().unwrap();

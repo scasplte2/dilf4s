@@ -8,7 +8,10 @@ import cats.syntax.all._
 
 import scala.concurrent.duration._
 
+import xyz.kd5ujc.core.canonical.CanonicalJson
+import xyz.kd5ujc.core.circe.CanonicalCirce
 import xyz.kd5ujc.jlvm.{Expr, Jlvm, JlvmErrorKind, Op, Parser, Site}
+import xyz.kd5ujc.models.{jlvm_vectors => vectorModel}
 
 import io.circe.Json
 import io.circe.syntax._
@@ -511,15 +514,23 @@ object DiffFuzz extends IOApp {
   /** The `jlvm_v1.json` cases, each record checked against its row as well as the reference's against the others'. */
   private def vectors(runners: Runners): IO[Stats] =
     IO.blocking(new String(Files.readAllBytes(xyz.kd5ujc.jlvm.JlvmVectors.path), UTF_8))
-      .flatMap(io.circe.parser.parse(_).liftTo[IO])
-      .flatMap { file =>
-        val rows = file.hcursor.downField("cases").values.fold(Vector.empty[Json])(_.toVector)
-        val expected: Map[String, (Json, Long, Long)] = rows.flatMap { r =>
-          val c = r.hcursor
-          (c.get[String]("name"), c.get[Json]("outcome"), c.get[Long]("gasUsed"), c.get[Long]("warnings")).tupled.toOption.map {
-            case (n, out, g, w) => n -> (out.mapObject(_.remove("json")), g, w)
-          }
-        }.toMap
+      .flatMap(text =>
+        CanonicalJson
+          .parse(text)
+          .leftMap(WireError.Canonical(_))
+          .flatMap(vectorModel.JlvmVectors.codec.decoder.decode(_).leftMap(WireError.Decode(_)))
+          .leftMap(WireError.Failure(_))
+          .liftTo[IO]
+      )
+      .flatMap(_.cases.traverse { row =>
+        vectorModel.JlvmOutcome.codec
+          .encode(row.outcome)
+          .flatMap(CanonicalCirce.toCirce)
+          .leftMap(e => WireError.Failure(WireError.Canonical(e)))
+          .liftTo[IO]
+          .map(out => row.name -> (out.mapObject(_.remove("json")), row.gasUsed, row.warnings))
+      }.map(_.toMap))
+      .flatMap { expected =>
         Corpus.cases.flatMap { cases =>
           cases.grouped(200).toVector.foldLeftM(Stats()) { (stats, group) =>
             runners.batch(group).flatMap { rs =>
@@ -528,7 +539,15 @@ object DiffFuzz extends IOApp {
                   val against = (r.others :+ ("scala" -> r.scala)).flatMap {
                     case (lang, rec) =>
                       val ok = rec.toOption.zip(expected.get(c.name)).exists {
-                        case (x, (out, g, w)) => Record.outcomeJson(x.outcome) == out && x.gasUsed == g && x.warnings.size.toLong == w
+                        case (x, (out, g, w)) =>
+                          val warnings = x.warnings.map {
+                            case (head, length) =>
+                              vectorModel.JlvmWarning(
+                                "AmbiguousPath",
+                                vectorModel.JlvmWarningPreview(head, BigInt(length), head.getBytes(UTF_8).length.toLong < length)
+                              )
+                          }
+                          Record.outcomeJson(x.outcome) == out && BigInt(x.gasUsed) == g && warnings == w
                       }
                       Option.unless(ok)(Diff(lang, Field.Outcome))
                   }.toSet

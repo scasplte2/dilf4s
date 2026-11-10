@@ -67,7 +67,7 @@ function actual(o: Outcome): string {
 
 describe("jlvm_v1.json", { timeout: 600_000 }, () => {
   it("every case gives the vector's outcome, gas and warnings", () => {
-    expect(vectors.cases).toHaveLength(3363);
+    expect(vectors.cases).toHaveLength(3371);
     const filter = process.env["JLVM_CASE"];
     let passed = 0;
     const failures: string[] = [];
@@ -78,8 +78,11 @@ describe("jlvm_v1.json", { timeout: 600_000 }, () => {
       const [want, got] = [expected(c), actual(o)];
       if (want !== got) failures.push(`outcome ${c.name}: want ${want}, got ${got} (${JSON.stringify(o.result.ok ? null : o.result.error)})`);
       else if (BigInt(o.gasUsed) !== c.gasUsed) failures.push(`gas ${c.name}: want ${c.gasUsed.toString()}, got ${o.gasUsed.toString()} (${got})`);
-      else if (BigInt(o.warnings.length) !== c.warnings) failures.push(`warnings ${c.name}: want ${c.warnings.toString()}, got ${o.warnings.length.toString()}`);
-      else passed++;
+      else {
+        const warnings = o.warnings.map((w) => ({ kind: w.kind, path: { head: w.path.head, length: BigInt(w.path.length), truncated: w.path.truncated } }));
+        expect(warnings, `${c.name}: warnings in order`).toEqual(c.warnings);
+        passed++;
+      }
     }
     console.log(`jlvm_v1.json: ${passed.toString()} of ${vectors.cases.length.toString()} cases pass`);
     for (const f of failures.slice(0, 60)) console.log(`  ${f}`);
