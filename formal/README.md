@@ -66,14 +66,13 @@ accepted limit lies below the saturation point. So both theorems hold for every 
 
 **`jlvm_v1.json`**, every case in scope:
 - the outcome: the result's canonical CBOR, or the error's kind and `op`;
-- the gas used and the number of warnings, exactly.
+- the gas used and every warning’s kind, preview text, full UTF-8 length and truncation flag, in order.
 
 A case is in scope when it has no `built` binding and its program text names only the slice's operations. Every key
 of a single-key object outside a `{"literal": ...}` is checked, aliases included. The test reads the program's text,
 never its expected outcome. A program whose text is not JSON is in scope, since its outcome is the parser's alone.
 
-Results on base `958dc34e`:
-- encoding: 263 of 263 checks pass;
-- `jlvm_v1.json`: 3363 cases, 854 in scope, 2509 excluded by the operation/binding scope filter. Of those, 458 expect a value and 396 an error, 10 of them `OutOfGas`.
-  All 854 pass.
-- The run takes about 2 s of CPU.
+Current shared-corpus checks:
+- encoding: 269 of 269 checks pass;
+- `jlvm_v1.json`: 3371 cases, 862 in scope, 2509 excluded by the operation/binding scope filter. Of those, 465 expect a value and 397 an error, 10 of them `OutOfGas`.
+  All 862 pass.

@@ -32,7 +32,7 @@ final case class Replica[V, H] private (
 object Replica {
 
   private def mismatch(component: VtRootComponent, expected: Digest[?], computed: Digest[?]): VersionedTrieError =
-    VersionedTrieError.RootMismatch(component, expected.hex, computed.hex)
+    VersionedTrieError.RootMismatch(component, Some(expected.bytes), Some(computed.bytes))
 
   /**
    * The order of a replica's values: string order, which for the key grammar's ASCII alphabet is byte order, the trie's.
@@ -95,7 +95,7 @@ object Replica {
       _ <- Either.cond(
         parent == claimed,
         (),
-        VersionedTrieError.RootMismatch(VtRootComponent.Parent, parent.fold("none")(_.hex), claimed.fold("none")(_.hex))
+        VersionedTrieError.RootMismatch(VtRootComponent.Parent, parent.map(_.bytes), claimed.map(_.bytes))
       )
       nk <- V.keyOf(delta.head.version)
       hk <- r.head.traverse(h => V.keyOf(h.version))
@@ -103,12 +103,12 @@ object Replica {
         .filterNot(Cbor.compareBytes(nk, _) > 0)
         .toLeft(())
         .leftMap(hk => VersionedTrieError.VersionNotIncreasing(versionHex(hk), versionHex(nk)))
-      _ <- Either.cond(delta.removes.forall(k => !written(k)), (), VersionedTrieError.Malformed("a key is both written and removed"))
-      _ <- Either.cond(written.size == delta.upserts.size, (), VersionedTrieError.Malformed("a key is written twice"))
+      _ <- Either.cond(delta.removes.forall(k => !written(k)), (), VersionedTrieError.Malformed(MalformedReason.WriteRemoveOverlap))
+      _ <- Either.cond(written.size == delta.upserts.size, (), VersionedTrieError.Malformed(MalformedReason.DuplicateWrite))
       // the limits a commit and a snapshot enforce, so no replication path accepts a value another refuses
       _ <- delta.upserts.traverse_ {
         case (k, v) =>
-          if (v == CNull) VersionedTrieError.Malformed(s"${k.preview.short} is upserted as null").asLeft else VersionedTrie.checkValue(k, v)
+          if (v == CNull) VersionedTrieError.Malformed(MalformedReason.NullUpsert(k.preview)).asLeft else VersionedTrie.checkValue(k, v)
       }
       upserts <- delta.upserts.traverse { case (k, v) => VersionedTrie.valueHash[H](v).map(h => k.bytes -> Option(h)) }
       ops = delta.removes.map(k => k.bytes -> Option.empty[Digest[H]]) ++ upserts

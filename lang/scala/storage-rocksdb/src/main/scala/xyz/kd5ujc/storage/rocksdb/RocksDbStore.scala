@@ -53,7 +53,7 @@ object RocksDbStore {
     implicit R: Raise[F, StoreError]
   ): Resource[F, RocksDbHandle[F]] =
     for {
-      _      <- Resource.eval(native("load library")(RocksDB.loadLibrary()))
+      _      <- Resource.eval(native(BackendOperation.LoadLibrary)(RocksDB.loadLibrary()))
       cache  <- Resource.fromAutoCloseable(Sync[F].delay(new LRUCache(config.blockCacheBytes)))
       filter <- Resource.fromAutoCloseable(Sync[F].delay(new BloomFilter(math.max(config.bloomBitsPerKey, 1).toDouble, false)))
       options <- Resource.fromAutoCloseable(Sync[F].delay {
@@ -61,15 +61,15 @@ object RocksDbStore {
         val tuned = if (config.bloomBitsPerKey > 0) table.setFilterPolicy(filter) else table
         new Options().setCreateIfMissing(true).setTableFormatConfig(tuned).setCompressionType(config.compression)
       })
-      db     <- Resource.fromAutoCloseable(native(s"open $path")(RocksDB.open(options, path.toString)))
+      db     <- Resource.fromAutoCloseable(native(BackendOperation.Open(path))(RocksDB.open(options, path.toString)))
       writes <- Resource.fromAutoCloseable(Sync[F].delay(new WriteOptions().setSync(config.syncWrites)))
       lock   <- Resource.eval(Mutex[F])
     } yield new Impl[F](db, writes, lock, config)
 
-  private def native[F[_]: Sync, A](operation: String)(thunk: => A)(implicit R: Raise[F, StoreError]): F[A] =
+  private[rocksdb] def native[F[_]: Sync, A](operation: BackendOperation)(thunk: => A)(implicit R: Raise[F, StoreError]): F[A] =
     Sync[F].blocking(thunk).recoverWith {
       case e: RocksDBException =>
-        R.raise[StoreError, A](StoreError.Backend(operation, Option(e.getMessage).getOrElse(e.getClass.getName)))
+        R.raise[StoreError, A](StoreError.Backend(operation, e))
     }
 
   final private class Impl[F[_]: Sync](db: RocksDB, writeOptions: WriteOptions, lock: Mutex[F], config: RocksDbConfig)(
@@ -77,16 +77,19 @@ object RocksDbStore {
   ) extends RocksDbHandle[F] {
 
     def compact(range: ByteRange): F[Unit] =
-      range.until.fold(native("compact")(db.compactRange())) { until =>
-        native("compact")(db.compactRange(range.from.fold(Array.emptyByteArray)(_.toArray), until.toArray))
+      range.until.fold(native(BackendOperation.Compact)(db.compactRange())) { until =>
+        native(BackendOperation.Compact)(db.compactRange(range.from.fold(Array.emptyByteArray)(_.toArray), until.toArray))
       }
 
     def get(key: ByteVector): F[Option[ByteVector]] =
-      native("get")(Option(db.get(key.toArray)).map(ByteVector.view))
+      native(BackendOperation.Get)(Option(db.get(key.toArray)).map(ByteVector.view))
 
     def getAll(keys: List[ByteVector]): F[List[Option[ByteVector]]] =
       if (keys.isEmpty) List.empty[Option[ByteVector]].pure[F]
-      else native("multiGet")(db.multiGetAsList(keys.map(_.toArray).asJava).asScala.toList.map(v => Option(v).map(ByteVector.view)))
+      else
+        native(BackendOperation.MultiGet)(
+          db.multiGetAsList(keys.map(_.toArray).asJava).asScala.toList.map(v => Option(v).map(ByteVector.view))
+        )
 
     def write(batch: RawBatch): F[Unit] = lock.lock.surround(unguardedWrite(batch))
 
@@ -103,9 +106,9 @@ object RocksDbStore {
       else
         Resource.fromAutoCloseable(Sync[F].delay(new WriteBatch())).use { wb =>
           batch.ops.traverse_ {
-            case RawOp.Put(k, v) => native("batch put")(wb.put(k.toArray, v.toArray))
-            case RawOp.Delete(k) => native("batch delete")(wb.delete(k.toArray))
-          } >> native("write")(db.write(writeOptions, wb))
+            case RawOp.Put(k, v) => native(BackendOperation.BatchPut)(wb.put(k.toArray, v.toArray))
+            case RawOp.Delete(k) => native(BackendOperation.BatchDelete)(wb.delete(k.toArray))
+          } >> native(BackendOperation.Write)(db.write(writeOptions, wb))
         }
 
     def scan(range: ByteRange): Stream[F, (ByteVector, ByteVector)] =
@@ -115,15 +118,15 @@ object RocksDbStore {
             snapshot <- Resource.make(Sync[F].delay(db.getSnapshot))(s => Sync[F].delay(db.releaseSnapshot(s)))
             read     <- Resource.fromAutoCloseable(Sync[F].delay(new ReadOptions().setSnapshot(snapshot)))
             iterator <- Resource.fromAutoCloseable(Sync[F].delay(db.newIterator(read)))
-            _        <- Resource.eval(native("seek")(range.from.fold(iterator.seekToFirst())(f => iterator.seek(f.toArray))))
+            _        <- Resource.eval(native(BackendOperation.Seek)(range.from.fold(iterator.seekToFirst())(f => iterator.seek(f.toArray))))
           } yield iterator
         )
         .flatMap(iterator => Stream.unfoldChunkEval(())(_ => nextChunk(iterator, range)))
 
     /** Reads up to `scanChunkSize` in-range entries; the iterator is only touched inside `blocking`. */
     private def nextChunk(it: RocksIterator, range: ByteRange): F[Option[(Chunk[(ByteVector, ByteVector)], Unit)]] =
-      native("iterate")(read(it, range, config.scanChunkSize, Vector.empty))
-        .flatMap(entries => native("status")(it.status()).as(Option.when(entries.nonEmpty)((Chunk.from(entries), ()))))
+      native(BackendOperation.Iterate)(read(it, range, config.scanChunkSize, Vector.empty))
+        .flatMap(entries => native(BackendOperation.Status)(it.status()).as(Option.when(entries.nonEmpty)((Chunk.from(entries), ()))))
 
     /** Advances the iterator only past entries it returns, so no entry is skipped between chunks. */
     @tailrec

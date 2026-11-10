@@ -92,7 +92,7 @@ export interface JlvmCase {
   readonly gasLimit?: bigint;
   readonly outcome: JlvmOutcome;
   readonly gasUsed: bigint;
-  readonly warnings: bigint;
+  readonly warnings: readonly JlvmWarning[];
 }
 
 export const JlvmCase: c.Codec<JlvmCase> = c.record<JlvmCase>({
@@ -104,7 +104,7 @@ export const JlvmCase: c.Codec<JlvmCase> = c.record<JlvmCase>({
   gasLimit: c.optional("gasLimit", c.uint),
   outcome: c.required("outcome", c.defer(() => JlvmOutcome)),
   gasUsed: c.required("gasUsed", c.uint),
-  warnings: c.required("warnings", c.uint),
+  warnings: c.required("warnings", c.vector(c.defer(() => JlvmWarning), 0, null)),
 });
 
 /**
@@ -301,6 +301,35 @@ export interface JlvmVrfCause {
 
 export const JlvmVrfCause: c.Codec<JlvmVrfCause> = c.record<JlvmVrfCause>({
   vrf: c.required("vrf", c.defer(() => cryptoErrors.VrfErrorKind)),
+});
+
+/**
+ * `jlvm-warning` (`shared/schemas/jlvm-vectors.cddl`).
+ *
+ * Warnings in first-observed order, after preview-based deduplication and the warning cap. Every preview field is
+ * normative, including whether the full path was truncated.
+ */
+export interface JlvmWarning {
+  readonly kind: "AmbiguousPath";
+  readonly path: JlvmWarningPreview;
+}
+
+export const JlvmWarning: c.Codec<JlvmWarning> = c.record<JlvmWarning>({
+  kind: c.required("kind", c.literalText("AmbiguousPath")),
+  path: c.required("path", c.defer(() => JlvmWarningPreview)),
+});
+
+/** `jlvm-warning-preview` (`shared/schemas/jlvm-vectors.cddl`). */
+export interface JlvmWarningPreview {
+  readonly head: string;
+  readonly length: bigint;
+  readonly truncated: boolean;
+}
+
+export const JlvmWarningPreview: c.Codec<JlvmWarningPreview> = c.record<JlvmWarningPreview>({
+  head: c.required("head", c.text),
+  length: c.required("length", c.uint),
+  truncated: c.required("truncated", c.bool),
 });
 
 /** `jlvm-zk-cause` (`shared/schemas/jlvm-vectors.cddl`). */

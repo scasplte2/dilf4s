@@ -35,7 +35,8 @@ function expectedCause(c: models.jlvmVectors.JlvmCause | undefined): string {
 function expected(c: Case): string {
   const o = c.outcome;
   const outcome = "cbor" in o ? `value ${o.cbor} json ${o.json ?? "<none>"}` : `error ${o.error} op ${o.op ?? "none"} cause ${expectedCause(o.cause)}`;
-  return `${outcome} gas ${c.gasUsed.toString()} warnings ${c.warnings.toString()}`;
+  const warnings = c.warnings.map((w) => ({ kind: w.kind, path: w.path.head, pathBytes: w.path.length.toString(), truncated: w.path.truncated }));
+  return `${outcome} gas ${c.gasUsed.toString()} warnings ${JSON.stringify(warnings)}`;
 }
 
 /** Whether every text of a case is within the server's measure: its UTF-8 length plus its numbers' exponents. */
@@ -49,7 +50,7 @@ function fits(c: Case): boolean {
  * is `InvalidArguments`; one past the cap is `GasLimitOutOfRange` (server.test.ts).
  */
 function expectedOf(c: Case, limit: bigint): string {
-  const refused = (kind: string): string => `error ${kind} op none cause none gas 0 warnings 0`;
+  const refused = (kind: string): string => `error ${kind} op none cause none gas 0 warnings []`;
   // a text past the server's measure is refused before anything is read
   if (!fits(c)) return refused("InputTooLarge");
   if (limit > BigInt(Number.MAX_SAFE_INTEGER)) return refused("InvalidArguments");
@@ -67,10 +68,12 @@ function actual(r: Called): string {
   const s = r.structured;
   if (s["ok"] !== true) {
     const refusal = s["refusal"] as { readonly kind: string };
-    return `error ${refusal.kind} op none cause none gas 0 warnings 0`;
+    return `error ${refusal.kind} op none cause none gas 0 warnings []`;
   }
   const outcome = s["outcome"] as { readonly value?: { readonly cbor?: string; readonly json?: string; readonly omitted?: { readonly json?: string } }; readonly error?: Shown };
-  const tail = ` gas ${String(s["gasUsed"])} warnings ${String((s["warnings"] as readonly unknown[]).length)}`;
+  const warnings = (s["warnings"] as readonly { readonly kind: string; readonly path: string; readonly pathBytes: number }[])
+    .map((w) => ({ kind: w.kind, path: w.path, pathBytes: w.pathBytes.toString(), truncated: new TextEncoder().encode(w.path).length < w.pathBytes }));
+  const tail = ` gas ${String(s["gasUsed"])} warnings ${JSON.stringify(warnings)}`;
   if (outcome.value !== undefined) {
     const j = outcome.value.json ?? (outcome.value.omitted?.json === "NoSurfaceForm" ? "<none>" : `<omitted ${String(outcome.value.omitted?.json)}>`);
     return `value ${outcome.value.cbor ?? "<omitted>"} json ${j}${tail}`;
@@ -89,8 +92,8 @@ const argsOf = (c: { readonly program: string; readonly data: string; readonly e
 
 describe("jlvm_v1.json through jlvm_evaluate", { timeout: 600_000 }, () => {
   it("the file holds exactly the textual and built cases this test covers", () => {
-    expect(vectors.cases.length, "cases").toBe(3363);
-    expect(textual.length, "textual cases").toBe(3343);
+    expect(vectors.cases.length, "cases").toBe(3371);
+    expect(textual.length, "textual cases").toBe(3351);
     expect(vectors.cases.filter((c) => c.built !== undefined).length, "built cases").toBe(20);
   });
 

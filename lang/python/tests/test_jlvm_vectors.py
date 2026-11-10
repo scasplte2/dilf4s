@@ -2,7 +2,7 @@
 
 Each case: parse the program, the data and the host bindings (the first failure is the outcome, with no gas), add the
 bindings built with shared parts, then evaluate with the case's gas limit (the file's when absent). Every case must give
-the same value (canonical CBOR) or error (its kind, `op` and `cause`), the same gas and the same number of warnings.
+the same value (canonical CBOR) or error (its kind, `op` and `cause`), the same gas and the same ordered warning kinds and preview contents.
 """
 
 from typing import Final, get_args
@@ -85,17 +85,21 @@ def mismatch(case: Json) -> str | None:
     """Where a case's outcome differs from the vector's, if it does."""
     o = outcome_of(case)
     want, got = expected(case), described(o)
-    if want != got or o.gas_used != case["gasUsed"] or len(o.warnings) != case["warnings"]:
+    warnings = [
+        {"kind": w.kind, "path": {"head": w.path.head, "length": w.path.length, "truncated": w.path.truncated}}
+        for w in o.warnings
+    ]
+    if want != got or o.gas_used != case["gasUsed"] or warnings != case["warnings"]:
         return (
             f"{case['name']}: want {want} gas {case['gasUsed']} warnings {case['warnings']}, "
-            f"got {got} gas {o.gas_used} warnings {len(o.warnings)} ({o.result})"
+            f"got {got} gas {o.gas_used} warnings {warnings} ({o.result})"
         )
     return None
 
 
 def test_every_case_gives_its_outcome_gas_and_warnings() -> None:
     n = failures(VECTORS["cases"], mismatch)
-    assert n == len(VECTORS["cases"]) == 3363
+    assert n == len(VECTORS["cases"]) == 3371
 
 
 def test_the_file_is_the_version_and_schedule_this_sdk_runs() -> None:
@@ -149,7 +153,7 @@ def test_every_canonical_form_is_read_as_its_row_says() -> None:
 def test_every_program_round_trips_through_its_canonical_form() -> None:
     expected = dict(line.split("\t") for line in (VECTOR_DIR / "jlvm_parse_refusals_v1.tsv").read_text().splitlines())
     assert len(expected) == 67, "expected program parse refusals"
-    assert len(VECTORS["cases"]) == 3363
+    assert len(VECTORS["cases"]) == 3371
     assert len(VECTORS["aliases"]) == 4
     parsed_cases = [(c["name"], parse(c["program"])) for c in VECTORS["cases"]]
     refused = {name: r.error.kind for name, r in parsed_cases if isinstance(r, Err)}
@@ -166,7 +170,7 @@ def test_every_program_round_trips_through_its_canonical_form() -> None:
         assert ok(back.id(), text) == ok(p.id(), text), f"{text}: identity"
         assert ok(from_canonical(ok(p.canonical(), text)), text) == p, f"{text}: from its form"
         programs += 1
-    assert programs == 3304, f"{programs} programs round-trip"
+    assert programs == 3312, f"{programs} programs round-trip"
 
 
 def test_compiled_programs_evaluate_alike() -> None:

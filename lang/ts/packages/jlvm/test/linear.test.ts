@@ -36,7 +36,7 @@ describe("steps are linear in gas", { timeout: 600_000 }, () => {
     const refusal = (c: models.jlvmVectors.JlvmCase, kind: string): void => {
       expect(c.outcome, `${c.name}: the excluded case must expect this refusal`).toEqual({ error: kind });
       expect(c.gasUsed, `${c.name}: refused before evaluation`).toBe(0n);
-      expect(c.warnings, `${c.name}: refused before warnings`).toBe(0n);
+      expect(c.warnings, `${c.name}: refused before warnings`).toEqual([]);
       refused++;
     };
     let worst = 0;
@@ -62,7 +62,7 @@ describe("steps are linear in gas", { timeout: 600_000 }, () => {
       worst = Math.max(worst, r.steps / Math.max(r.used, 1));
       checked++;
     }
-    expect(checked, "evaluated cases").toBe(3152);
+    expect(checked, "evaluated cases").toBe(3160);
     expect(refused, "cases refused before evaluation").toBe(211);
     expect(checked + refused).toBe(vectors.cases.length);
     expect(worst).toBeLessThan(1);

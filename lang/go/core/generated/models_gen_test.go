@@ -146,6 +146,8 @@ func models() []modelCodec {
 		model("jlvm-vectors:jlvm-value", jlvmvectors.DecodeJlvmValue, jlvmvectors.EncodeJlvmValue),
 		model("jlvm-vectors:jlvm-vectors", jlvmvectors.DecodeJlvmVectors, jlvmvectors.EncodeJlvmVectors),
 		model("jlvm-vectors:jlvm-vrf-cause", jlvmvectors.DecodeJlvmVrfCause, jlvmvectors.EncodeJlvmVrfCause),
+		model("jlvm-vectors:jlvm-warning", jlvmvectors.DecodeJlvmWarning, jlvmvectors.EncodeJlvmWarning),
+		model("jlvm-vectors:jlvm-warning-preview", jlvmvectors.DecodeJlvmWarningPreview, jlvmvectors.EncodeJlvmWarningPreview),
 		model("jlvm-vectors:jlvm-zk-cause", jlvmvectors.DecodeJlvmZkCause, jlvmvectors.EncodeJlvmZkCause),
 		model("kes-vectors:hex", kesvectors.DecodeHex, kesvectors.EncodeHex),
 		model("kes-vectors:kes-cardano-parameters", kesvectors.DecodeKesCardanoParameters, kesvectors.EncodeKesCardanoParameters),

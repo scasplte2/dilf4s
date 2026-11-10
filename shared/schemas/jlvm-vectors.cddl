@@ -29,8 +29,14 @@ jlvm-case = {
   ? "gasLimit": uint,
   "outcome": jlvm-outcome,
   "gasUsed": uint,
-  "warnings": uint,
+  "warnings": [* jlvm-warning],
 }
+
+; Warnings in first-observed order, after preview-based deduplication and the warning cap. Every preview field is
+; normative, including whether the full path was truncated.
+jlvm-warning = { "kind": "AmbiguousPath", "path": jlvm-warning-preview }
+
+jlvm-warning-preview = { "head": text, "length": uint, "truncated": bool }
 
 ; A value as its canonical CBOR (canonical-encoding.md), with its JSON surface text when it has one; or an error by
 ; its kind and normative fields (jlvm.md section 3). Messages are not part of conformance.

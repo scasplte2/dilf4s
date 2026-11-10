@@ -30,7 +30,7 @@ use dilf4s_signing::ecrecover::address_of_key;
 use num_bigint::{BigInt, BigUint};
 
 use crate::leaves::Leaf;
-use crate::{Case, KesScheme, Outcome, Output, Recipe, RecipeStep};
+use crate::{Case, KesScheme, Outcome, Output, Recipe, RecipeStep, Warning};
 
 /// A failure reading the vectors.
 pub type Error = String;
@@ -46,14 +46,14 @@ pub enum Expect {
     AnyFailure,
     /// Some bytes: a verified output the vector does not give.
     Verified,
-    /// A JLVM outcome: the value's canonical CBOR or the error, the gas and the number of warnings.
+    /// A JLVM outcome: the value's canonical CBOR or the error, the gas and the ordered warning contents.
     Jlvm {
         /// The canonical CBOR, or the error's kind, normative `op` and normative `cause` (`Family.Kind`).
         result: Result<Vec<u8>, (String, Option<String>, Option<String>)>,
         /// The gas used.
         gas: u64,
-        /// The number of warnings.
-        warnings: u64,
+        /// The warnings with every preview field, in order.
+        warnings: Vec<Warning>,
     },
     /// One parity of a signature from the signing vectors: some address or none. The pair's two cases together must
     /// recover the signer exactly once ([`Expect::signer_pairs_hold`]).
@@ -647,6 +647,7 @@ struct Rows {
 ///   sweeps;
 /// - and of those with real inputs, the first `real(op)`;
 /// - every 50th row, whatever it calls;
+/// - every row carrying warnings, including order, previews, deduplication and the cap;
 /// - the first row of each error kind, of the `var` site and of each cause ([`first_errors`]).
 pub fn jlvm(real: impl Fn(JlvmOp) -> usize) -> Result<JlvmSample, Error> {
     let v: JlvmVectors = load("jlvm_v1.json")?;
@@ -673,6 +674,7 @@ pub fn jlvm(real: impl Fn(JlvmOp) -> usize) -> Result<JlvmSample, Error> {
         .collect();
     picked.extend((0..v.cases.len()).step_by(50));
     picked.extend(first_errors(&v)?);
+    picked.extend(v.cases.iter().enumerate().filter(|(_, c)| !c.warnings.is_empty()).map(|(i, _)| i));
     let rows = picked
         .iter()
         .map(|&i| {
@@ -702,7 +704,23 @@ fn jlvm_named(v: &JlvmVectors, c: &JlvmCase) -> Result<Named, Error> {
         built: c.built.iter().flatten().map(|(k, b)| Ok((k.clone(), recipe(b)?))).collect::<Result<_, Error>>()?,
         gas_limit: c.gas_limit.unwrap_or(v.gas_limit),
     };
-    Ok(named(format!("jlvm {}", c.name), case, Expect::Jlvm { result, gas: c.gas_used, warnings: c.warnings }))
+    Ok(named(
+        format!("jlvm {}", c.name),
+        case,
+        Expect::Jlvm {
+            result,
+            gas: c.gas_used,
+            warnings: c
+                .warnings
+                .iter()
+                .map(|w| Warning::AmbiguousPath {
+                    head: w.path.head.clone(),
+                    length: w.path.length,
+                    truncated: w.path.truncated,
+                })
+                .collect(),
+        },
+    ))
 }
 
 /// A `built` binding's recipe, its leaf and templates decoded from hex: built where the case runs.

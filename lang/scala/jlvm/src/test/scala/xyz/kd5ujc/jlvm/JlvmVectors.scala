@@ -48,7 +48,8 @@ object JlvmVectors {
    * The metakit-derived cases, then the example contracts' (ContractVectorCases), then metakit's out-of-gas cases at
    * their own gas limits, then the per-operation coverage (OpCoverageCases).
    */
-  val files: List[String] = List("jlvm_cases.json", "jlvm_contract_cases.json", "jlvm_gas_cases.json", "jlvm_op_cases.json")
+  val files: List[String] =
+    List("jlvm_cases.json", "jlvm_contract_cases.json", "jlvm_gas_cases.json", "jlvm_op_cases.json", "jlvm_warning_cases.json")
 
   private def read(name: String): IO[Inputs] =
     Resource
@@ -201,6 +202,14 @@ object JlvmVectors {
         )
     }
 
+  def warningJson(warning: Warning): Json = warning match {
+    case Warning.AmbiguousPath(path) =>
+      Json.obj(
+        "kind" -> "AmbiguousPath".asJson,
+        "path" -> Json.obj("head" -> path.head.asJson, "length" -> path.length.asJson, "truncated" -> path.truncated.asJson)
+      )
+  }
+
   def render(jlvm: Jlvm, in: Inputs): String =
     Json
       .obj(
@@ -216,7 +225,7 @@ object JlvmVectors {
             i.env.map(e => "env" -> Json.fromFields(e.toList.sortBy(_._1).map { case (k, v) => k -> v.asJson })) ++
             i.built.map(b => "built" -> Json.fromFields(b.toList.sortBy(_._1))) ++
             i.gasLimit.map(l => "gasLimit" -> l.asJson) ++
-            List("outcome" -> outcome(o), "gasUsed" -> o.gasUsed.value.asJson, "warnings" -> o.warnings.size.asJson)
+            List("outcome" -> outcome(o), "gasUsed" -> o.gasUsed.value.asJson, "warnings" -> o.warnings.map(warningJson).asJson)
           )
         }.asJson,
         "aliases"   -> aliases.asJson,
@@ -238,6 +247,35 @@ object JlvmVectorsSuite extends IOSuite {
 
   type Res = (Jlvm, JlvmVectors.Inputs)
   def sharedResource: Resource[IO, Res] = Resource.eval((Jlvm.load[IO], JlvmVectors.inputs).tupled)
+
+  test("warning cases pin exact contents, order, deduplication, truncation and the cap") {
+    case (jlvm, in) =>
+      IO {
+        val x = Vector(("x", 1L, false))
+        val expected = Map(
+          "warning: a plain path shadows the root"               -> x,
+          "warning: explicit current avoids ambiguity"           -> Vector.empty[(String, Long, Boolean)],
+          "warning: repeated ambiguity is recorded once"         -> x,
+          "warning: warnings follow evaluation order"            -> Vector(("b", 1L, false), ("a", 1L, false)),
+          "warning: a long Unicode path has an exact preview"    -> Vector(("😀" * 32, 160L, true)),
+          "warning: distinct paths sharing a preview warn once"  -> Vector(("x" * 32, 33L, true)),
+          "warning: the cap retains the first 64 distinct paths" -> Vector.tabulate(64)(i => (f"p$i%02d", 3L, false)),
+          "warning: warnings survive a later type refusal"       -> x
+        )
+        val cases = in.cases.map(c => c.name -> c).toMap
+        expected.toVector.foldMap {
+          case (name, warnings) =>
+            val actual = cases
+              .get(name)
+              .map(c =>
+                JlvmVectors.run(jlvm, c).warnings.map {
+                  case Warning.AmbiguousPath(p) => (p.head, p.length, p.truncated)
+                }
+              )
+            expect.same(name -> Some(warnings), name -> actual)
+        }.and(expect.same(3371, in.cases.size))
+      }
+  }
 
   test("committed JLVM vectors match the reference implementation") {
     case (jlvm, in) =>

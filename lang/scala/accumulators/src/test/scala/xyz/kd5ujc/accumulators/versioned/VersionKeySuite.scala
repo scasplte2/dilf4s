@@ -24,9 +24,24 @@ object VersionKeySuite extends SimpleIOSuite {
 
   pureTest("keyOf refuses an encoding of another width, and a width the history trie cannot key, as InvalidVersion") {
     val long = ByteVector.fill(1L << 20)(0xab)
-    expect(lying(8, long).keyOf(1L).swap.exists(_.kind == VersionedTrieErrorKind.InvalidVersion), "a megabyte key for width 8")
-      .and(expect(lying(KeyMode.MaxFixedBytes + 1, ByteVector.fill(KeyMode.MaxFixedBytes + 1L)(1)).keyOf(1L).isLeft, "width 1025"))
-      .and(expect(lying(0, ByteVector.empty).keyOf(1L).isLeft, "width 0"))
+    expect
+      .same(Left(VersionedTrieError.InvalidVersion(VersionRefusal.EncodedWidth(8, long.size))), lying(8, long).keyOf(1L))
+      .and(
+        expect.same(
+          Left(
+            VersionedTrieError.InvalidVersion(
+              VersionRefusal.Width(VersionKeyFormat.Configured, KeyMode.MaxFixedBytes + 1, KeyMode.MaxFixedBytes)
+            )
+          ),
+          lying(KeyMode.MaxFixedBytes + 1, ByteVector.fill(KeyMode.MaxFixedBytes + 1L)(1)).keyOf(1L)
+        )
+      )
+      .and(
+        expect.same(
+          Left(VersionedTrieError.InvalidVersion(VersionRefusal.Width(VersionKeyFormat.Configured, 0, KeyMode.MaxFixedBytes))),
+          lying(0, ByteVector.empty).keyOf(1L)
+        )
+      )
       .and(expect.same(Right(ByteVector.fill(8)(1)), lying(8, ByteVector.fill(8)(1)).keyOf(1L)))
   }
 
@@ -48,7 +63,7 @@ object VersionKeySuite extends SimpleIOSuite {
       val root = T.empty
       val head = VersionedTrie.Head[ByteVector, H](b, root, root)
       val read = Snapshot.read(head, List(SnapshotChunk.Top(head), SnapshotChunk.History(Vector(b -> root, a -> root))))
-      expect.same(Left(VersionedTrieError.Malformed(s"snapshot: version ${versionHex(a)} does not follow ${versionHex(b)}")), read)
+      expect.same(Left(VersionedTrieError.Malformed(MalformedReason.Snapshot(SnapshotRefusal.VersionsOutOfOrder(b, a)))), read)
     }
   }
 
@@ -59,7 +74,31 @@ object VersionKeySuite extends SimpleIOSuite {
       expect
         .same(Right(v), key.keyOf(v))
         .and(expect.same(Right(v), key.decode(v)))
-        .and(expect(key.keyOf(v ++ ByteVector(0)).isLeft, s"width $w + 1"))
-    }.and(expect(VersionKey.bytes(0).isLeft && VersionKey.bytes(KeyMode.MaxFixedBytes + 1).isLeft, "widths outside 1..1024"))
+        .and(expect.same(Left(VersionedTrieError.InvalidVersion(VersionRefusal.EncodedWidth(w, w + 1L))), key.keyOf(v ++ ByteVector(0))))
+    }.and(List(0, KeyMode.MaxFixedBytes + 1).foldMap { w =>
+      expect.same(
+        Left(VersionedTrieError.InvalidVersion(VersionRefusal.Width(VersionKeyFormat.Bytes, w, KeyMode.MaxFixedBytes))),
+        VersionKey.bytes(w)
+      )
+    })
+  }
+
+  pureTest("unsigned Long versions retain exact width and range refusals") {
+    val one = get(VersionKey.unsignedLong(1))
+    val high = ByteVector(0x80.toByte) ++ ByteVector.fill(7)(0)
+    expect
+      .same(Left(VersionedTrieError.InvalidVersion(VersionRefusal.ValueRange(-1, 255))), one.encode(-1))
+      .and(expect.same(Left(VersionedTrieError.InvalidVersion(VersionRefusal.ValueRange(256, 255))), one.encode(256)))
+      .and(expect.same(Left(VersionedTrieError.InvalidVersion(VersionRefusal.EncodedWidth(1, 2))), one.decode(ByteVector(0, 1))))
+      .and(
+        expect.same(Left(VersionedTrieError.InvalidVersion(VersionRefusal.EncodedRange(high, Long.MaxValue))), VersionKey.long.decode(high))
+      )
+      .and(List(0, 9).foldMap { w =>
+        expect.same(
+          Left(VersionedTrieError.InvalidVersion(VersionRefusal.Width(VersionKeyFormat.UnsignedLong, w, 8))),
+          VersionKey.unsignedLong(w)
+        )
+      })
+      .and(expect.same(Right(ByteVector(0xff.toByte)), one.encode(255)))
   }
 }

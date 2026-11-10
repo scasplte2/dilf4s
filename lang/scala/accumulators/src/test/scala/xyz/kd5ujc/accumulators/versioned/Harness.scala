@@ -22,7 +22,14 @@ object Harness {
   type H = Sha256
   val T: TrieHashing[H] = TrieHashing[H]
 
-  def get[A](e: Either[?, A]): A = e.fold(err => throw new AssertionError(err.toString), identity)
+  enum FixtureIssue {
+    case MissingHead, MissingHistoryChunk
+    case Versioned(cause: VersionedTrieError)
+  }
+
+  final case class FixtureFailure[E](error: E) extends RuntimeException(s"invalid fixture: $error")
+
+  def get[E, A](e: Either[E, A]): A = e.fold(err => throw FixtureFailure(err), identity)
 
   def key(s:  String): StateKey = get(StateKey.parse(s))
   def ns(s:   String): StateNamespace = get(StateNamespace.parse(s))
@@ -52,10 +59,10 @@ object Harness {
       .map(_._2)
 
   /** A snapshot read against the head its own first chunk claims (tests that check trust pass the head explicitly). */
-  def assemble(chunks: List[SnapshotChunk[Long, H]]): Either[VersionedTrieError, Snapshot[Long, H]] =
+  def assemble(chunks: List[SnapshotChunk[Long, H]]): Either[FixtureIssue, Snapshot[Long, H]] =
     chunks.headOption.collect { case SnapshotChunk.Top(h) => h }
-      .toRight(VersionedTrieError.Malformed("no head"))
-      .flatMap(Snapshot.read(_, chunks))
+      .toRight(FixtureIssue.MissingHead)
+      .flatMap(Snapshot.read(_, chunks).leftMap(FixtureIssue.Versioned(_)))
 
   // ---- reference model
 

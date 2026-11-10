@@ -8,6 +8,7 @@ from dilf4s.core import (
     cbor_decode,
     cbor_encode,
     cbor_encode_within,
+    cbor_encoded_length_within,
     content_hash,
     digest,
     digest_from_hex,
@@ -80,13 +81,18 @@ def test_render_rejections() -> None:
 
 
 def test_limits() -> None:
-    """`cbor_encode_within` or `json_render` of each value at each row's limit gives the row's outcome and output."""
+    """Encoding/rendering and CBOR length measurement match each row's exact outcome and output."""
+    assert sum(c["encoding"] == "cbor" for c in V["limits"]) == 9
 
     def check(c: Json) -> str | None:
         v = ok(cbor_decode(bytes.fromhex(c["value"])), c["name"])
         if c["encoding"] == "cbor":
             r: Ok[object] | Err[object] = cbor_encode_within(v, c["maxBytes"])
             output = r.value.hex() if isinstance(r, Ok) and isinstance(r.value, bytes) else None
+            measured = cbor_encoded_length_within(v, c["maxBytes"])
+            expected = Ok(len(r.value)) if isinstance(r, Ok) and isinstance(r.value, bytes) else r
+            if measured != expected:
+                return f"{c['name']}: measured length expected {expected}, got {measured}"
         else:
             r = json_render(v, c["maxBytes"])
             output = r.value if isinstance(r, Ok) and isinstance(r.value, str) else None

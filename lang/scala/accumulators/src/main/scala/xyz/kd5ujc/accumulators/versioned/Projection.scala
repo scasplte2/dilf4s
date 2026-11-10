@@ -50,6 +50,10 @@ object Projection {
     Projection
       .stateRoot[H](entries)
       .flatMap(computed =>
-        Either.cond(computed == stateRoot, (), VersionedTrieError.RootMismatch(VtRootComponent.State, stateRoot.hex, computed.hex))
+        Either.cond(
+          computed == stateRoot,
+          (),
+          VersionedTrieError.RootMismatch(VtRootComponent.State, Some(stateRoot.bytes), Some(computed.bytes))
+        )
       )
 }

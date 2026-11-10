@@ -33,10 +33,18 @@ object ReplicaSuite extends SimpleIOSuite with Checkers {
       Replica.empty[Long, H].flatMap(r => Replica.applyDelta(r, Delta[Long, H](None, Head(1L, root, root), List(key("a") -> v), Nil)))
     val tooLarge = CanonicalValue.bytes(scodec.bits.ByteVector.fill(VersionedTrie.MaxValueBytes)(1))
     val tooDeep = (0 to VersionedTrie.MaxValueDepth).foldLeft(int(1))((v, _) => get(CanonicalValue.array(Vector(v))))
-    def refused(v: CanonicalValue)(p: VersionedTrieError => Boolean) = apply(v).left.exists(p)
-    expect(refused(tooLarge) { case _: VersionedTrieError.TooLarge => true; case _ => false }, "a 1 MiB byte string encodes over the limit")
-      .and(expect(refused(tooDeep) { case _: VersionedTrieError.TooDeep => true; case _ => false }, "one level past MaxValueDepth"))
-      .and(expect(refused(CanonicalValue.CNull) { case _: VersionedTrieError.Malformed => true; case _ => false }, "a null upsert"))
+    expect
+      .same(Left(VersionedTrieError.TooLarge(LimitSubject.StateValue(key("a").preview), VersionedTrie.MaxValueBytes)), apply(tooLarge))
+      .and(
+        expect.same(
+          Left(
+            VersionedTrieError
+              .TooDeep(LimitSubject.StateValue(key("a").preview), VersionedTrie.MaxValueDepth + 1, VersionedTrie.MaxValueDepth)
+          ),
+          apply(tooDeep)
+        )
+      )
+      .and(expect.same(Left(VersionedTrieError.Malformed(MalformedReason.NullUpsert(key("a").preview))), apply(CanonicalValue.CNull)))
   }
 
   test("a replica applying the delta stream matches the source's head at every step") {
@@ -81,10 +89,16 @@ object ReplicaSuite extends SimpleIOSuite with Checkers {
 
   test("a delta that does not chain from the replica's head is rejected") {
     ok(attempt(implicit h => threeDeltas)) {
-      case (_, deltas) =>
+      case (heads, deltas) =>
         val r1 = get(Replica.applyDelta(empty, deltas.head))
-        expect(Replica.applyDelta(r1, deltas(2)).left.exists(_.isInstanceOf[VersionedTrieError.RootMismatch]), "skips version 2")
-          .and(expect(Replica.applyDelta(empty, deltas(1)).isLeft, "an empty replica takes only a first delta"))
+        val first = get(VersionedTrie.root(heads.head)).bytes
+        val second = get(VersionedTrie.root(heads(1))).bytes
+        expect
+          .same(Left(VersionedTrieError.RootMismatch(VtRootComponent.Parent, Some(first), Some(second))), Replica.applyDelta(r1, deltas(2)))
+          .and(
+            expect
+              .same(Left(VersionedTrieError.RootMismatch(VtRootComponent.Parent, None, Some(first))), Replica.applyDelta(empty, deltas(1)))
+          )
     }
   }
 

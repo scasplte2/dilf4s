@@ -31,7 +31,7 @@ object ReplicaWorkSuite extends SimpleIOSuite with Checkers {
     val stateRoot = get(
       Trie.fromEntries[H](
         get(VersionedTrie.stateMode),
-        state.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v).fold(e => sys.error(e.toString), identity) }
+        state.map { case (k, v) => k.bytes -> get(VersionedTrie.valueHash[H](v)) }
       )
     ).root
     Head(version, stateRoot, historyRoot(history :+ (version -> stateRoot)))
@@ -50,7 +50,8 @@ object ReplicaWorkSuite extends SimpleIOSuite with Checkers {
       (Delta(head, h, upserts, removes), Model(next, history :+ (version -> h.stateRoot), Some(h)))
     }
 
-    def snapshot: Snapshot[Long, H] = Snapshot(head.getOrElse(sys.error("no head")), state.toList, history)
+    def snapshot: Snapshot[Long, H] =
+      Snapshot(get(head.toRight(FixtureIssue.MissingHead)), state.toList, history)
   }
 
   private val start = Model(scala.collection.immutable.TreeMap.empty[StateKey, CanonicalValue](using Replica.keyOrder), Nil, None)
@@ -184,7 +185,15 @@ object ReplicaWorkSuite extends SimpleIOSuite with Checkers {
   /** A replica of `keys`, each holding its index, restored from a snapshot at version 1 through `hashing` and `order`. */
   private def seeded(keys: List[StateKey], hashing: Counting, order: Comparisons): (R, Model) = {
     val (_, m) = start.delta(1L, keys.zipWithIndex.map { case (k, i) => k -> int(i) }, Nil)
-    (get(Replica.fromSnapshotIn[Long, H](m.head.getOrElse(sys.error("no head")), m.snapshot, order)(using VersionKey.long, hashing)), m)
+    (
+      get(
+        Replica.fromSnapshotIn[Long, H](get(m.head.toRight(FixtureIssue.MissingHead)), m.snapshot, order)(
+          using VersionKey.long,
+          hashing
+        )
+      ),
+      m
+    )
   }
 
   /** Every mix of `k` blocks `a` and `b`: with "an" and "c0" all share one Java hash code (97·31 + 110 = 99·31 + 48). */
@@ -278,7 +287,7 @@ object ReplicaWorkSuite extends SimpleIOSuite with Checkers {
   test("the deliberate regression: a rebuild per delta is over the bound") {
     val keys = families.head._2
     val (_, m) = start.delta(1L, keys.zipWithIndex.map { case (k, i) => k -> int(i) }, Nil)
-    val entries = m.state.toList.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v).fold(e => sys.error(e.toString), identity) }
+    val entries = m.state.toList.map { case (k, v) => k.bytes -> get(VersionedTrie.valueHash[H](v)) }
     IO((new Counting, new Comparisons)).flatMap {
       case (hashing, order) =>
         counted(hashing, order)(get(Trie.fromEntries[H](get(VersionedTrie.stateMode), entries)(using hashing))).map {
