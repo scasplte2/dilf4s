@@ -6,6 +6,7 @@ import cats.Show
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.canonical.{CanonicalGens, CanonicalValue}
+import xyz.kd5ujc.jlvm.JlvmError._
 import xyz.kd5ujc.numerics.Ratio
 
 import org.scalacheck.Gen
@@ -19,7 +20,9 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
   private given Show[CanonicalValue] = Show.fromToString
 
   private def run(op: Op, args: CanonicalValue*): Either[JlvmError, CanonicalValue] =
-    PureOps(op, args.toVector, Kernels.Default).getOrElse(Left(JlvmError.Malformed(s"${op.wire} is evaluator-owned")))
+    PureOps(op, args.toVector, Kernels.Default).getOrElse(
+      Left(JlvmError.Malformed(MalformedReason.UnsupportedOperation(op, OperationForm.Strict)))
+    )
 
   private def t(s: String): CanonicalValue = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)
   private def i(n: Long): CanonicalValue = CInt(n)
@@ -169,8 +172,8 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(ok(i(3)), run(Op.RoundHalfUp, q(5, 2))))
       .and(expect.same(ok(i(-3)), run(Op.RoundHalfUp, q(-5, 2))))
       .and(expect.same(ok(q(1, 3)), run(Op.Div, i(1), i(3))))
-      .and(expect.same(Left(JlvmError.Arithmetic(Op.Div, "division by zero")), run(Op.Div, i(1), i(0))))
-      .and(expect.same(Left(JlvmError.Arithmetic(Op.Mod, "division by zero")), run(Op.Mod, i(1), i(0))))
+      .and(expect.same(Left(JlvmError.Arithmetic(Op.Div, ArithmeticReason.DivisionByZero)), run(Op.Div, i(1), i(0))))
+      .and(expect.same(Left(JlvmError.Arithmetic(Op.Mod, ArithmeticReason.DivisionByZero)), run(Op.Mod, i(1), i(0))))
       .and(expect(isType(run(Op.Add, i(1), CNull)), "null arithmetic is a type error"))
       .and(expect(isType(run(Op.Add, i(1), t("2"))), "no numeric strings"))
       .and(expect.same(ok(i(0)), run(Op.Add)))
@@ -222,7 +225,7 @@ object PureOpsSuite extends SimpleIOSuite with Checkers {
   pureTest("split keeps empty pieces; an empty separator is a domain error") {
     expect
       .same(ok(a(t(""), t("a"), t(""), t("b"), t(""))), run(Op.Split, t(",a,,b,"), t(",")))
-      .and(expect.same(Left(JlvmError.Domain(Op.Split, "the separator must not be empty")), run(Op.Split, t("ab"), t(""))))
+      .and(expect.same(Left(JlvmError.Domain(Op.Split, DomainReason.EmptySeparator)), run(Op.Split, t("ab"), t(""))))
   }
 
   pureTest("length and substr count code points") {

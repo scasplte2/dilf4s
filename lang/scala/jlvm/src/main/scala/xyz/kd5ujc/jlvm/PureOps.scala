@@ -7,8 +7,9 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{CanonicalEntries, CanonicalValue}
+import xyz.kd5ujc.core.canonical.{CanonicalEntries, CanonicalValue, ValueKind}
 import xyz.kd5ujc.core.hash.{Blake2b256 => B2b, Hasher, Keccak256 => K256, Sha256 => S256, Sha3_256 => S3}
+import xyz.kd5ujc.jlvm.JlvmError._
 import xyz.kd5ujc.numerics.Ratio
 
 import scodec.bits.ByteVector
@@ -116,13 +117,13 @@ object PureOps {
   private def unary(op: Op, args: Vector[CanonicalValue])(f: CanonicalValue => Result): Result =
     args match {
       case Vector(a) => f(a)
-      case _         => arity(op, s"takes 1 argument, got ${args.size}")
+      case _         => arity(op, ArgumentCount.Exactly(1), args.size)
     }
 
   private def binary(op: Op, args: Vector[CanonicalValue])(f: (CanonicalValue, CanonicalValue) => Result): Result =
     args match {
       case Vector(a, b) => f(a, b)
-      case _            => arity(op, s"takes 2 arguments, got ${args.size}")
+      case _            => arity(op, ArgumentCount.Exactly(2), args.size)
     }
 
   private def numUnary(op: Op, args: Vector[CanonicalValue])(f: Ratio => Ratio): Result =
@@ -133,21 +134,21 @@ object PureOps {
 
   // ---- kinds
 
-  private def tpe[A](op:         Op, msg: String): Either[JlvmError, A] = JlvmError.Type(op, msg).asLeft
-  private def arity[A](op:       Op, msg: String): Either[JlvmError, A] = JlvmError.Arity(op, msg).asLeft
-  private def domain[A](op:      Op, msg: String): Either[JlvmError, A] = JlvmError.Domain(op, msg).asLeft
-  private def divisionByZero(op: Op): JlvmError = JlvmError.Arithmetic(op, "division by zero")
+  private def tpe[A](op:    Op, reason:   TypeReason): Either[JlvmError, A] = JlvmError.Type(op, reason).asLeft
+  private def arity[A](op:  Op, expected: ArgumentCount, actual: Int): Either[JlvmError, A] = JlvmError.Arity(op, expected, actual).asLeft
+  private def domain[A](op: Op, reason:   DomainReason): Either[JlvmError, A] = JlvmError.Domain(op, reason).asLeft
+  private def divisionByZero(op: Op): JlvmError = JlvmError.Arithmetic(op, ArithmeticReason.DivisionByZero)
 
   private def str(op: Op, v: CanonicalValue): Either[JlvmError, String] =
     v match {
       case CText(s) => s.asRight
-      case other    => tpe(op, s"expected a string, got ${kind(other)}")
+      case other    => tpe(op, TypeReason.Expected(Vector(ValueKind.Text), ValueKind.of(other)))
     }
 
   private def arr(op: Op, v: CanonicalValue): Either[JlvmError, Vector[CanonicalValue]] =
     v match {
       case CArray(vs) => vs.asRight
-      case other      => tpe(op, s"expected an array, got ${kind(other)}")
+      case other      => tpe(op, TypeReason.Expected(Vector(ValueKind.Array), ValueKind.of(other)))
     }
 
   private def obj(op: Op, v: CanonicalValue): Either[JlvmError, CanonicalEntries[CanonicalValue]] =
@@ -156,27 +157,27 @@ object PureOps {
   private def record(op: Op, v: CanonicalValue): Either[JlvmError, CMap] =
     v match {
       case m: CMap => m.asRight
-      case other   => tpe(op, s"expected an object, got ${kind(other)}")
+      case other   => tpe(op, TypeReason.Expected(Vector(ValueKind.Map), ValueKind.of(other)))
     }
 
   private def key(op: Op, v: CanonicalValue): Either[JlvmError, CText] =
     v match {
       case t: CText => t.asRight
-      case other    => tpe(op, s"expected a string key, got ${kind(other)}")
+      case other    => tpe(op, TypeReason.Expected(Vector(ValueKind.Text), ValueKind.of(other)))
     }
 
   /** Bytes, flat: every caller charges them by weight, which pays for flattening one that is not ([[FlatBytes]]). */
   private def rawBytes(op: Op, v: CanonicalValue): Either[JlvmError, FlatBytes] =
     v match {
       case CBytes(b) => FlatBytes(b).asRight
-      case other     => tpe(op, s"expected bytes, got ${kind(other)}")
+      case other     => tpe(op, TypeReason.Expected(Vector(ValueKind.Bytes), ValueKind.of(other)))
     }
 
   /** An integer index; out-of-range values saturate, since every use clamps to a collection size anyway. */
   private def index(op: Op, v: CanonicalValue): Either[JlvmError, Long] =
     v match {
       case CInt(i) => (if (i.isValidLong) i.toLong else if (i.signum < 0) Long.MinValue else Long.MaxValue).asRight
-      case other   => tpe(op, s"expected an integer, got ${kind(other)}")
+      case other   => tpe(op, TypeReason.Expected(Vector(ValueKind.Int), ValueKind.of(other)))
     }
 
   private def spread(v: CanonicalValue): Vector[CanonicalValue] =
@@ -211,13 +212,13 @@ object PureOps {
     args match {
       case Vector(a, b)               => compare(op, a, b).map(c => bool(holds(c)))
       case Vector(a, b, c) if between => (compare(op, a, b), compare(op, b, c)).mapN((x, y) => bool(holds(x) && holds(y)))
-      case _                          => arity(op, if (between) "takes 2 or 3 arguments" else "takes 2 arguments")
+      case _                          => arity(op, if (between) ArgumentCount.Between(2, 3) else ArgumentCount.Exactly(2), args.size)
     }
 
   private def fold(op: Op, args: Vector[CanonicalValue])(f: (Ratio, Ratio) => Ratio): Result =
     args
       .traverse(numeric(op, _))
-      .flatMap(_.reduceLeftOption(f).toRight(JlvmError.Arity(op, "takes at least 1 argument")))
+      .flatMap(_.reduceLeftOption(f).toRight(JlvmError.Arity(op, ArgumentCount.AtLeast(1), 0)))
       .flatMap(num(op, _))
 
   /** `+` and `*` of no arguments are their identities, so a spread over an empty array is 0 or 1. */
@@ -242,7 +243,7 @@ object PureOps {
     args.traverse(numeric(op, _)).flatMap {
       case Vector(a)    => num(op, -a)
       case Vector(a, b) => num(op, a - b)
-      case rs           => arity(op, s"takes 1 or 2 arguments, got ${rs.size}")
+      case rs           => arity(op, ArgumentCount.Between(1, 2), rs.size)
     }
 
   /**
@@ -252,10 +253,10 @@ object PureOps {
   private def power(op: Op)(base: Ratio, exponent: Ratio): Either[JlvmError, Ratio] =
     exponent.toBigIntExact.filter(_.abs <= MaxExponent) match {
       case scala.None =>
-        JlvmError.Arithmetic(op, s"the exponent must be an integer in -$MaxExponent..$MaxExponent").asLeft
+        JlvmError.Arithmetic(op, ArithmeticReason.ExponentRange(MaxExponent)).asLeft
       case scala.Some(e) =>
         val bits = math.max(base.numerator.bitLength, base.denominator.bitLength).toLong * e.abs.toLong
-        if (bits > MaxNumberBits) JlvmError.Limit(s"${op.wire}: the result would exceed $MaxNumberBits bits").asLeft
+        if (bits > MaxNumberBits) JlvmError.Limit(LimitReason.NumberBits(op, MaxNumberBits)).asLeft
         else base.pow(e.toInt).leftMap(_ => divisionByZero(op))
     }
 
@@ -264,7 +265,7 @@ object PureOps {
   /** Exact decimal text of a number; a non-terminating rational has none, and is named by its size, never its digits. */
   private def render(op: Op, r: Ratio): Either[JlvmError, String] =
     r.toDecimalString.toRight(
-      JlvmError.Arithmetic(op, s"a rational of ${r.numerator.bitLength}/${r.denominator.bitLength} bits has no finite decimal form")
+      JlvmError.Arithmetic(op, ArithmeticReason.NonTerminatingDecimal(r.numerator.bitLength, r.denominator.bitLength))
     )
 
   /**
@@ -279,7 +280,7 @@ object PureOps {
       case CInt(_) =>
         integer(op, v).map(i => if (i.isValidLong) i.toLong.toString else i.toString).map(s => (s, s.length.toLong))
       case other =>
-        number(other).fold(tpe[(String, Long)](op, s"cannot render ${kind(other)} as text"))(_ =>
+        number(other).fold(tpe[(String, Long)](op, TypeReason.TextRendering(ValueKind.of(other))))(_ =>
           numeric(op, other).flatMap(render(op, _)).map(s => (s, s.length.toLong))
         )
     }
@@ -295,7 +296,7 @@ object PureOps {
 
   /** A text result's weight, checked **before** the text is built. */
   private def fits(op: Op, weight: Long): Either[JlvmError, Unit] =
-    Either.cond(weight <= MaxWeight, (), JlvmError.Limit(s"${op.wire}: the result would exceed weight $MaxWeight"))
+    Either.cond(weight <= MaxWeight, (), JlvmError.Limit(LimitReason.ValueWeight(Construct.Operation(op), MaxWeight)))
 
   /** The values `cat` or `join` renders as decimal text: their numbers, priced before rendering. */
   def rendered(op: Op, args: Vector[CanonicalValue]): Vector[CanonicalValue] = {
@@ -338,7 +339,7 @@ object PureOps {
             val begin = t.offsetByCodePoints(0, from)
             text(op, t.substring(begin, t.offsetByCodePoints(begin, math.max(from, to) - from)))
         }
-      case _ => arity(op, "takes [text, start] or [text, start, length]")
+      case _ => arity(op, ArgumentCount.Between(2, 3), args.size)
     }
 
   /** Null on either side means "not present" and gives `false`, as in metakit. */
@@ -347,7 +348,7 @@ object PureOps {
       case Vector(CNull, _) | Vector(CText(_), CNull) => bool(false).asRight
       case Vector(s, p) =>
         (str(op, s), str(op, p)).mapN((a, b) => bool(if (op == Op.StartsWith) a.startsWith(b) else a.endsWith(b)))
-      case _ => arity(op, s"takes 2 arguments, got ${args.size}")
+      case _ => arity(op, ArgumentCount.Exactly(2), args.size)
     }
 
   /** A `join` whose pieces are rendered and whose result fits: what remains is to pay for the separators and build it. */
@@ -363,13 +364,13 @@ object PureOps {
       case Vector(a, sep) =>
         val separator = sep match {
           case t: CText => t.asRight
-          case other    => tpe[CText](Op.Join, s"expected a string, got ${kind(other)}")
+          case other    => tpe[CText](Op.Join, TypeReason.Expected(Vector(ValueKind.Text), ValueKind.of(other)))
         }
         (arr(Op.Join, a), separator).tupled.flatMap {
           case (vs, s) =>
             vs.traverse(piece(Op.Join, _)).map(Joining(_, s)).flatMap(j => fits(Op.Join, projected(j.pieces, j.separatorBytes)).as(j))
         }
-      case _ => arity(Op.Join, s"takes 2 arguments, got ${args.size}")
+      case _ => arity(Op.Join, ArgumentCount.Exactly(2), args.size)
     }
 
   /** Builds a checked `join`. */
@@ -380,7 +381,7 @@ object PureOps {
   private def split(op: Op, args: Vector[CanonicalValue]): Result =
     binary(op, args) { (a, b) =>
       (str(op, a), str(op, b)).tupled.flatMap {
-        case (_, "") => domain(op, "the separator must not be empty")
+        case (_, "") => domain(op, DomainReason.EmptySeparator)
         case (t, s)  => pieces(t, s, 0, Vector.empty).traverse(text(op, _)).flatMap(array(op, _))
       }
     }
@@ -400,7 +401,7 @@ object PureOps {
       case CArray(vs) => count(vs.size.toLong).asRight
       case CBytes(b)  => count(b.size).asRight
       case CMap(m)    => count(m.size.toLong).asRight
-      case other      => tpe(op, s"cannot take the length of ${kind(other)}")
+      case other      => tpe(op, TypeReason.Length(ValueKind.of(other)))
     }
 
   // ---- collections
@@ -418,7 +419,7 @@ object PureOps {
       case (CText(n), CText(h))   => bool(indexOf(h, n, 0) >= 0).asRight
       case (CBytes(n), CBytes(h)) => bool(indexOf(FlatBytes(h), FlatBytes(n)) >= 0).asRight
       case (n, CArray(vs))        => bool(vs.contains(n)).asRight
-      case (n, h)                 => tpe(op, s"cannot look for ${kind(n)} in ${kind(h)}")
+      case (n, h)                 => tpe(op, TypeReason.Membership(ValueKind.of(n), ValueKind.of(h)))
     }
 
   /** Whether every element of the first array is in the second; null is the empty set (metakit). */
@@ -440,7 +441,7 @@ object PureOps {
 
   /** A value's sort key; an encoding past the JVM's largest array is a [[JlvmError.Limit]] (`Values.sortKey`). */
   private def keyOf(op: Op, kernels: Kernels)(v: CanonicalValue): Either[JlvmError, Values.SortKey] =
-    kernels.key(v).leftMap(e => JlvmError.Limit(s"${op.wire}: a value's encoding is over ${e.limit} bytes"))
+    kernels.key(v).leftMap(e => JlvmError.Limit(LimitReason.ValueEncoding(op, e.limit)))
 
   /** `[array, start]` or `[array, start, end]`, with JavaScript bounds. */
   private def slice(op: Op, args: Vector[CanonicalValue]): Result =
@@ -451,7 +452,7 @@ object PureOps {
             val i = bound(from, vs.size)
             array(op, vs.slice(i, math.max(i, to.fold(vs.size)(bound(_, vs.size)))))
         }
-      case _ => arity(op, "takes [array, start] or [array, start, end]")
+      case _ => arity(op, ArgumentCount.Between(2, 3), args.size)
     }
 
   // ---- objects
@@ -479,7 +480,7 @@ object PureOps {
     args match {
       case Vector(m, k, rest*) if rest.sizeIs <= 1 =>
         (obj(op, m), str(op, k)).mapN((o, key) => o.getOrElse(key, rest.headOption.getOrElse(CNull)))
-      case _ => arity(op, "takes [object, key] or [object, key, default]")
+      case _ => arity(op, ArgumentCount.Between(2, 3), args.size)
     }
 
   private def has(op: Op, args: Vector[CanonicalValue]): Result =
@@ -491,9 +492,12 @@ object PureOps {
       case Vector(m, k, v) =>
         (record(op, m), key(op, k)).tupled.flatMap {
           case (o, kt) =>
-            CanonicalValue.updated(o, kt, v).leftMap(e => JlvmError.Limit(s"${op.wire}: $e")).flatMap(bounded(op, _))
+            CanonicalValue
+              .updated(o, kt, v)
+              .leftMap(e => JlvmError.Limit(LimitReason.Canonical(Construct.Operation(op), e)))
+              .flatMap(bounded(op, _))
         }
-      case _ => arity(op, s"takes [object, key, value], got ${args.size} arguments")
+      case _ => arity(op, ArgumentCount.Exactly(3), args.size)
     }
 
   private def unset(op: Op, args: Vector[CanonicalValue]): Result =
@@ -510,8 +514,8 @@ object PureOps {
         JsonSurface
           .hexBytes(s)
           .map(FlatBytes(_))
-          .toRight(JlvmError.Domain(op, "expected 0x followed by an even number of lowercase hex digits"))
-      case other => tpe(op, s"expected bytes or hex text, got ${kind(other)}")
+          .toRight(JlvmError.Domain(op, DomainReason.InvalidHex))
+      case other => tpe(op, TypeReason.Expected(Vector(ValueKind.Bytes, ValueKind.Text), ValueKind.of(other)))
     }
 
   /** Hashes bytes, or the UTF-8 encoding of a string. */
@@ -519,24 +523,24 @@ object PureOps {
     v match {
       case CBytes(b) => bytes(FlatBytes(Hasher[H].digest(FlatBytes(b)).bytes)).asRight
       case CText(s)  => bytes(FlatBytes(Hasher[H].digest(ByteVector(s.getBytes(UTF_8))).bytes)).asRight
-      case other     => tpe(op, s"expected bytes or a string, got ${kind(other)}")
+      case other     => tpe(op, TypeReason.Expected(Vector(ValueKind.Bytes, ValueKind.Text), ValueKind.of(other)))
     }
 
   /** A big-endian unsigned integer, within the number bound. */
   private def unsignedInt(op: Op)(b: FlatBytes): Result =
     Either
-      .cond(b.dropWhile(_ == 0).size * 8 <= MaxNumberBits.toLong, b, JlvmError.Limit(s"${op.wire}: a number exceeds $MaxNumberBits bits"))
+      .cond(b.dropWhile(_ == 0).size * 8 <= MaxNumberBits.toLong, b, JlvmError.Limit(LimitReason.NumberBits(op, MaxNumberBits)))
       .flatMap(bs => int(op, BigInt(1, bs.toArray)))
 
   /** Big-endian and unsigned: minimal (`0` is empty), or left-padded to a fixed width. */
   private def intToBytes(op: Op, args: Vector[CanonicalValue]): Result = {
     def unsigned(v: CanonicalValue): Either[JlvmError, ByteVector] =
       integer(op, v).flatMap(i =>
-        Either.cond(i.signum >= 0, ByteVector(i.toByteArray).dropWhile(_ == 0), JlvmError.Domain(op, "negative integer"))
+        Either.cond(i.signum >= 0, ByteVector(i.toByteArray).dropWhile(_ == 0), JlvmError.Domain(op, DomainReason.NegativeInteger))
       )
     def width(v: CanonicalValue): Either[JlvmError, Long] =
       integer(op, v).flatMap(n =>
-        Either.cond(n >= 0 && n <= MaxIntBytes, n.toLong, JlvmError.Domain(op, s"the width must be in 0..$MaxIntBytes"))
+        Either.cond(n >= 0 && n <= MaxIntBytes, n.toLong, JlvmError.Domain(op, DomainReason.IntegerWidth(MaxIntBytes)))
       )
     args match {
       case Vector(i) => unsigned(i).map(b => bytes(FlatBytes(b)))
@@ -546,10 +550,10 @@ object PureOps {
             Either.cond(
               raw.size <= w,
               bytes(FlatBytes.concat(Vector(ByteVector.low(w - raw.size), raw))),
-              JlvmError.Domain(op, s"the integer does not fit in $w bytes")
+              JlvmError.Domain(op, DomainReason.IntegerDoesNotFit(w))
             )
         }
-      case _ => arity(op, "takes [integer] or [integer, width]")
+      case _ => arity(op, ArgumentCount.Between(1, 2), args.size)
     }
   }
 }

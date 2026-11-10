@@ -5,7 +5,8 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{CanonicalEntries, CanonicalValue}
+import xyz.kd5ujc.core.canonical.{CanonicalValue, ValueKind}
+import xyz.kd5ujc.crypto.sigma.SigmaError.{PointRole, PropositionKind, PropositionReason}
 
 import scodec.bits.ByteVector
 
@@ -66,12 +67,12 @@ object SigmaProp {
    * it; the same holds for a DH tuple with `u` or `v` the identity, and a base `g` or `h` that is the identity proves
    * nothing. (Commitments may be the identity: they are computed, never taken from input.)
    */
-  private def statementPoint(field: String, p: GroupElement): Either[SigmaError, GroupElement] =
+  private def statementPoint(field: PointRole, p: GroupElement): Either[SigmaError, GroupElement] =
     Either
-      .cond(Secp256k1Group.isPoint(p), p, SigmaError.InvalidPoint(field, "not a point of secp256k1"): SigmaError)
-      .filterOrElse(!_.isIdentity, invalid(s"$field is the identity, for which anyone can prove knowledge (w = 0)"))
+      .cond(Secp256k1Group.isPoint(p), p, SigmaError.InvalidPoint(field, Secp256k1Group.DecodeError.InvalidPoint): SigmaError)
+      .filterOrElse(!_.isIdentity, invalid(PropositionReason.Identity(field)))
 
-  private def invalid(reason: String): SigmaError = SigmaError.InvalidProposition(reason)
+  private def invalid(reason: PropositionReason): SigmaError = SigmaError.InvalidProposition(reason)
 
   /**
    * Checks every constraint the smart constructors enforce, over the whole tree: statement points on the curve and not
@@ -85,23 +86,28 @@ object SigmaProp {
     def go(todo: List[(SigmaProp, Int)], leaves: Int): Either[SigmaError, Unit] =
       todo match {
         case Nil                                                  => ().asRight
-        case (_, d) :: _ if d > MaxDepth                          => invalid(s"a proposition nests at most $MaxDepth deep").asLeft
-        case (_: (Dlog | DhTuple), _) :: _ if leaves >= MaxLeaves => invalid(s"a proposition has at most $MaxLeaves leaves").asLeft
+        case (_, d) :: _ if d > MaxDepth                          => invalid(PropositionReason.Depth(MaxDepth)).asLeft
+        case (_: (Dlog | DhTuple), _) :: _ if leaves >= MaxLeaves => invalid(PropositionReason.Leaves(MaxLeaves)).asLeft
         case (Dlog(pk), _) :: tl =>
-          statementPoint("pk", pk) match {
+          statementPoint(PointRole.PublicKey, pk) match {
             case Left(e)  => e.asLeft
             case Right(_) => go(tl, leaves + 1)
           }
         case (DhTuple(g, h, u, v), _) :: tl =>
-          (statementPoint("g", g), statementPoint("h", h), statementPoint("u", u), statementPoint("v", v)).tupled match {
+          (
+            statementPoint(PointRole.G, g),
+            statementPoint(PointRole.H, h),
+            statementPoint(PointRole.U, u),
+            statementPoint(PointRole.V, v)
+          ).tupled match {
             case Left(e)  => e.asLeft
             case Right(_) => go(tl, leaves + 1)
           }
         case (Threshold(k, cs), _) :: _ if k < 1 || k > cs.size =>
-          invalid(s"a threshold needs 1 <= k <= ${cs.size} children, got k = $k").asLeft
+          invalid(PropositionReason.Threshold(k, cs.size)).asLeft
         case (c: Conjecture, _) :: _ if c.children.isEmpty =>
-          invalid("a connective needs at least one child: an empty one holds for anyone").asLeft
-        case (c: Conjecture, _) :: _ if c.children.size > MaxChildren => invalid(s"a connective has at most $MaxChildren children").asLeft
+          invalid(PropositionReason.EmptyChildren).asLeft
+        case (c: Conjecture, _) :: _ if c.children.size > MaxChildren => invalid(PropositionReason.Children(MaxChildren)).asLeft
         case (c: Conjecture, d) :: tl                                 => go(c.children.toList.map(_ -> (d + 1)) ::: tl, leaves)
       }
     go(List(prop -> 1), 0).as(prop)
@@ -109,26 +115,27 @@ object SigmaProp {
 
   // The smart constructors report the refusal's kind, as decoding a caller's proposition ([[decode]]) does.
 
-  def dlog(pk: GroupElement): Either[SigmaError, Dlog] = statementPoint("pk", pk).map(Dlog(_))
+  def dlog(pk: GroupElement): Either[SigmaError, Dlog] = statementPoint(PointRole.PublicKey, pk).map(Dlog(_))
 
   def dhTuple(g: GroupElement, h: GroupElement, u: GroupElement, v: GroupElement): Either[SigmaError, DhTuple] =
-    (statementPoint("g", g), statementPoint("h", h), statementPoint("u", u), statementPoint("v", v)).mapN(DhTuple(_, _, _, _))
+    (statementPoint(PointRole.G, g), statementPoint(PointRole.H, h), statementPoint(PointRole.U, u), statementPoint(PointRole.V, v))
+      .mapN(DhTuple(_, _, _, _))
 
   def and(children: Vector[SigmaProp]): Either[SigmaError, SigmaProp] = conjecture(children)(And(children))
   def or(children:  Vector[SigmaProp]): Either[SigmaError, SigmaProp] = conjecture(children)(Or(children))
 
   def threshold(k: Int, children: Vector[SigmaProp]): Either[SigmaError, SigmaProp] =
     Either
-      .cond(k >= 1 && k <= children.size, (), invalid(s"a threshold needs 1 <= k <= ${children.size} children, got k = $k"))
+      .cond(k >= 1 && k <= children.size, (), invalid(PropositionReason.Threshold(k, children.size)))
       .flatMap(_ => conjecture(children)(Threshold(k, children)))
 
   private def conjecture(children: Vector[SigmaProp])(node: => SigmaProp): Either[SigmaError, SigmaProp] =
-    if (children.isEmpty) invalid("a connective needs at least one child: an empty one holds for anyone").asLeft
-    else if (children.size > MaxChildren) invalid(s"a connective has at most $MaxChildren children").asLeft
+    if (children.isEmpty) invalid(PropositionReason.EmptyChildren).asLeft
+    else if (children.size > MaxChildren) invalid(PropositionReason.Children(MaxChildren)).asLeft
     else {
       val n = node
-      if (n.depth > MaxDepth) invalid(s"a proposition nests at most $MaxDepth deep").asLeft
-      else if (n.leaves > MaxLeaves) invalid(s"a proposition has at most $MaxLeaves leaves").asLeft
+      if (n.depth > MaxDepth) invalid(PropositionReason.Depth(MaxDepth)).asLeft
+      else if (n.leaves > MaxLeaves) invalid(PropositionReason.Leaves(MaxLeaves)).asLeft
       else n.asRight
     }
 
@@ -172,7 +179,7 @@ object SigmaProp {
    * constructor. A worklist, so a value of any depth decodes without growing the stack.
    */
   def decode(v: CanonicalValue): Either[SigmaError, SigmaProp] =
-    if (v.weight > MaxWeight) invalid(s"a proposition weighs at most $MaxWeight").asLeft
+    if (v.weight > MaxWeight) invalid(PropositionReason.Weight(MaxWeight)).asLeft
     else decode(Step.Decode(v), Nil, 0)
 
   /** `leaves` counts every leaf decoded so far, in the whole proposition. */
@@ -216,43 +223,42 @@ object SigmaProp {
   private def read(v: CanonicalValue, leaves: Int): Either[SigmaError, Read] =
     v match {
       case CMap(m) =>
-        def point(k: String): Either[SigmaError, GroupElement] =
-          m.get(k) match {
-            case scala.Some(CBytes(b)) => Secp256k1Group.decode(b).leftMap(e => SigmaError.InvalidPoint(k, e.message))
-            case _                     => invalid(s"$k must be bytes").asLeft
+        def point(k: PointRole): Either[SigmaError, GroupElement] =
+          m.get(k.wire) match {
+            case scala.Some(CBytes(b)) => Secp256k1Group.decode(b).leftMap(e => SigmaError.InvalidPoint(k, e))
+            case other                 => invalid(PropositionReason.PointBytes(k, other.map(ValueKind.of))).asLeft
           }
         def node(kind: Kind): Either[SigmaError, Read] =
           m.get("children") match {
-            case scala.Some(CArray(cs)) if cs.size > MaxChildren => invalid(s"a connective has at most $MaxChildren children").asLeft
+            case scala.Some(CArray(cs)) if cs.size > MaxChildren => invalid(PropositionReason.Children(MaxChildren)).asLeft
             case scala.Some(CArray(cs))                          => Read.Node(kind, cs).asRight
-            case _                                               => invalid("children must be an array").asLeft
+            case _                                               => invalid(PropositionReason.ChildrenArray).asLeft
           }
         def leaf(p: => Either[SigmaError, SigmaProp]): Either[SigmaError, Read] =
-          Either.cond(leaves < MaxLeaves, (), invalid(s"a proposition has at most $MaxLeaves leaves")) >> p.map(Read.Leaf(_))
-        def fields(ks: String*): Either[SigmaError, Unit] =
+          Either.cond(leaves < MaxLeaves, (), invalid(PropositionReason.Leaves(MaxLeaves))) >> p.map(Read.Leaf(_))
+        def fields(kind: PropositionKind): Either[SigmaError, Unit] =
           Either.cond(
-            m.size == ks.size + 1 && ("type" +: ks).forall(k => m.contains(k)),
+            m.size == kind.fields.size + 1 && ("type" +: kind.fields).forall(k => m.contains(k)),
             (),
-            invalid(s"${typeName(m)} takes exactly the fields ${ks.mkString(", ")}")
+            invalid(PropositionReason.Fields(kind, m.size))
           )
         m.get("type") match {
-          case scala.Some(CText("dlog")) => fields("pk") >> leaf(point("pk").flatMap(dlog))
+          case scala.Some(CText("dlog")) => fields(PropositionKind.Dlog) >> leaf(point(PointRole.PublicKey).flatMap(dlog))
           case scala.Some(CText("dhtuple")) =>
-            fields("g", "h", "u", "v") >> leaf((point("g"), point("h"), point("u"), point("v")).tupled.flatMap(dhTuple.tupled))
-          case scala.Some(CText("and")) => fields("children") >> node(Kind.AllOf)
-          case scala.Some(CText("or"))  => fields("children") >> node(Kind.AnyOf)
+            fields(PropositionKind.DhTuple) >> leaf(
+              (point(PointRole.G), point(PointRole.H), point(PointRole.U), point(PointRole.V)).tupled.flatMap(dhTuple.tupled)
+            )
+          case scala.Some(CText("and")) => fields(PropositionKind.And) >> node(Kind.AllOf)
+          case scala.Some(CText("or"))  => fields(PropositionKind.Or) >> node(Kind.AnyOf)
           case scala.Some(CText("threshold")) =>
-            fields("k", "children") >> (m.get("k") match {
+            fields(PropositionKind.Threshold) >> (m.get("k") match {
               case scala.Some(CInt(k)) if k.isValidInt => node(Kind.AtLeast(k.toInt))
-              case _                                   => invalid("k must be an integer").asLeft
+              case _                                   => invalid(PropositionReason.ThresholdInteger).asLeft
             })
-          case _ => invalid("a proposition's type is dlog, dhtuple, and, or or threshold").asLeft
+          case _ => invalid(PropositionReason.UnknownType).asLeft
         }
-      case _ => invalid("a proposition is an object").asLeft
+      case _ => invalid(PropositionReason.ExpectedObject).asLeft
     }
-
-  private def typeName(m: CanonicalEntries[CanonicalValue]): String =
-    m.get("type").collect { case CText(t) => t }.getOrElse("a proposition")
 
   // ---- the Fiat-Shamir statement bytes of a leaf: Ergo's ErgoTree for SigmaPropConstant(leaf), constants segregated
 

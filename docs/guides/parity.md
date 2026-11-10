@@ -226,13 +226,15 @@ The vector columns above say what is gated. These tables say where each capabili
 
 | Capability | Scala | Rust | TS |
 |---|---|---|---|
-| §6 Generated error families: `crypto-errors`, `hash-errors`, `codec-errors`, `proofs-errors`, `store-errors`, `jlvm-errors` | generated schema kinds/models in `core` (`xyz.kd5ujc.models.*`), golden at `lang/scala/models-gen/src/test/resources/golden/`; runtime `VersionedTrieError` and `StoreError` are native ADTs retaining typed causes | committed, `rs/core/src/generated/` | committed, `ts/core/src/generated/` |
+| §6 Generated error families: `crypto-errors`, `hash-errors`, `codec-errors`, `proofs-errors`, `store-errors`, `jlvm-errors` | generated schema kinds/models in `core` (`xyz.kd5ujc.models.*`), golden at `lang/scala/models-gen/src/test/resources/golden/`; runtime `JlvmError`, `CryptoCause`, `SigmaError`, `VersionedTrieError` and `StoreError` are native ADTs retaining typed causes | committed, `rs/core/src/generated/` | committed, `ts/core/src/generated/` |
 | `store-error` (`StoreError`) | native ADT raised by the stores; generated kind enum | generated, never raised (no store) | generated, never raised (no store) |
 | §5 `MaxProofWeight` (2^24) on proofs and claims, before decoding | `lang/scala/accumulators/m/ProofInput.scala:14` | `rs/proofs/src/lib.rs:27` | `ts/proofs/src/input.ts:11` |
 | §7 Boolean forms answer `false` for well-formed proofs of something else | per verifier (§3.7 to §3.9) | per verifier | per verifier |
 | §8 Previews (`Preview.of`) | `lang/scala/core/m/canonical/Preview.scala:29` | `rs/core/src/preview.rs:21` | `ts/core/src/preview.ts:59` |
 | Bloom errors (`BloomError`) | hand-written ADT, `lang/scala/core/m/bloom/BloomFilter.scala:36`, not generated and not pinned (**GAP-6**) | missing | missing |
 | ecrecover's refusal | `Either[Ecrecover.Error, …]`: distinct length, recovery-ID and public-key cases; `toCryptoError` adapts to the shared family (**GAP-4** vectors remain) | `CryptoError`, `rs/signing/src/ecrecover.rs:33` | `CryptoRefusal`, `ts/signing/src/ecrecover.ts:38` |
+
+Native error wrappers retain the module-owned cause types. Other crypto/proof leaf families still carry diagnostic string fields and remain separate migration work. The Java binding preserves its documented diagnostic records, rendering native structured reasons at that boundary.
 
 Scala native ecrecover now exposes structured refusal cases. Java `Ecrecover.address` maps an invalid public key to `InvalidKey`, matching Rust; it previously returned `InvalidEncoding`. Decoder diagnostic wording may differ across implementations; messages remain informative under conformance §2, while failure kinds and normative payloads remain exact.
 
@@ -366,7 +368,7 @@ No SDK library computes or checks a statement, so each client rebuilds the bindi
 | §1 Reading a canonical form, in its order | `lang/scala/jlvm/m/Parser.scala:413`, `:425` | `rs/jlvm/src/canonical.rs:33`, `:45` | `ts/jlvm/src/index.ts:67`, `:72` |
 | §1 Compilation (`Malformed`, no gas) | `lang/scala/jlvm/m/Jlvm.scala:25` (`Compiled`) | `rs/jlvm/src/lib.rs:96` | `ts/jlvm/src/index.ts:118` |
 | §2 to §5 Evaluation, bounds, host bindings (null is a binding) | `lang/scala/jlvm/m/Jlvm.scala:75` (`evaluate`), direct driver `lang/scala/jlvm/m/Machine.scala:465` | `rs/jlvm/src/lib.rs:125`, `:141` | `ts/jlvm/src/index.ts:156` |
-| §3 `JlvmError`, its site and `Crypto` cause | generated (`jlvm-errors.cddl`) | generated | generated |
+| §3 `JlvmError`, its site and `Crypto` cause | native error/cause ADTs; generated kinds and site (`jlvm-errors.cddl`) | generated | generated |
 | §6 Cryptographic backends, loaded once | `lang/scala/jlvm/m/Jlvm.scala:109` (`Jlvm.load[F: Sync]`) | `rs/jlvm/src/lib.rs:108` (`Jlvm<B: CryptoBackend>`) | built in (`ts/jlvm/src/crypto.ts:650`) |
 | §7 Gas schedule v1, equal to the spec's table | `lang/scala/jlvm/m/Gas.scala:225`; table check `lang/scala/jlvm/t/GasTable.scala:76` | `rs/jlvm/src/gas.rs:235`; table check `rs/jlvm/tests/gas_table.rs:74` | `ts/jlvm/src/gas.ts:274`; table check `ts/jlvm/test/dispatch.test.ts:109` |
 | §7 Drivers: direct, stack machine, recursive, agreeing | all three (`lang/scala/jlvm/m/Machine.scala:465`, `:496`, `:507`); `lang/scala/jlvm/t/JlvmVectors.scala:256` | direct only (`rs/jlvm/src/machine.rs:386`) | direct only (`ts/jlvm/src/machine.ts:826`) |

@@ -81,7 +81,7 @@ object Sigma {
           }.flatMap { q =>
             StateT
               .liftF[Either[SigmaError, *], ByteVector, Vector[(SigmaProp, ChildPoint)]](
-                ChildPoint.number(cs).leftMap(e => SigmaError.InvalidProposition(e.message))
+                ChildPoint.number(cs).leftMap(e => SigmaError.InvalidProposition(SigmaError.PropositionReason.ChildIndex(e)))
               )
               .flatMap(_.traverse { case (c, x) => parse(c, Option(q(x).bytes), short) })
               .map(Checked.Node(prop, e, _))

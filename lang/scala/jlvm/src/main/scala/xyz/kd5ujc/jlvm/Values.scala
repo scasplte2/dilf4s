@@ -5,7 +5,8 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor, CodePointOrder}
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor, CodePointOrder, ValueKind}
+import xyz.kd5ujc.jlvm.JlvmError._
 import xyz.kd5ujc.numerics.Ratio
 
 import scodec.bits.ByteVector
@@ -43,19 +44,19 @@ object Values {
 
   private def fits(r: Ratio): Boolean = r.numerator.bitLength <= MaxNumberBits && r.denominator.bitLength <= MaxNumberBits
 
-  private def tooLarge(op: Op): JlvmError = JlvmError.Limit(s"${op.wire}: a number exceeds $MaxNumberBits bits")
+  private def tooLarge(op: Op): JlvmError = JlvmError.Limit(LimitReason.NumberBits(op, MaxNumberBits))
 
   /** A number operand, within [[MaxNumberBits]]. */
   def numeric(op: Op, v: CanonicalValue): Either[JlvmError, Ratio] =
     number(v)
-      .toRight(JlvmError.Type(op, s"expected a number, got ${kind(v)}"))
+      .toRight(JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Int, ValueKind.Rational), ValueKind.of(v))))
       .flatMap(r => Either.cond(fits(r), r, tooLarge(op)))
 
   /** An integer operand, within [[MaxNumberBits]]. */
   def integer(op: Op, v: CanonicalValue): Either[JlvmError, BigInt] =
     v match {
       case CInt(i) => Either.cond(i.bitLength <= MaxNumberBits, i, tooLarge(op))
-      case other   => JlvmError.Type(op, s"expected an integer, got ${kind(other)}").asLeft
+      case other   => JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Int), ValueKind.of(other))).asLeft
     }
 
   /**
@@ -63,39 +64,41 @@ object Values {
    * so the constructor's refusal is never reached, and would be the same `Limit`.
    */
   def num(op: Op, r: Ratio): Either[JlvmError, CanonicalValue] =
-    if (fits(r)) CanonicalValue.number(r).leftMap(_ => tooLarge(op)) else tooLarge(op).asLeft
+    if (fits(r)) CanonicalValue.number(r).leftMap(e => JlvmError.Limit(LimitReason.Canonical(Construct.Operation(op), e)))
+    else tooLarge(op).asLeft
 
   /** An integer result, within [[MaxNumberBits]], as [[num]]. */
   def int(op: Op, i: BigInt): Either[JlvmError, CanonicalValue] =
-    if (i.bitLength <= MaxNumberBits) CanonicalValue.int(i).leftMap(_ => tooLarge(op)) else tooLarge(op).asLeft
+    if (i.bitLength <= MaxNumberBits) CanonicalValue.int(i).leftMap(e => JlvmError.Limit(LimitReason.Canonical(Construct.Operation(op), e)))
+    else tooLarge(op).asLeft
 
   /** A count or a length: a `Long`, so always within every bound. */
   def count(n: Long): CanonicalValue = CInt(n)
 
   def bool(b: Boolean): CanonicalValue = CBool(b)
 
-  def bounded(op: Op, v: CanonicalValue): Either[JlvmError, CanonicalValue] = bounded(op.wire, v)
+  def bounded(op: Op, v: CanonicalValue): Either[JlvmError, CanonicalValue] = bounded(Construct.Operation(op), v)
 
   /** `where` names the construct in error messages: an operation's wire name, or `array` / `object` for literals. */
-  def bounded(where: String, v: CanonicalValue): Either[JlvmError, CanonicalValue] =
-    Either.cond(v.weight <= MaxWeight, v, JlvmError.Limit(s"$where: the result exceeds weight $MaxWeight"))
+  def bounded(where: Construct, v: CanonicalValue): Either[JlvmError, CanonicalValue] =
+    Either.cond(v.weight <= MaxWeight, v, JlvmError.Limit(LimitReason.ValueWeight(where, MaxWeight)))
 
   def text(op: Op, s: String): Either[JlvmError, CanonicalValue] =
-    CanonicalValue.text(s).leftMap(_ => JlvmError.Type(op, "the result is not well-formed text")).flatMap(bounded(op, _))
+    CanonicalValue.text(s).leftMap(e => JlvmError.Type(op, TypeReason.ResultText(e))).flatMap(bounded(op, _))
 
-  def array(op: Op, vs: Vector[CanonicalValue]): Either[JlvmError, CanonicalValue] = array(op.wire, vs)
+  def array(op: Op, vs: Vector[CanonicalValue]): Either[JlvmError, CanonicalValue] = array(Construct.Operation(op), vs)
 
-  def array(where: String, vs: Vector[CanonicalValue]): Either[JlvmError, CanonicalValue] =
-    CanonicalValue.array(vs).leftMap(e => JlvmError.Limit(s"$where: $e")).flatMap(bounded(where, _))
+  def array(where: Construct, vs: Vector[CanonicalValue]): Either[JlvmError, CanonicalValue] =
+    CanonicalValue.array(vs).leftMap(e => JlvmError.Limit(LimitReason.Canonical(where, e))).flatMap(bounded(where, _))
 
-  def map(op: Op, entries: Iterable[(String, CanonicalValue)]): Either[JlvmError, CanonicalValue] = map(op.wire, entries)
+  def map(op: Op, entries: Iterable[(String, CanonicalValue)]): Either[JlvmError, CanonicalValue] = map(Construct.Operation(op), entries)
 
-  def map(where: String, entries: Iterable[(String, CanonicalValue)]): Either[JlvmError, CanonicalValue] =
-    CanonicalValue.map(entries).leftMap(e => JlvmError.Limit(s"$where: $e")).flatMap(bounded(where, _))
+  def map(where: Construct, entries: Iterable[(String, CanonicalValue)]): Either[JlvmError, CanonicalValue] =
+    CanonicalValue.map(entries).leftMap(e => JlvmError.Limit(LimitReason.Canonical(where, e))).flatMap(bounded(where, _))
 
   /** A map from keys checked once (a program's literal keys), distinct: no key is rescanned. */
-  def textKeyed(where: String, entries: Vector[(CText, CanonicalValue)]): Either[JlvmError, CanonicalValue] =
-    CanonicalValue.textKeyed(entries).leftMap(e => JlvmError.Limit(s"$where: $e")).flatMap(bounded(where, _))
+  def textKeyed(where: Construct, entries: Vector[(CText, CanonicalValue)]): Either[JlvmError, CanonicalValue] =
+    CanonicalValue.textKeyed(entries).leftMap(e => JlvmError.Limit(LimitReason.Canonical(where, e))).flatMap(bounded(where, _))
 
   /**
    * The value at `path`: an object segment is a key; an array segment is a decimal index without leading zeros. Anything
@@ -149,7 +152,7 @@ object Values {
     (a, b) match {
       case (CText(x), CText(y))                            => compareCodePoints(x, y).asRight
       case _ if number(a).isDefined && number(b).isDefined => (numeric(op, a), numeric(op, b)).mapN(_.compare(_))
-      case _                                               => JlvmError.Type(op, s"cannot order ${kind(a)} and ${kind(b)}").asLeft
+      case _ => JlvmError.Type(op, TypeReason.Ordering(ValueKind.of(a), ValueKind.of(b))).asLeft
     }
 
   /** Code-point order, read as UTF-16 units ranked at the first difference (`CodePointOrder.rank`). */

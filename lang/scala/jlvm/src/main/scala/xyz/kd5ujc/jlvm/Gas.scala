@@ -1,6 +1,7 @@
 package xyz.kd5ujc.jlvm
 
 import xyz.kd5ujc.core.canonical.CanonicalValue
+import xyz.kd5ujc.jlvm.JlvmError._
 
 /**
  * An amount of gas: non-negative, and saturating at `Long.MaxValue` instead of overflowing (metakit used unchecked
@@ -384,10 +385,10 @@ object GasLimit {
 
   /** The refusal of a limit outside [0, [[Max]]]: a negative one, or one over the maximum, named by its bit length. */
   def refusal(limit: GasLimit): Option[JlvmError] =
-    if (limit.requested < 0) Some(JlvmError.Limit("a gas limit is negative"))
+    if (limit.requested < 0) Some(JlvmError.Limit(LimitReason.NegativeGas(limit.requested)))
     else
       Option.unless(limit.requested <= Max.requested)(
-        JlvmError.Limit(s"a gas limit of ${64 - java.lang.Long.numberOfLeadingZeros(limit.requested)} bits is over 2^53 - 1")
+        JlvmError.Limit(LimitReason.GasRange(limit.requested, GasLimit.Max.requested))
       )
 }
 

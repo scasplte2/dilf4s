@@ -36,6 +36,11 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   private def ok(json: String): Either[JlvmError, CanonicalValue] = Right(value(json))
 
+  check("computed path errors preserve the original typed path refusal") {
+    val cause = JlvmError.Malformed(JlvmError.MalformedReason.EmptyPathSegment(Preview.of("a..b")))
+    expect.same(Left(JlvmError.Domain(Site.Var, JlvmError.DomainReason.ComputedPath(cause))), result("""{"var":{"literal":"a..b"}}"""))
+  }
+
   // ---- values
 
   check("operations, literals, arrays and objects evaluate element-wise") {
@@ -247,20 +252,23 @@ object EvaluatorSuite extends IOSuite with Checkers {
 
   check("cat and join name a rational with no decimal form by its size, never its digits (conformance.md §2)") {
     val n = "1" + "0" * 999 + "1"
-    List(s"""{"cat": [{"/": [$n, 3]}]}""", s"""{"join": [[{"/": [$n, 3]}], ""]}""").map { p =>
-      result(p).left.toOption.fold(failure(s"$p renders")) { e =>
-        expect(!e.toString.contains("0000000000"), s"no digits: $e")
-          .and(expect(e.message.contains("a rational of 3322/2 bits"), e.message))
-      }
+    List(Op.Cat -> s"""{"cat": [{"/": [$n, 3]}]}""", Op.Join -> s"""{"join": [[{"/": [$n, 3]}], ""]}""").map {
+      case (op, p) =>
+        result(p).left.toOption.fold(failure(s"$p renders")) { e =>
+          expect
+            .same(JlvmError.Arithmetic(op, JlvmError.ArithmeticReason.NonTerminatingDecimal(3322, 2)), e)
+            .and(expect(!e.message.contains("0000000000"), s"no digits: ${e.message}"))
+            .and(expect(e.message.contains("a rational of 3322/2 bits"), e.message))
+        }
     }.reduce(_ and _)
   }
 
   check("a computed path of the wrong kind or form is an error") {
-    def kind(r: Either[JlvmError, CanonicalValue]) = r.left.toOption.map(_.getClass.getSimpleName)
+    def kind(r: Either[JlvmError, CanonicalValue]) = r.left.toOption.map(_.kind)
     expect
-      .same(Some("Type"), kind(result("""{"var": {"+": [1, 2]}}""")))
-      .and(expect.same(Some("Type"), kind(result("""{"var": [[true]]}"""))))
-      .and(expect.same(Some("Domain"), kind(result("""{"var": {"cat": ["a", "..b"]}}"""))))
+      .same(Some(JlvmErrorKind.Type), kind(result("""{"var": {"+": [1, 2]}}""")))
+      .and(expect.same(Some(JlvmErrorKind.Type), kind(result("""{"var": [[true]]}"""))))
+      .and(expect.same(Some(JlvmErrorKind.Domain), kind(result("""{"var": {"cat": ["a", "..b"]}}"""))))
   }
 
   check("a computed path costs its expression, its parsing, then the access and its segments") {
@@ -548,8 +556,8 @@ object EvaluatorSuite extends IOSuite with Checkers {
     val starved = eval(program, data, limit = total - 1)
     expect(
       full.result match {
-        case Left(JlvmError.Crypto(_, _, _)) => true
-        case _                               => false
+        case Left(JlvmError.Crypto(_, _)) => true
+        case _                            => false
       },
       s"with enough gas the pairing runs and rejects the points: ${full.result}"
     )

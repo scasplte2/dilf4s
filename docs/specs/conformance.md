@@ -196,7 +196,7 @@ Each kind of these families has a row, except the kinds below, which no input re
 **The gate, in every language.** The reference's `RefusalCoverageSuite` (the verifier families) and
 `CryptoRefusalCoverageSuite` (the others) list each error type's cases through the compiler (`Mirror.SumOf`; the path
 refusals, a choice of texts, through their generated `values`) and fail if a kind has neither a row nor an entry here.
-Every family of these tables is generated in every language (below), so the SDK's kinds are the schema's, and
+Every family of these tables has generated kinds in every language (below), so the SDK's kinds are the schema's, and
 `RefusalCoverageSuite` checks each verifier family's generated `values` are its cases, reads the rows through their
 generated models and checks every row of `refusals_v1.json` is of its check's family. The Rust tests check that every kind of the generated kind enum (`ALL`) has a row, but the exempt ones, which have none;
 the TypeScript tests list each error's kinds in a `Record` keyed by its `kind` union, so a kind added to the schema does
@@ -213,7 +213,8 @@ of maps, each led by a distinct `"kind"` text literal (the reference's case name
 family as each language's error type, and the kinds as a closed type:
 
 - Scala: a sealed trait with a case class per kind (a case object without fields), each with its `kind`, exported
-  under the family's package (`xyz.kd5ujc.crypto.kes.KesError`);
+  under the family's package (`xyz.kd5ujc.crypto.kes.KesError`). `SigmaError` instead uses a native ADT with
+  structured proposition reasons and retained point-decoding causes; its kind enum remains generated;
 - Rust: an enum with a variant per kind, `kind()` returning the kind enum, `Display` and `core::error::Error`
   (`dilf4s_core::generated::crypto_errors`, re-exported by `dilf4s-signing` and `dilf4s-proofs`);
 - TypeScript: a union of readonly object types on `kind` (`models.cryptoErrors`, re-exported by the signing package).
@@ -320,8 +321,9 @@ at the default width (8), at 32 and at 1024 bytes; the reference's `VersionedTri
 `proofs/tests/versioned.rs` and TypeScript's `proofs/test/versioned.test.ts` run each case and compare the refusal and
 its keys, each `2w` hex characters.
 
-**The JLVM's gate.** `shared/schemas/jlvm-errors.cddl` defines `jlvm-error` (`JlvmError`, generated in every
-language; the TypeScript SDK, which has no evaluator, gets the type) and its `op`, `jlvm-site`: an operation of the
+**The JLVM's gate.** `shared/schemas/jlvm-errors.cddl` defines the error kinds and its `op`, `jlvm-site`. Scala
+uses native `JlvmError` and `CryptoCause` ADTs with generated kinds and sites; Rust and TypeScript use generated
+error models. A site is an operation of the
 closed list `jlvm-op` of `jlvm.cddl`, or `var`. Each operation is a rule of its own text (`op-not = "!"`), so every
 language types the `op` (Scala an enum, Rust an enum with `wire()` and `from_wire`, TypeScript a union of the names)
 though most names (`+`, `==`) are not identifiers, and a vector naming another `op` does not load. The reference's

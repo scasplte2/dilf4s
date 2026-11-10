@@ -9,6 +9,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue}
 import xyz.kd5ujc.core.circe.CanonicalCirce
 import xyz.kd5ujc.core.hash.Sha256
+import xyz.kd5ujc.jlvm.JlvmError._
 import xyz.kd5ujc.models.{jlvm_vectors => vectorModel}
 
 import io.circe.syntax._
@@ -101,23 +102,17 @@ object JlvmVectors {
   /** A Crypto error's cause as the vectors record it: `{family: kind}`, the family's name in lower camel case. */
   def cause(e: JlvmError): Option[Json] = causeValue(e).map(causeJson)
 
-  def causeValue(e: JlvmError): Option[vectorModel.JlvmCause] = e match {
-    case JlvmError.Crypto(_, _, Some(c)) =>
-      Some(c match {
-        case CryptoCause.Signing(x)        => vectorModel.JlvmSigningCause(x.kind)
-        case CryptoCause.Sigma(x)          => vectorModel.JlvmSigmaCause(x.kind)
-        case CryptoCause.Zk(x)             => vectorModel.JlvmZkCause(x.kind)
-        case CryptoCause.Groth16(x)        => vectorModel.JlvmGroth16Cause(x.kind)
-        case CryptoCause.Vrf(x)            => vectorModel.JlvmVrfCause(x.kind)
-        case CryptoCause.Hash(x)           => vectorModel.JlvmHashCause(x.kind)
-        case CryptoCause.Merkle(x)         => vectorModel.JlvmMerkleCause(x.kind)
-        case CryptoCause.Trie(x)           => vectorModel.JlvmTrieCause(x.kind)
-        case CryptoCause.Poseidon(x)       => vectorModel.JlvmPoseidonCause(x.kind)
-        case CryptoCause.PoseidonMerkle(x) => vectorModel.JlvmPoseidonMerkleCause(x.kind)
-      })
-    case JlvmError.Malformed(_) | JlvmError.Type(_, _) | JlvmError.Arity(_, _) | JlvmError.Arithmetic(_, _) | JlvmError.Domain(_, _) |
-        JlvmError.Crypto(_, _, None) | JlvmError.Limit(_) | JlvmError.OutOfGas(_, _) =>
-      None
+  def causeValue(e: JlvmError): Option[vectorModel.JlvmCause] = e.cause.map {
+    case CryptoCause.Signing(x)        => vectorModel.JlvmSigningCause(x.kind)
+    case CryptoCause.Sigma(x)          => vectorModel.JlvmSigmaCause(x.kind)
+    case CryptoCause.Zk(x)             => vectorModel.JlvmZkCause(x.kind)
+    case CryptoCause.Groth16(x)        => vectorModel.JlvmGroth16Cause(x.kind)
+    case CryptoCause.Vrf(x)            => vectorModel.JlvmVrfCause(x.kind)
+    case CryptoCause.Hash(x)           => vectorModel.JlvmHashCause(x.kind)
+    case CryptoCause.Merkle(x)         => vectorModel.JlvmMerkleCause(x.kind)
+    case CryptoCause.Trie(x)           => vectorModel.JlvmTrieCause(x.kind)
+    case CryptoCause.Poseidon(x)       => vectorModel.JlvmPoseidonCause(x.kind)
+    case CryptoCause.PoseidonMerkle(x) => vectorModel.JlvmPoseidonMerkleCause(x.kind)
   }
 
   def causeJson(c: vectorModel.JlvmCause): Json = c match {
@@ -303,12 +298,13 @@ object JlvmVectorsSuite extends IOSuite {
           val field = (k: String) => c.get[String](k).getOrElse("")
           val (alias, own) = (Parser.parse(field("program")), Parser.parse(field("own")))
           // the recorded form decodes to the program the own name writes
-          val decoded = scodec.bits.ByteVector.fromHex(field("cbor")).toRight(JlvmError.Malformed("hex")).flatMap(Parser.decode)
+          val decoded = scodec.bits.ByteVector.fromHex(field("cbor")).map(Parser.decode)
           acc
             .and(expect(alias.isRight && alias == own, s"${field("alias")} parses as ${field("op")}"))
             .and(expect.same(Ops.named(field("alias")).map(_.wire), Some(field("op"))))
             .and(expect.same(Right(field("cbor")), alias.flatMap(Parser.encode).map(_.toHex)))
-            .and(expect(decoded.isRight && decoded == own, s"${field("alias")}: the recorded form is the own name's program"))
+            .and(expect(own.isRight, "the canonical operation parses successfully"))
+            .and(expect.same(Some(own), decoded))
             .and(expect.same(Right(field("id")), alias.flatMap(Parser.id[Sha256]).map(_.bytes.toHex)))
             .and(
               expect(

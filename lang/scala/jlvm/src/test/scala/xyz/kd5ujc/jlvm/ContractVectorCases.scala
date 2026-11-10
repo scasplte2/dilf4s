@@ -11,7 +11,7 @@ import xyz.kd5ujc.accumulators.merkle.{MerkleCodec, MerkleTree}
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue.{CBytes, CInt}
 import xyz.kd5ujc.core.hash.{Blake2b256, Hasher, Sha256}
-import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, SigmaProp, SigmaProver, message}
+import xyz.kd5ujc.crypto.sigma.{Secp256k1Group, SigmaProp, SigmaProver}
 
 import io.circe.Json
 import io.circe.syntax._

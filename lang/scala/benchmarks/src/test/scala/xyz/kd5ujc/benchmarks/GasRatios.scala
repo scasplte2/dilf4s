@@ -60,6 +60,7 @@ object GasRatios extends IOApp {
     case InvalidAdjustment(value: Preview)
     case FieldCount(actual: Int)
     case Preparation(name: String, cause: JlvmError)
+    case Input(name: String, cause: DedupInputs.Error)
     case UnexpectedDedup(name: String, expected: Either[JlvmError, CanonicalValue], actual: Either[JlvmError, CanonicalValue])
   }
 
@@ -188,10 +189,10 @@ object GasRatios extends IOApp {
 
   private def prepare(c: GasCase): Either[Error, Prepared] =
     (
-      Parser.parse(c.program).flatMap(Compiled(_)),
-      Parser.parse(c.baseline).flatMap(Compiled(_)),
-      DedupInputs.read(c.data)
-    ).mapN(Prepared(c, _, _, _)).leftMap(Error.Preparation(c.name, _))
+      Parser.parse(c.program).flatMap(Compiled(_)).leftMap(Error.Preparation(c.name, _)),
+      Parser.parse(c.baseline).flatMap(Compiled(_)).leftMap(Error.Preparation(c.name, _)),
+      DedupInputs.read(c.data).leftMap(Error.Input(c.name, _))
+    ).mapN(Prepared(c, _, _, _))
 
   @tailrec private def xorshift(k: Int, x: Long): Long =
     if (k == 0) x

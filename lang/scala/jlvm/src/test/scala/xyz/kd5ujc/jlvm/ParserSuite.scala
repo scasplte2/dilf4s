@@ -7,6 +7,7 @@ import scala.collection.immutable.TreeMap
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.hash.Sha256
+import xyz.kd5ujc.jlvm.JlvmError._
 
 import io.circe.Json
 import org.scalacheck.Gen
@@ -55,7 +56,7 @@ object ParserSuite extends SimpleIOSuite with Checkers {
   }
 
   pureTest("an array headed by a call's name is rejected, naming the call form; data quotes it") {
-    def message(e: Either[JlvmError, ?]) = e.left.toOption.map(_.toString).getOrElse("")
+    def message(e: Either[JlvmError, ?]) = e.left.toOption.map(_.message).getOrElse("")
     expect(p("""["+", 1, 2]""").isLeft, "an operation's name")
       .and(expect(p("""{"in": ["a", ["var", "x"]]}""").isLeft, "var heads count too"))
       .and(expect(p("""["getKey", 1]""").isLeft, "an alias heads count too"))
@@ -86,7 +87,7 @@ object ParserSuite extends SimpleIOSuite with Checkers {
   }
 
   pureTest("names that read like operations but are not are rejected, naming the operation to use") {
-    def message(e: Either[JlvmError, ?]) = e.left.toOption.map(_.toString).getOrElse("")
+    def message(e: Either[JlvmError, ?]) = e.left.toOption.map(_.message).getOrElse("")
     Parser.Removed.toList.foldLeft(success) {
       case (acc, (name, use)) =>
         acc
@@ -122,7 +123,9 @@ object ParserSuite extends SimpleIOSuite with Checkers {
     expect.same(
       Left(
         JlvmError.Malformed(
-          xyz.kd5ujc.core.canonical.CanonicalJson.RenderError.TooLarge(xyz.kd5ujc.core.canonical.CanonicalJson.MaxRenderBytes).toString
+          MalformedReason.Render(
+            xyz.kd5ujc.core.canonical.CanonicalJson.RenderError.TooLarge(xyz.kd5ujc.core.canonical.CanonicalJson.MaxRenderBytes)
+          )
         )
       ),
       JsonSurface.render(dag)

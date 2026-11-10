@@ -9,6 +9,7 @@ import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
+import xyz.kd5ujc.jlvm.JlvmError._
 
 import scodec.bits.ByteVector
 import weaver.IOSuite
@@ -170,7 +171,9 @@ object FlatBytesSuite extends IOSuite {
   test("every operation that makes bytes makes them flat, from flat and from rope operands") { _ =>
     val rope = CBytes(ByteVector(1, 2) ++ ByteVector(3) ++ ByteVector(4, 5))
     val flat = CBytes(ByteVector(1, 2, 3))
-    def run(op: Op, args: CanonicalValue*) = PureOps(op, args.toVector, Kernels.Default).getOrElse(Left(JlvmError.Malformed(op.wire)))
+    def run(op: Op, args: CanonicalValue*) = PureOps(op, args.toVector, Kernels.Default).getOrElse(
+      Left(JlvmError.Malformed(MalformedReason.UnsupportedOperation(op, OperationForm.Strict)))
+    )
     val made = List(
       "cat of one"          -> run(Op.Cat, rope),
       "cat appending"       -> run(Op.Cat, flat, rope, flat),

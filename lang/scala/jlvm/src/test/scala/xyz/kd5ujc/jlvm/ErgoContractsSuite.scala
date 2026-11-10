@@ -7,7 +7,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue.{CBytes, CInt, CMap}
 import xyz.kd5ujc.core.hash.{Blake2b256, Hasher}
-import xyz.kd5ujc.crypto.sigma.{GroupElement, Secp256k1Group, SigmaProp, SigmaProver, message}
+import xyz.kd5ujc.crypto.sigma.{GroupElement, Secp256k1Group, SigmaProp, SigmaProver}
 
 import scodec.bits.ByteVector
 import weaver.IOSuite

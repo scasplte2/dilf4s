@@ -3,11 +3,12 @@ package xyz.kd5ujc.jlvm
 import cats.syntax.all._
 
 import xyz.kd5ujc.accumulators.poseidon.{PoseidonMerkleProof, PoseidonMerkleTree}
-import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.canonical.{CanonicalValue, ValueKind}
 import xyz.kd5ujc.core.hash.{Fr, Poseidon => PoseidonHash}
 import xyz.kd5ujc.crypto.vrf.{EcVrfTai, Vrf, VrfError}
 import xyz.kd5ujc.crypto.zk.{Bn254, Bn254Engine, Groth16Error, Sp1Groth16, ZkError}
+import xyz.kd5ujc.jlvm.JlvmError._
 
 import scodec.bits.ByteVector
 
@@ -51,10 +52,10 @@ final class ZkOps(engine: Bn254Engine) {
       _ <- Either.cond(
         inputs.nonEmpty && inputs.size <= PoseidonHash.MaxInputs,
         (),
-        JlvmError.Arity(op, s"takes 1 to ${PoseidonHash.MaxInputs} field elements, got ${inputs.size}")
+        JlvmError.Arity(op, ArgumentCount.Between(1, PoseidonHash.MaxInputs), inputs.size)
       )
-      xs     <- inputs.zipWithIndex.traverse { case (v, i) => fr(op, s"input[$i]", v) }
-      digest <- PoseidonHash.hash(xs).leftMap(e => JlvmError.Crypto(op, e.toString, Some(CryptoCause.Poseidon(e))))
+      xs     <- inputs.zipWithIndex.traverse { case (v, i) => fr(op, Role.Input(i), v) }
+      digest <- PoseidonHash.hash(xs).leftMap(e => JlvmError.Crypto(op, CryptoReason.Refused(CryptoCause.Poseidon(e))))
       out    <- Values.bytesValue(op, FlatBytes(Bn254.be32(digest.value)))
     } yield out
   }
@@ -65,18 +66,18 @@ final class ZkOps(engine: Bn254Engine) {
     args match {
       case Vector(rootV, leafV, indexV, siblingsV) =>
         for {
-          root  <- fr(op, "root", rootV)
-          leaf  <- fr(op, "leaf", leafV)
-          index <- integer(op, "index", indexV)
-          raw   <- array(op, "siblings", siblingsV)
-          _     <- Either.cond(raw.size <= MaxSiblings, (), crypto(op, s"at most $MaxSiblings siblings, got ${raw.size}"))
-          sibs  <- raw.zipWithIndex.traverse { case (v, i) => fr(op, s"sibling[$i]", v) }
+          root  <- fr(op, Role.Root, rootV)
+          leaf  <- fr(op, Role.Leaf, leafV)
+          index <- integer(op, Role.Index, indexV)
+          raw   <- array(op, Role.Siblings, siblingsV)
+          _     <- Either.cond(raw.size <= MaxSiblings, (), crypto(op, CryptoReason.SiblingCount(MaxSiblings, raw.size)))
+          sibs  <- raw.zipWithIndex.traverse { case (v, i) => fr(op, Role.Sibling(i), v) }
           // the index is charged as one element, whatever its size: the error never renders it
           proof <- PoseidonMerkleProof
             .from(index, sibs)
-            .leftMap(e => JlvmError.Crypto(op, s"index is out of range for depth ${sibs.size}", Some(CryptoCause.PoseidonMerkle(e))))
+            .leftMap(e => JlvmError.Crypto(op, CryptoReason.Refused(CryptoCause.PoseidonMerkle(e), Role.Index)))
         } yield Values.bool(PoseidonMerkleTree.verifyInclusion(leaf, proof, root))
-      case _ => JlvmError.Arity(op, s"takes [root, leaf, index, siblings], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Exactly(4), args.size).asLeft
     }
 
   // ---- groth16_verify [programVKey (32), publicValues, proof (SP1 Groth16 v6.1.0)] -> bool
@@ -85,16 +86,16 @@ final class ZkOps(engine: Bn254Engine) {
     args match {
       case Vector(vkeyV, publicV, proofV) =>
         for {
-          vkey    <- sized(op, "vkey", vkeyV, FieldBytes)
-          pubVals <- bytes(op, "publicValues", publicV)
-          proof   <- bytes(op, "proof", proofV)
+          vkey    <- sized(op, Role.Vkey, vkeyV, FieldBytes)
+          pubVals <- bytes(op, Role.PublicValues, publicV)
+          proof   <- bytes(op, Role.Proof, proofV)
           valid <- Sp1Groth16.verify(engine)(vkey, pubVals, proof) match {
-            case Right(())                                => true.asRight
-            case Left(e @ Groth16Error.Malformed(reason)) => JlvmError.Crypto(op, reason, Some(CryptoCause.Groth16(e))).asLeft
+            case Right(())                           => true.asRight
+            case Left(e @ Groth16Error.Malformed(_)) => JlvmError.Crypto(op, CryptoReason.Refused(CryptoCause.Groth16(e))).asLeft
             case Left(Groth16Error.InvalidProof(_) | Groth16Error.PairingCheckFailed | Groth16Error.Rejected(_)) => false.asRight
           }
         } yield Values.bool(valid)
-      case _ => JlvmError.Arity(op, s"takes [vkey, publicValues, proof], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Exactly(3), args.size).asLeft
     }
 
   // ---- ecvrf_verify [pk (32), alpha, proof (80)] -> {valid: true, beta: 64 bytes} | {valid: false}
@@ -103,12 +104,12 @@ final class ZkOps(engine: Bn254Engine) {
     args match {
       case Vector(pkV, alphaV, proofV) =>
         for {
-          pk    <- sized(op, "pk", pkV, VrfKeyBytes)
-          alpha <- bytes(op, "alpha", alphaV)
-          proof <- sized(op, "proof", proofV, Vrf.ProofLength)
+          pk    <- sized(op, Role.PublicKey, pkV, VrfKeyBytes)
+          alpha <- bytes(op, Role.Alpha, alphaV)
+          proof <- sized(op, Role.Proof, proofV, Vrf.ProofLength)
           out <- Vrf[EcVrfTai].verifyBytes(pk, alpha, proof) match {
-            case Right(beta) => Values.map(op, List("valid" -> True, "beta" -> Values.bytes(FlatBytes(beta.bytes))))
-            case Left(e @ VrfError.Malformed(what, reason)) => JlvmError.Crypto(op, s"$what: $reason", Some(CryptoCause.Vrf(e))).asLeft
+            case Right(beta)                        => Values.map(op, List("valid" -> True, "beta" -> Values.bytes(FlatBytes(beta.bytes))))
+            case Left(e @ VrfError.Malformed(_, _)) => JlvmError.Crypto(op, CryptoReason.Refused(CryptoCause.Vrf(e))).asLeft
             case Left(
                   VrfError.InvalidPublicKey | VrfError.SmallOrderPublicKey | VrfError.InvalidGamma | VrfError.NonCanonicalScalar |
                   VrfError.ChallengeMismatch | VrfError.KeyMismatch | VrfError.HashToCurveFailed(_)
@@ -116,7 +117,7 @@ final class ZkOps(engine: Bn254Engine) {
               Values.map(op, List("valid" -> False))
           }
         } yield out
-      case _ => JlvmError.Arity(op, s"takes [pk, alpha, proof], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Exactly(3), args.size).asLeft
     }
 
   // ---- bn254_add [a (64), b (64)] -> 64; bn254_mul [p (64), scalar (32)] -> 64 (EIP-196)
@@ -125,12 +126,12 @@ final class ZkOps(engine: Bn254Engine) {
     args match {
       case Vector(aV, bV) =>
         for {
-          a   <- sized(op, "a", aV, G1Bytes)
-          b   <- sized(op, "b", bV, G1Bytes)
-          sum <- engine.add(a, b).leftMap(zkError(op, "a + b"))
+          a   <- sized(op, Role.A, aV, G1Bytes)
+          b   <- sized(op, Role.B, bV, G1Bytes)
+          sum <- engine.add(a, b).leftMap(zkError(op, Role.Sum))
           out <- Values.bytesValue(op, FlatBytes(sum))
         } yield out
-      case _ => JlvmError.Arity(op, s"takes [a, b], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Exactly(2), args.size).asLeft
     }
 
   /** Any 256-bit scalar; G1 has prime order r, so reducing it mod r first gives the same point. */
@@ -138,12 +139,12 @@ final class ZkOps(engine: Bn254Engine) {
     args match {
       case Vector(pV, sV) =>
         for {
-          p   <- sized(op, "point", pV, G1Bytes)
-          s   <- sized(op, "scalar", sV, FieldBytes)
-          q   <- engine.mul(p, s).leftMap(zkError(op, "point"))
+          p   <- sized(op, Role.Point, pV, G1Bytes)
+          s   <- sized(op, Role.Scalar, sV, FieldBytes)
+          q   <- engine.mul(p, s).leftMap(zkError(op, Role.Point))
           out <- Values.bytesValue(op, FlatBytes(q))
         } yield out
-      case _ => JlvmError.Arity(op, s"takes [point, scalar], got ${args.size} arguments").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Exactly(2), args.size).asLeft
     }
 
   // ---- bn254_pairing [[g1, g2], ..] or [[[g1, g2], ..]] -> bool (EIP-197; no pairs is true)
@@ -155,66 +156,64 @@ final class ZkOps(engine: Bn254Engine) {
       case _                                        => args
     }
     for {
-      _  <- Either.cond(pairs.size <= MaxPairs, (), crypto(op, s"at most $MaxPairs pairs, got ${pairs.size}"))
+      _  <- Either.cond(pairs.size <= MaxPairs, (), crypto(op, CryptoReason.PairCount(MaxPairs, pairs.size)))
       ps <- pairs.zipWithIndex.traverse { case (v, i) => pair(op, i, v) }
-      ok <- engine.pairing(ps).leftMap(zkError(op, "a pair"))
+      ok <- engine.pairing(ps).leftMap(zkError(op, Role.Pairing))
     } yield Values.bool(ok)
   }
 
   private def pair(op: Op, i: Int, v: CanonicalValue): Either[JlvmError, (FlatBytes, FlatBytes)] =
     v match {
-      case CArray(Vector(a, b)) => (sized(op, s"pair[$i].g1", a, G1Bytes), sized(op, s"pair[$i].g2", b, G2Bytes)).tupled
-      case CArray(vs)           => crypto(op, s"pair[$i]: expected [g1, g2], got ${vs.size} elements").asLeft
-      case other                => JlvmError.Type(op, s"pair[$i]: expected an array, got ${Values.kind(other)}").asLeft
+      case CArray(Vector(a, b)) => (sized(op, Role.PairG1(i), a, G1Bytes), sized(op, Role.PairG2(i), b, G2Bytes)).tupled
+      case CArray(vs)           => crypto(op, CryptoReason.PairWidth(i, vs.size)).asLeft
+      case other => JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Array), ValueKind.of(other), Role.Pair(i))).asLeft
     }
 
   // ---- argument decoding
 
-  private def crypto(op: Op, message: String): JlvmError = JlvmError.Crypto(op, message, None)
+  private def crypto(op: Op, reason: CryptoReason): JlvmError = JlvmError.Crypto(op, reason)
 
   private def isArray(v: CanonicalValue): Boolean = v match {
     case CArray(_) => true
     case _         => false
   }
 
-  private def raw(op: Op, role: String, v: CanonicalValue): Either[JlvmError, ByteVector] =
+  private def raw(op: Op, role: Role, v: CanonicalValue): Either[JlvmError, ByteVector] =
     v match {
       case CBytes(b) => b.asRight
-      case other     => JlvmError.Type(op, s"$role: expected bytes, got ${Values.kind(other)}").asLeft
+      case other     => JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Bytes), ValueKind.of(other), role)).asLeft
     }
 
   /** Bytes charged by weight (`groth16_verify`'s, `ecvrf_verify`'s alpha), flattened: the charge pays for the copy. */
-  private def bytes(op: Op, role: String, v: CanonicalValue): Either[JlvmError, FlatBytes] = raw(op, role, v).map(FlatBytes(_))
+  private def bytes(op: Op, role: Role, v: CanonicalValue): Either[JlvmError, FlatBytes] = raw(op, role, v).map(FlatBytes(_))
 
   /** Bytes of a fixed width, checked from the size alone before they are flattened: the copy is bounded by the width. */
-  private def sized(op: Op, role: String, v: CanonicalValue, width: Long): Either[JlvmError, FlatBytes] =
-    raw(op, role, v).flatMap(b => Either.cond(b.size == width, FlatBytes(b), crypto(op, s"$role: expected $width bytes, got ${b.size}")))
+  private def sized(op: Op, role: Role, v: CanonicalValue, width: Long): Either[JlvmError, FlatBytes] =
+    raw(op, role, v).flatMap(b => Either.cond(b.size == width, FlatBytes(b), crypto(op, CryptoReason.ByteWidth(role, width, b.size))))
 
-  private def integer(op: Op, role: String, v: CanonicalValue): Either[JlvmError, BigInt] =
+  private def integer(op: Op, role: Role, v: CanonicalValue): Either[JlvmError, BigInt] =
     v match {
       case CInt(i) => i.asRight
-      case other   => JlvmError.Type(op, s"$role: expected an integer, got ${Values.kind(other)}").asLeft
+      case other   => JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Int), ValueKind.of(other), role)).asLeft
     }
 
-  private def array(op: Op, role: String, v: CanonicalValue): Either[JlvmError, Vector[CanonicalValue]] =
+  private def array(op: Op, role: Role, v: CanonicalValue): Either[JlvmError, Vector[CanonicalValue]] =
     v match {
       case CArray(vs) => vs.asRight
-      case other      => JlvmError.Type(op, s"$role: expected an array, got ${Values.kind(other)}").asLeft
+      case other      => JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Array), ValueKind.of(other), role)).asLeft
     }
 
   /** 32 bytes, big-endian, below the BN254 scalar field modulus r. */
-  private def fr(op: Op, role: String, v: CanonicalValue): Either[JlvmError, Fr] =
+  private def fr(op: Op, role: Role, v: CanonicalValue): Either[JlvmError, Fr] =
     sized(op, role, v, FieldBytes).flatMap(b =>
       Fr.from(BigInt(1, b.toArray))
-        .leftMap(e =>
-          JlvmError.Crypto(op, s"$role: not a canonical BN254 scalar field element (must be < r)", Some(CryptoCause.Poseidon(e)))
-        )
+        .leftMap(e => JlvmError.Crypto(op, CryptoReason.Refused(CryptoCause.Poseidon(e), role)))
     )
 
   /** For the curve operations a point off the curve or outside the subgroup is malformed input, as in metakit. */
-  private def zkError(op: Op, role: String)(e: ZkError): JlvmError = e match {
-    case ZkError.Malformed(reason)    => JlvmError.Crypto(op, s"$role: $reason", Some(CryptoCause.Zk(e)))
-    case ZkError.InvalidPoint(reason) => JlvmError.Crypto(op, s"$role: $reason", Some(CryptoCause.Zk(e)))
+  private def zkError(op: Op, role: Role)(e: ZkError): JlvmError = e match {
+    case ZkError.Malformed(_)    => JlvmError.Crypto(op, CryptoReason.Refused(CryptoCause.Zk(e), role))
+    case ZkError.InvalidPoint(_) => JlvmError.Crypto(op, CryptoReason.Refused(CryptoCause.Zk(e), role))
   }
 }
 

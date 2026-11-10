@@ -3,6 +3,7 @@ package xyz.kd5ujc.jlvm
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Preview}
+import xyz.kd5ujc.jlvm.JlvmError._
 
 /**
  * The operations of language version 1, by wire name: generated from `shared/schemas/jlvm.cddl` (`jlvm-op`), each
@@ -83,12 +84,12 @@ object VarRef {
     if (s.isEmpty) Right(Data(Vector.empty))
     else {
       val segments = VarRef.segments(s)
-      if (segments.exists(_.isEmpty)) Left(JlvmError.Malformed(s"empty segment in var path ${Preview.of(s)}"))
+      if (segments.exists(_.isEmpty)) Left(JlvmError.Malformed(MalformedReason.EmptyPathSegment(Preview.of(s))))
       else
         segments.headOption match {
           case scala.Some(h) if h.startsWith("$") =>
             val name = h.drop(1)
-            Either.cond(name.nonEmpty, Bound(name, segments.drop(1)), JlvmError.Malformed(s"empty binding name in ${Preview.of(s)}"))
+            Either.cond(name.nonEmpty, Bound(name, segments.drop(1)), JlvmError.Malformed(MalformedReason.EmptyBindingName(Preview.of(s))))
           case _ => Right(Data(segments))
         }
     }
@@ -159,7 +160,7 @@ object Program {
       _ <- Either.cond(
         surface <= MaxSurfaceDepth,
         (),
-        JlvmError.Limit(s"the program's JSON surface nests $surface deep, deeper than $MaxSurfaceDepth")
+        JlvmError.Limit(LimitReason.SurfaceDepth(surface, MaxSurfaceDepth))
       )
       program = new Program(expr)
       _ <- Parser.canonical(program)
@@ -167,8 +168,7 @@ object Program {
 
   private def unspellable(ref: VarRef): JlvmError =
     JlvmError.Malformed(
-      s"the var path ${Preview.of(ref.render)} has no text form: it reads back as another path; read a key holding '.', " +
-      "an empty key or a key starting with '$' with the exact-segment form {\"var\": [[...]]}"
+      MalformedReason.UnspellablePath(Preview.of(ref.render))
     )
 
   /**
@@ -214,12 +214,12 @@ object Program {
   @tailrec
   private def measure(todo: List[Pending], seen: Long, kernels: Kernels): Option[JlvmError] =
     todo match {
-      case _ if seen > MaxSize => scala.Some(JlvmError.Limit(s"the program is larger than $MaxSize"))
+      case _ if seen > MaxSize => scala.Some(JlvmError.Limit(LimitReason.ProgramSize(MaxSize)))
       case Nil                 => scala.None
       case Pending(items, i, d) :: tl =>
         items.lift(i) match {
           case scala.None                    => measure(tl, seen, kernels)
-          case scala.Some(_) if d > MaxDepth => scala.Some(JlvmError.Limit(s"the program nests deeper than $MaxDepth"))
+          case scala.Some(_) if d > MaxDepth => scala.Some(JlvmError.Limit(LimitReason.ProgramDepth(MaxDepth)))
           case scala.Some(e) =>
             kernels.steps.step()
             measure(Pending(children(e), 0, d + 1) :: Pending(items, i + 1, d) :: tl, plus(seen, size(e)), kernels)
@@ -235,11 +235,11 @@ object Program {
     todo match {
       case Nil => scala.None
       case Expr.Spread(op, _) :: _ if !Ops.Variadic.contains(op) =>
-        scala.Some(JlvmError.Malformed(s"${op.wire} does not spread its argument"))
+        scala.Some(JlvmError.Malformed(MalformedReason.SpreadUnsupported(op)))
       case Expr.Spread(op, Expr.Arr(_)) :: _ =>
-        scala.Some(JlvmError.Malformed(s"a spread ${op.wire} takes one expression, not an argument list"))
+        scala.Some(JlvmError.Malformed(MalformedReason.SpreadArgumentList(op)))
       case (Expr.Var(_, scala.Some(CanonicalValue.CNull)) | Expr.VarAt(_, scala.Some(CanonicalValue.CNull))) :: _ =>
-        scala.Some(JlvmError.Malformed("a var default is never null: the canonical form cannot tell it from no default"))
+        scala.Some(JlvmError.Malformed(MalformedReason.NullDefault))
       case Expr.Var(ref, _) :: _ if !VarRef.parse(ref.render).exists(_ == ref) => scala.Some(unspellable(ref))
       case e :: tl =>
         kernels.steps.step()

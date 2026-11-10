@@ -9,6 +9,7 @@ import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.hash.{Fr, Poseidon => PoseidonHash}
 import xyz.kd5ujc.crypto.zk.Bn254
+import xyz.kd5ujc.jlvm.JlvmError._
 
 import io.circe.{Decoder, Json, parser}
 import org.scalacheck.Gen
@@ -36,19 +37,13 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
     Set(Op.Poseidon, Op.PmtVerify, Op.Groth16Verify, Op.EcvrfVerify, Op.Bn254Add, Op.Bn254Mul, Op.Bn254Pairing)
 
   private def run(op: Op, args: CanonicalValue*)(using zk: ZkOps): Either[JlvmError, CanonicalValue] =
-    zk(op, args.toVector).getOrElse(Left(JlvmError.Malformed(s"${op.wire} is not a zk op")))
+    zk(op, args.toVector).getOrElse(Left(JlvmError.Malformed(MalformedReason.UnsupportedOperation(op, OperationForm.ZeroKnowledge))))
 
   private def a(vs: CanonicalValue*): CanonicalValue = CanonicalValue.array(vs.toVector).fold(e => sys.error(e.toString), identity)
   private def b(h:  ByteVector): CanonicalValue = CBytes(h)
 
   /** The outcome's category: `value`, or the error's kind. */
-  private def kind(r: Either[JlvmError, CanonicalValue]): String = r match {
-    case Left(JlvmError.Type(_, _))      => "Type"
-    case Left(JlvmError.Arity(_, _))     => "Arity"
-    case Left(JlvmError.Crypto(_, _, _)) => "Crypto"
-    case Left(other)                     => other.getClass.getSimpleName
-    case Right(_)                        => "value"
-  }
+  private def kind(r: Either[JlvmError, CanonicalValue]): Option[JlvmErrorKind] = r.left.toOption.map(_.kind)
 
   // ---- metakit conformance vectors (lang/scala/jlvm/src/test/resources/vectors/jlvm_zk_from_metakit.json)
 
@@ -57,9 +52,13 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
     op:       String,
     args:     Json,
     expected: Option[Json],
-    error:    Option[String],
+    error:    Option[JlvmErrorKind],
     status:   String,
     note:     Option[String]
+  )
+
+  private given Decoder[JlvmErrorKind] = Decoder.instance(c =>
+    c.as[String].flatMap(s => JlvmErrorKind.fromWire(s).toRight(io.circe.DecodingFailure(s"unknown JLVM error kind: $s", c.history)))
   )
 
   private given Decoder[Case] =
@@ -81,7 +80,7 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
     }
     (c.expected, c.error) match {
       case (Some(e), None) => expect(result == Some(Right(surface(e))), s"$clue: expected ${e.noSpaces}, got $result")
-      case (None, Some(k)) => expect(result.map(kind).contains(k), s"$clue: expected a $k error, got $result")
+      case (None, Some(k)) => expect(result.flatMap(kind).contains(k), s"$clue: expected a $k error, got $result")
       case _               => failure(s"$clue: a vector needs exactly one of expected and error")
     }
   }
@@ -127,7 +126,12 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
       case (op, vs) =>
         val r = zk(op, vs)
         expect(r.isDefined, s"${op.wire} must be implemented")
-          .and(expect(r.map(kind).forall(Set("value", "Type", "Arity", "Crypto")), s"unexpected outcome: $r"))
+          .and(
+            expect(
+              r.map(kind).forall(Set(None, Some(JlvmErrorKind.Type), Some(JlvmErrorKind.Arity), Some(JlvmErrorKind.Crypto))),
+              s"unexpected outcome: $r"
+            )
+          )
     }
   }
 
@@ -150,9 +154,9 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
     expect
       .same(variadic, run(Op.Poseidon, a(one, two)))
       .and(expect.same(Right(b(hex"115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a")), variadic))
-      .and(expect.same("Arity", kind(run(Op.Poseidon, a(one, one, one, one, one)))))
-      .and(expect.same("Type", kind(run(Op.Poseidon, a()))))
-      .and(expect.same("Type", kind(run(Op.Poseidon, CInt(1)))))
+      .and(expect.same(Some(JlvmErrorKind.Arity), kind(run(Op.Poseidon, a(one, one, one, one, one)))))
+      .and(expect.same(Some(JlvmErrorKind.Type), kind(run(Op.Poseidon, a()))))
+      .and(expect.same(Some(JlvmErrorKind.Type), kind(run(Op.Poseidon, CInt(1)))))
   }
 
   zkTest("bn254_pairing takes pairs as arguments or one array of pairs; e(P, Q) * e(-P, Q) is the identity") {
@@ -163,9 +167,9 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
       .and(expect.same(Right(False), run(Op.Bn254Pairing, a(g1Gen, g2Gen))))
       .and(expect.same(Right(True), run(Op.Bn254Pairing)))
       .and(expect.same(Right(True), run(Op.Bn254Pairing, a(infinity, g2Gen))))
-      .and(expect.same("Crypto", kind(run(Op.Bn254Pairing, a(g1Gen)))))
-      .and(expect.same("Type", kind(run(Op.Bn254Pairing, g1Gen))))
-      .and(expect.same("Crypto", kind(run(Op.Bn254Pairing, a(Vector.fill(ZkOps.MaxPairs + 1)(a(infinity, g2Gen))*)))))
+      .and(expect.same(Some(JlvmErrorKind.Crypto), kind(run(Op.Bn254Pairing, a(g1Gen)))))
+      .and(expect.same(Some(JlvmErrorKind.Type), kind(run(Op.Bn254Pairing, g1Gen))))
+      .and(expect.same(Some(JlvmErrorKind.Crypto), kind(run(Op.Bn254Pairing, a(Vector.fill(ZkOps.MaxPairs + 1)(a(infinity, g2Gen))*)))))
   }
 
   zkTest("bn254_add and bn254_mul agree: P + P = 2P, P + (-P) = O, 0P = O, and any 256-bit scalar is accepted") {
@@ -175,8 +179,8 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
       .and(expect.same(Right(infinity), run(Op.Bn254Mul, g1Gen, b(ByteVector.low(32)))))
       .and(expect.same(Right(g1Gen), run(Op.Bn254Add, infinity, g1Gen)))
       .and(expect(run(Op.Bn254Mul, g1Gen, b(ByteVector.high(32))).isRight, "mul takes any 256-bit scalar"))
-      .and(expect.same("Arity", kind(run(Op.Bn254Add, g1Gen))))
-      .and(expect.same("Type", kind(run(Op.Bn254Mul, g1Gen, CInt(2)))))
+      .and(expect.same(Some(JlvmErrorKind.Arity), kind(run(Op.Bn254Add, g1Gen))))
+      .and(expect.same(Some(JlvmErrorKind.Type), kind(run(Op.Bn254Mul, g1Gen, CInt(2)))))
   }
 
   zkTest("pmt_verify: a depth-0 proof checks leaf == root; shapes and bounds are typed errors") {
@@ -184,12 +188,12 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
     expect
       .same(Right(True), run(Op.PmtVerify, one, one, zero, a()))
       .and(expect.same(Right(False), run(Op.PmtVerify, one, two, zero, a())))
-      .and(expect.same("Crypto", kind(run(Op.PmtVerify, one, one, CInt(-1), a()))))
-      .and(expect.same("Crypto", kind(run(Op.PmtVerify, one, one, CInt(1), a()))))
-      .and(expect.same("Crypto", kind(run(Op.PmtVerify, one, one, zero, a(Vector.fill(ZkOps.MaxSiblings + 1)(one)*)))))
-      .and(expect.same("Type", kind(run(Op.PmtVerify, one, one, one, a()))))
-      .and(expect.same("Type", kind(run(Op.PmtVerify, one, one, zero, one))))
-      .and(expect.same("Arity", kind(run(Op.PmtVerify, one, one, zero))))
+      .and(expect.same(Some(JlvmErrorKind.Crypto), kind(run(Op.PmtVerify, one, one, CInt(-1), a()))))
+      .and(expect.same(Some(JlvmErrorKind.Crypto), kind(run(Op.PmtVerify, one, one, CInt(1), a()))))
+      .and(expect.same(Some(JlvmErrorKind.Crypto), kind(run(Op.PmtVerify, one, one, zero, a(Vector.fill(ZkOps.MaxSiblings + 1)(one)*)))))
+      .and(expect.same(Some(JlvmErrorKind.Type), kind(run(Op.PmtVerify, one, one, one, a()))))
+      .and(expect.same(Some(JlvmErrorKind.Type), kind(run(Op.PmtVerify, one, one, zero, one))))
+      .and(expect.same(Some(JlvmErrorKind.Arity), kind(run(Op.PmtVerify, one, one, zero))))
   }
 
   zkTest("pmt_verify: an index of any size is refused without rendering it") {
@@ -199,11 +203,11 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
       Left(
         JlvmError.Crypto(
           Op.PmtVerify,
-          "index is out of range for depth 1",
-          Some(
+          CryptoReason.Refused(
             CryptoCause.PoseidonMerkle(
               xyz.kd5ujc.accumulators.poseidon.PoseidonMerkleError.Position(CanonicalValue.MaxIntegerBits.toLong, 1L)
-            )
+            ),
+            Role.Index
           )
         )
       ),
@@ -217,17 +221,20 @@ abstract class ZkOpsChecks extends IOSuite with Checkers {
     val invalid = CanonicalValue.map(List("valid" -> False)).fold(e => sys.error(e.toString), identity)
     expect
       .same(Right(invalid), run(Op.EcvrfVerify, pk, b(ByteVector.empty), proof))
-      .and(expect.same("Crypto", kind(run(Op.EcvrfVerify, pk, b(ByteVector.empty), b(ByteVector.low(79))))))
-      .and(expect.same("Type", kind(run(Op.EcvrfVerify, pk, CInt(1), proof))))
-      .and(expect.same("Arity", kind(run(Op.EcvrfVerify, pk, proof))))
-      .and(expect.same("Crypto", kind(run(Op.Groth16Verify, b(ByteVector.low(32)), b(ByteVector.empty), b(ByteVector.low(355))))))
+      .and(expect.same(Some(JlvmErrorKind.Crypto), kind(run(Op.EcvrfVerify, pk, b(ByteVector.empty), b(ByteVector.low(79))))))
+      .and(expect.same(Some(JlvmErrorKind.Type), kind(run(Op.EcvrfVerify, pk, CInt(1), proof))))
+      .and(expect.same(Some(JlvmErrorKind.Arity), kind(run(Op.EcvrfVerify, pk, proof))))
+      .and(
+        expect
+          .same(Some(JlvmErrorKind.Crypto), kind(run(Op.Groth16Verify, b(ByteVector.low(32)), b(ByteVector.empty), b(ByteVector.low(355)))))
+      )
       .and(expect.same(Right(False), run(Op.Groth16Verify, b(ByteVector.low(32)), b(ByteVector.empty), b(ByteVector.low(356)))))
   }
 
   zkTest("ecvrf_verify: a key of the wrong width is a Crypto error") {
     val proof = b(ByteVector.low(80))
     List(0L, 2L, 31L, 33L, 64L)
-      .map(n => expect.same("Crypto", kind(run(Op.EcvrfVerify, b(ByteVector.low(n)), b(ByteVector.empty), proof))))
+      .map(n => expect.same(Some(JlvmErrorKind.Crypto), kind(run(Op.EcvrfVerify, b(ByteVector.low(n)), b(ByteVector.empty), proof))))
       .foldLeft(success)(_ and _)
   }
 

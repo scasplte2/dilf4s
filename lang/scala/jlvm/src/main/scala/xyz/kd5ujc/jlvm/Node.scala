@@ -5,7 +5,8 @@ import cats.syntax.all._
 import scala.collection.immutable.TreeSet
 
 import xyz.kd5ujc.core.canonical.CanonicalValue.{CArray, CText}
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Preview}
+import xyz.kd5ujc.core.canonical.{CanonicalValue, Preview, ValueKind}
+import xyz.kd5ujc.jlvm.JlvmError._
 
 /**
  * The checked form of a program. Every special form's shape (`if`, `let`, the callbacks) is validated once, by
@@ -83,7 +84,7 @@ object Node {
   private[jlvm] def compile(program: Program, kernels: Kernels): Either[JlvmError, Node] =
     node(program.expr, TreeSet.empty(using kernels.names))(using kernels)
 
-  private def malformed[A](msg: String): Either[JlvmError, A] = JlvmError.Malformed(msg).asLeft
+  private def malformed[A](reason: MalformedReason): Either[JlvmError, A] = JlvmError.Malformed(reason).asLeft
 
   /**
    * `lets` holds the `let` names in scope. A plain path whose first segment is one of them is rejected: a binding is
@@ -97,24 +98,23 @@ object Node {
       case Expr.Var(ref @ VarRef.Data(path), _) if path.headOption.exists(lets.contains) =>
         val n = Preview.of(path.headOption.getOrElse(""))
         malformed(
-          s"${Preview.of(ref.render)} starts with $n, which let binds: read the binding with a leading '$$', the data as " +
-          s"{\"var\": [[name, ...]]}, or a callback element's field as \"$$current.\" and the name"
+          MalformedReason.BindingShadow(Preview.of(ref.render), n)
         )
       case Expr.Var(ref, d) => Read(ref, d).asRight
       case Expr.VarAt(p, d) => node(p, lets).map(ReadAt(_, d))
       case Expr.Spread(op, a) =>
-        def notArray(kind: String) = malformed[Node](s"a spread ${op.wire} takes an array, and its argument is always of kind $kind")
+        def notArray(kind: ValueKind) = malformed[Node](MalformedReason.SpreadKind(op, kind))
         node(a, lets).flatMap {
           case n @ Const(CArray(_)) => Spread(op, n).asRight
-          case Const(v)             => notArray(Values.kind(v))
-          case ObjectOf(_)          => notArray("object")
+          case Const(v)             => notArray(ValueKind.of(v))
+          case ObjectOf(_)          => notArray(ValueKind.Map)
           case n                    => Spread(op, n).asRight
         }
       case Expr.Arr(items) => items.traverse(node(_, lets)).map(ArrayOf(_))
       case Expr.Obj(fields) =>
         fields.toVector.traverse {
           case (k, x) =>
-            (CanonicalValue.text(k).leftMap(_ => JlvmError.Malformed("an object key is not well-formed text")), node(x, lets)).tupled
+            (CanonicalValue.text(k).leftMap(e => JlvmError.Malformed(MalformedReason.ObjectKey(e))), node(x, lets)).tupled
         }
           .map(fs => ObjectOf(fs.sortBy(_._1.value)(using kernels.keys)))
       case Expr.Apply(op, args) => apply(op, args, lets)
@@ -129,7 +129,7 @@ object Node {
     def node(e: Expr): Either[JlvmError, Node] = Node.node(e, lets)
     def each(kind: Iteration) = args match {
       case Vector(over, body) => (node(over), node(body)).mapN(Each(kind, _, _))
-      case _                  => malformed(s"${op.wire} takes [array, callback]")
+      case _                  => malformed(MalformedReason.FormArguments(op, ArgumentCount.Exactly(2), args.size))
     }
     def nodes = args.traverse(node)
     op match {
@@ -138,7 +138,7 @@ object Node {
         nodes.flatMap {
           case ns if ns.size >= 2 && ns.size % 2 == 0 => Cond(branches(ns), Const(CanonicalValue.CNull)).asRight
           case pairs :+ otherwise if pairs.size >= 2 => Cond(branches(pairs), otherwise).asRight
-          case _                                     => malformed("if takes [condition, then, (condition, then)..., (else)]")
+          case _                                     => malformed(MalformedReason.FormArguments(op, ArgumentCount.AtLeast(2), args.size))
         }
       case Op.And                     => nodes.map(Logic(Logical.And, _))
       case Op.Or                      => nodes.map(Logic(Logical.Or, _))
@@ -154,13 +154,13 @@ object Node {
         args match {
           case Vector(over, body)      => (node(over), node(body)).mapN(Quorum(_, _, scala.None))
           case Vector(over, body, min) => (node(over), node(body), node(min)).mapN((o, b, m) => Quorum(o, b, scala.Some(m)))
-          case _                       => malformed("some takes [array, callback] or [array, callback, minimum]")
+          case _                       => malformed(MalformedReason.FormArguments(op, ArgumentCount.Between(2, 3), args.size))
         }
       case Op.Reduce =>
         args match {
           case Vector(over, body)       => (node(over), node(body)).mapN(Fold(_, _, scala.None))
           case Vector(over, body, init) => (node(over), node(body), node(init)).mapN((o, b, i) => Fold(o, b, scala.Some(i)))
-          case _                        => malformed("reduce takes [array, callback] or [array, callback, initial]")
+          case _                        => malformed(MalformedReason.FormArguments(op, ArgumentCount.Between(2, 3), args.size))
         }
       case Op.Missing | Op.MissingSome                       => nodes.map(Lookup(op, _))
       case _ if PureOps(op, Vector.empty, kernels).isDefined => nodes.map(Strict(op, _))
@@ -174,16 +174,16 @@ object Node {
       Either.cond(
         bindable(n),
         n,
-        JlvmError.Malformed(s"let cannot bind ${Preview.of(n)}: names are non-empty, without '.' or a leading '$$'")
+        JlvmError.Malformed(MalformedReason.BindingName(Preview.of(n)))
       )
     val bindings: Either[JlvmError, Vector[(String, Expr)]] = args.headOption match {
       case scala.Some(Expr.Arr(pairs)) =>
         pairs.traverse {
           case Expr.Arr(Vector(Expr.Lit(CText(n)), x)) => name(n).map(_ -> x)
-          case _                                       => malformed("a let binding is [name, expression]")
+          case _                                       => malformed(MalformedReason.BindingShape)
         }
       case scala.Some(Expr.Obj(fields)) => sorted(fields.toVector).traverse { case (n, x) => name(n).map(_ -> x) }
-      case _                            => malformed("let takes [bindings, body]")
+      case _                            => malformed(MalformedReason.BindingsShape)
     }
     args match {
       case Vector(_, body) =>
@@ -192,7 +192,7 @@ object Node {
           Either.cond(
             names.zip(names.drop(1)).forall((a, b) => !kernels.names.equiv(a, b)),
             bs,
-            JlvmError.Malformed("let binds a name twice")
+            JlvmError.Malformed(MalformedReason.DuplicateBinding)
           )
         }.flatMap { bs =>
           // each binding sees the ones before it, and the body sees all of them: one pass, carrying the scope forward
@@ -200,7 +200,7 @@ object Node {
             case ((done, scope), (n, x)) => node(x, scope).map(c => (done :+ (n -> c), scope + n))
           }.flatMap { case (compiled, scope) => node(body, scope).map(Bind(compiled, _)) }
         }
-      case _ => malformed("let takes [bindings, body]")
+      case _ => malformed(MalformedReason.BindingsShape)
     }
   }
 }

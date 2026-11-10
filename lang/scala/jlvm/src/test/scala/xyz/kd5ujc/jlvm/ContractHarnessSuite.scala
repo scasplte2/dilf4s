@@ -6,12 +6,19 @@ import weaver.SimpleIOSuite
 
 object ContractHarnessSuite extends SimpleIOSuite {
 
-  pureTest("contract rejection is identified by its case, never by diagnostic text") {
+  pureTest("only StepError.Rejected is a contract rejection") {
     import ContractHarness.StepError
 
     expect
       .same(true, ContractHarness.rejected(Left(StepError.Rejected(CanonicalValue.CNull))))
-      .and(expect.same(false, ContractHarness.rejected(Left(StepError.Evaluation(JlvmError.Malformed("reject: forged"))))))
+      .and(
+        expect.same(
+          false,
+          ContractHarness.rejected(
+            Left(StepError.Evaluation(JlvmError.Malformed(JlvmError.MalformedReason.NotJson)))
+          )
+        )
+      )
       .and(expect.same(false, ContractHarness.rejected(Left(StepError.MissingResult))))
       .and(expect.same(false, ContractHarness.rejected(Right(CanonicalValue.CNull))))
   }

@@ -2,8 +2,9 @@ package xyz.kd5ujc.jlvm
 
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.CanonicalValue
 import xyz.kd5ujc.core.canonical.CanonicalValue._
+import xyz.kd5ujc.core.canonical.{CanonicalValue, ValueKind}
+import xyz.kd5ujc.jlvm.JlvmError._
 
 /**
  * `missing` and `missing_some`: which data paths are absent (null). Paths resolve as plain `var` paths do (inside a
@@ -15,7 +16,7 @@ object Lookups {
     op match {
       case Op.Missing     => keys(op, args).flatMap(ks => absent(op, ks, data))
       case Op.MissingSome => some(op, args, data)
-      case other          => JlvmError.Malformed(s"${other.wire} is not a lookup").asLeft
+      case other          => JlvmError.Malformed(MalformedReason.UnsupportedOperation(other, OperationForm.Lookup)).asLeft
     }
 
   /** The values a lookup reads as paths, unchecked: what its charge is computed from, before any is parsed. */
@@ -34,7 +35,7 @@ object Lookups {
       case ks                 => ks
     }).traverse {
       case t: CText => t.asRight
-      case other    => JlvmError.Type(op, s"a key is a string path, got ${Values.kind(other)}").asLeft
+      case other    => JlvmError.Type(op, TypeReason.Expected(Vector(ValueKind.Text), ValueKind.of(other), Role.Key)).asLeft
     }
 
   private def missing(ks: Vector[CText], data: Vector[String] => CanonicalValue): Vector[CText] =
@@ -52,6 +53,6 @@ object Lookups {
             val gone = missing(all, data)
             if (BigInt(all.size - gone.size) >= n) Values.array(op, Vector.empty) else Values.array(op, gone)
         }
-      case _ => JlvmError.Arity(op, "takes [minimum, [keys]]").asLeft
+      case _ => JlvmError.Arity(op, ArgumentCount.Exactly(2), args.size).asLeft
     }
 }

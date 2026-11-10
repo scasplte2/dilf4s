@@ -6,6 +6,7 @@ import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.CanonicalValue._
 import xyz.kd5ujc.core.canonical.{CanonicalJson, CanonicalValue}
+import xyz.kd5ujc.jlvm.JlvmError._
 
 import scodec.bits.ByteVector
 
@@ -49,7 +50,7 @@ object JsonSurface {
 
   /** Input data from JSON text: the strict canonical parser (duplicate keys, depth, exact numbers), then bytes. */
   def parse(text: String): Either[JlvmError, CanonicalValue] =
-    CanonicalJson.parse(text).bimap(e => JlvmError.Malformed(e.toString), fromCanonicalJson)
+    CanonicalJson.parse(text).bimap(e => JlvmError.Malformed(MalformedReason.Canonical(e)), fromCanonicalJson)
 
   /**
    * A value as JSON text that [[parse]] reads back as the same value: bytes are written in `0x`-hex form, and the value
@@ -60,15 +61,15 @@ object JsonSurface {
   def render(v: CanonicalValue): Either[JlvmError, String] =
     CanonicalJson
       .renderSurfaceWithin(v, CanonicalJson.MaxRenderBytes)
-      .leftMap(e => JlvmError.Malformed(e.toString))
-      .flatTap(_ => Either.cond(!hasHexText(List(v)), (), JlvmError.Malformed("a value with 0x-hex text has no JSON surface form")))
+      .leftMap(e => JlvmError.Malformed(MalformedReason.Render(e)))
+      .flatTap(_ => Either.cond(!hasHexText(List(v)), (), JlvmError.Malformed(MalformedReason.HexTextSurface)))
 
   // a value's rendering is never shorter than its weight
   private def renderable(v: CanonicalValue): Either[JlvmError, CanonicalValue] =
     Either.cond(
       v.weight <= CanonicalJson.MaxRenderBytes,
       v,
-      JlvmError.Malformed(CanonicalJson.RenderError.TooLarge(CanonicalJson.MaxRenderBytes).toString)
+      JlvmError.Malformed(MalformedReason.Render(CanonicalJson.RenderError.TooLarge(CanonicalJson.MaxRenderBytes)))
     )
 
   /** Whether a text value (not a map key) in `todo` has the `0x`-hex form, which reads back as bytes. */
