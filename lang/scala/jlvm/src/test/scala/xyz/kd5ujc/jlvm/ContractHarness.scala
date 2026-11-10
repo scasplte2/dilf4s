@@ -17,6 +17,15 @@ import xyz.kd5ujc.core.canonical.CanonicalValue._
  */
 object ContractHarness {
 
+  enum StepError {
+    case Evaluation(cause: JlvmError)
+    case Rejected(reason: CanonicalValue)
+    case MissingState
+    case MissingResult
+    case MissingEffects(rejection: Option[CanonicalValue])
+    case InvalidResult(value: CanonicalValue)
+  }
+
   def load(name: String): IO[Program] =
     Resource
       .fromAutoCloseable(IO.blocking(getClass.getResourceAsStream(s"/programs/$name.json")))
@@ -34,18 +43,18 @@ object ContractHarness {
     def run(state: CanonicalValue, call: String, env: (String, CanonicalValue)*): Outcome =
       jlvm.evaluate(program, ContractHarness.data(state, call, inputs), env.toMap, Config())
 
-    /** The next state, or the rejection or error as text. */
-    def next(state: CanonicalValue, call: String, env: (String, CanonicalValue)*): Either[String, CanonicalValue] =
-      run(state, call, env*).result.leftMap(_.toString).flatMap {
-        case CMap(m) if m.contains("state") => m.get("state").toRight("no state")
-        case CMap(m)                        => m.get("reject").fold("no result".asLeft[CanonicalValue])(r => s"reject: ${render(r)}".asLeft)
-        case other                          => s"not a contract result: ${render(other)}".asLeft
+    /** The next state, or a typed rejection or failure. */
+    def next(state: CanonicalValue, call: String, env: (String, CanonicalValue)*): Either[StepError, CanonicalValue] =
+      run(state, call, env*).result.leftMap(StepError.Evaluation(_)).flatMap {
+        case CMap(m) if m.contains("state") => m.get("state").toRight(StepError.MissingState)
+        case CMap(m) => m.get("reject").fold(StepError.MissingResult.asLeft[CanonicalValue])(r => StepError.Rejected(r).asLeft)
+        case other   => StepError.InvalidResult(other).asLeft
       }
 
-    def effects(state: CanonicalValue, call: String, env: (String, CanonicalValue)*): Either[String, CanonicalValue] =
-      run(state, call, env*).result.leftMap(_.toString).flatMap {
-        case CMap(m) => m.get("effects").toRight(s"no effects: ${m.get("reject").map(render)}")
-        case other   => s"not a contract result: ${render(other)}".asLeft
+    def effects(state: CanonicalValue, call: String, env: (String, CanonicalValue)*): Either[StepError, CanonicalValue] =
+      run(state, call, env*).result.leftMap(StepError.Evaluation(_)).flatMap {
+        case CMap(m) => m.get("effects").toRight(StepError.MissingEffects(m.get("reject")))
+        case other   => StepError.InvalidResult(other).asLeft
       }
   }
 
@@ -54,5 +63,8 @@ object ContractHarness {
 
   def render(v: CanonicalValue): String = JsonSurface.render(v).getOrElse(v.toString)
 
-  def rejected(r: Either[String, CanonicalValue]): Boolean = r.left.exists(_.startsWith("reject:"))
+  def rejected(r: Either[StepError, CanonicalValue]): Boolean = r match {
+    case Left(StepError.Rejected(_)) => true
+    case _                           => false
+  }
 }

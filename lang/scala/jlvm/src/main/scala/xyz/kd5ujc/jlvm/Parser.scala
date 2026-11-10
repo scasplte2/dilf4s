@@ -285,23 +285,30 @@ object Parser {
 
   private object Out {
 
+    private enum Token {
+      case Text(value: String)
+      case Value(value: Out)
+    }
+
     /** Compact text from a worklist: no recursion, and no text copied once per level. */
     def print(o: Out): String = {
       @tailrec
-      def go(todo: List[Either[String, Out]], acc: Vector[String]): String =
+      def go(todo: List[Token], acc: Vector[String]): String =
         todo match {
-          case Nil                           => acc.mkString
-          case Left(text) :: rest            => go(rest, acc :+ text)
-          case Right(Out.Raw(text)) :: rest  => go(rest, acc :+ text)
-          case Right(Out.Arr(items)) :: rest => go(within("[", items.map(i => List(Right(i))), "]") ::: rest, acc)
-          case Right(Out.Obj(fields)) :: rest =>
-            go(within("{", fields.map { case (k, v) => List(Left(k), Left(":"), Right(v)) }, "}") ::: rest, acc)
+          case Nil                                 => acc.mkString
+          case Token.Text(text) :: rest            => go(rest, acc :+ text)
+          case Token.Value(Out.Raw(text)) :: rest  => go(rest, acc :+ text)
+          case Token.Value(Out.Arr(items)) :: rest => go(within("[", items.map(i => List(Token.Value(i))), "]") ::: rest, acc)
+          case Token.Value(Out.Obj(fields)) :: rest =>
+            go(within("{", fields.map { case (k, v) => List(Token.Text(k), Token.Text(":"), Token.Value(v)) }, "}") ::: rest, acc)
         }
-      go(List(Right(o)), Vector.empty)
+      go(List(Token.Value(o)), Vector.empty)
     }
 
-    private def within(open: String, parts: Vector[List[Either[String, Out]]], close: String): List[Either[String, Out]] =
-      Left(open) :: parts.toList.zipWithIndex.flatMap { case (part, i) => if (i == 0) part else Left(",") :: part } ::: List(Left(close))
+    private def within(open: String, parts: Vector[List[Token]], close: String): List[Token] =
+      Token.Text(open) :: parts.toList.zipWithIndex.flatMap { case (part, i) => if (i == 0) part else Token.Text(",") :: part } ::: List(
+        Token.Text(close)
+      )
   }
 
   private def text(s: String): Either[JlvmError, String] =

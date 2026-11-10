@@ -99,9 +99,29 @@ object EcrecoverSuite extends IOSuite with Checkers {
   pureTest("wrong sizes and other v values are malformed") {
     val d = ByteVector.fill(32)(1)
     val sig = ByteVector.fill(64)(1)
-    expect(Ecrecover.recover(d.drop(1), sig :+ 27.toByte).isLeft, "short digest")
-      .and(expect(Ecrecover.recover(d, sig).isLeft, "64-byte signature"))
-      .and(expect(List(2, 26, 29, 35, 255).forall(v => Ecrecover.recover(d, sig :+ v.toByte).isLeft), "v outside 0, 1, 27, 28"))
+    val sizes = expect
+      .same(
+        Left(Ecrecover.Error.DigestLength(31)),
+        Ecrecover.recover(d.drop(1), sig :+ 27.toByte)
+      )
+      .and(
+        expect.same(
+          Left(Ecrecover.Error.SignatureLength(64)),
+          Ecrecover.recover(d, sig)
+        )
+      )
+    List(2, 26, 29, 35, 255).foldLeft(sizes) { (checked, v) =>
+      checked.and(
+        expect.same(
+          Left(Ecrecover.Error.InvalidRecoveryId(v)),
+          Ecrecover.recover(d, sig :+ v.toByte)
+        )
+      )
+    }
+  }
+
+  pureTest("malformed public keys have a distinct refusal") {
+    expect.same(Left(Ecrecover.Error.InvalidPublicKey), Ecrecover.address(ByteVector.empty))
   }
 
   pureTest("the shared secp256k1 order is SEC 2's n and BouncyCastle's curve order") {

@@ -75,6 +75,7 @@ object CanonicalEmitterSuite extends FunSuite {
       "canonical-entries" -> "CanonicalEntries",
       "canonical-value"   -> "CanonicalValue",
       "codec"             -> "Codec",
+      "decode-reason"     -> "DecodeReason",
       "int"               -> "Int",
       "list"              -> "List",
       "long"              -> "Long",
@@ -98,6 +99,7 @@ object CanonicalEmitterSuite extends FunSuite {
       .and(
         expect.same(Left(GenError.ReservedName("t:e", Language.Scala, "CanonicalDecoder")), gen("e = &(canonical-decoder: 1, other: 2)\n"))
       )
+      .and(expect.same(Left(GenError.ReservedName("t:e", Language.Scala, "DecodeReason")), gen("e = &(decode-reason: 1, other: 2)\n")))
       .and(expect(gen("e = &(canonical: 1, string: 2)\n").isRight, "a case is a term, so it shadows no type"))
   }
 

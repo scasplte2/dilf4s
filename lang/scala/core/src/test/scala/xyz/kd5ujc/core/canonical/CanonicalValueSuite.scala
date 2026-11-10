@@ -91,7 +91,7 @@ object CanonicalValueSuite extends SimpleIOSuite with Checkers {
     }
   }
 
-  private def shape(v: Either[?, CanonicalValue]): Either[String, (Int, Long)] = v.left.map(_.toString).map(x => (x.depth, x.weight))
+  private def shape[E](v: Either[E, CanonicalValue]): Either[E, (Int, Long)] = v.map(x => (x.depth, x.weight))
 
   test("a chain of updates and removals keeps depth and weight exact, including replacing the deepest value") {
     val deep = (1 to 6).foldLeft[CanonicalValue](CNull)((v, _) => CanonicalValue.array(Vector(v)).toOption.get)

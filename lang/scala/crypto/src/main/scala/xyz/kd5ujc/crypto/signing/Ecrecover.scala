@@ -17,6 +17,21 @@ import scodec.bits.ByteVector
  */
 object Ecrecover {
 
+  enum Error {
+    case DigestLength(actual: Long)
+    case SignatureLength(actual: Long)
+    case InvalidRecoveryId(actual: Int)
+    case InvalidPublicKey
+
+    def toCryptoError: CryptoError = this match {
+      case DigestLength(actual) => CryptoError.InvalidEncoding("ecrecover digest", s"the digest is $DigestSize bytes, got $actual")
+      case SignatureLength(actual) =>
+        CryptoError.InvalidEncoding("ecrecover signature", s"a signature is $SignatureSize bytes (r ‖ s ‖ v), got $actual")
+      case InvalidRecoveryId(actual) => CryptoError.InvalidEncoding("ecrecover signature", s"v is 27 or 28 (or 0 or 1), got $actual")
+      case InvalidPublicKey          => CryptoError.InvalidKey("not a secp256k1 public key")
+    }
+  }
+
   val DigestSize: Int = 32
   val SignatureSize: Int = 65
   val AddressSize: Int = 20
@@ -31,19 +46,23 @@ object Ecrecover {
    * A well-formed signature that recovers no key is `Right(None)`: `r` or `s` zero or not below the order, a high `s`,
    * or an `r` that is no point's x-coordinate.
    */
-  def recover(digest: ByteVector, signature: ByteVector): Either[String, Option[ByteVector]] =
+  def recover(digest: ByteVector, signature: ByteVector): Either[Error, Option[ByteVector]] =
     for {
-      _ <- Either.cond(digest.size == DigestSize.toLong, (), s"the digest is $DigestSize bytes, got ${digest.size}")
+      _ <- Either.cond(
+        digest.size == DigestSize.toLong,
+        (),
+        Error.DigestLength(digest.size)
+      )
       _ <- Either.cond(
         signature.size == SignatureSize.toLong,
         (),
-        s"a signature is $SignatureSize bytes (r ‖ s ‖ v), got ${signature.size}"
+        Error.SignatureLength(signature.size)
       )
       v = signature(64) & 0xff
       parity <- v match {
         case 0 | 27 => 0.asRight
         case 1 | 28 => 1.asRight
-        case other  => s"v is 27 or 28 (or 0 or 1), got $other".asLeft
+        case other  => Error.InvalidRecoveryId(other).asLeft
       }
     } yield {
       val r = BigInt(1, signature.take(32).toArray)
@@ -74,6 +93,6 @@ object Ecrecover {
     Hasher[Keccak256].digest(ByteVector.view(key.normalize().getEncoded(false)).drop(1)).bytes.takeRight(AddressSize.toLong)
 
   /** The address of a SEC1-encoded public key (33 or 65 bytes), if it is a point of the curve. */
-  def address(key: ByteVector): Either[String, ByteVector] =
-    Either.catchNonFatal(curve.decodePoint(key.toArray)).leftMap(_ => "not a secp256k1 public key").map(addressOf)
+  def address(key: ByteVector): Either[Error, ByteVector] =
+    Either.catchNonFatal(curve.decodePoint(key.toArray)).leftMap(_ => Error.InvalidPublicKey).map(addressOf)
 }

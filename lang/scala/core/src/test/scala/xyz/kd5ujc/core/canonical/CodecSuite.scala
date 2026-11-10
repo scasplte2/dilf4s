@@ -30,8 +30,9 @@ object CodecSuite extends SimpleIOSuite {
     val record = CanonicalDecoder.record(List("a", "a"))(f => f.required[BigInt]("a")).decode(m)
     val chosen = Codec.selectAlternative(m, List((List("a"), List("a", "a"), CanonicalDecoder.record(List("a", "a"))(_ => 1.asRight))))
     val fits = CanonicalValue.map(List("a" -> CanonicalValue.CInt(1))).fold(e => sys.error(e.toString), identity)
-    expect(record.left.exists(_.reason.startsWith("1 unknown key, the first \"unexpected\"")), s"record: $record")
-      .and(expect(chosen.left.exists(_.reason.contains("no alternative")), s"selectAlternative: $chosen"))
+    expect
+      .same(Left(DecodeFailure(Nil, DecodeReason.UnknownKeys(1, Preview.of("unexpected")))), record)
+      .and(expect.same(Left(DecodeFailure(Nil, DecodeReason.NoMapAlternative(2))), chosen))
       .and(expect.same(Right(BigInt(1)), CanonicalDecoder.record(List("a", "a"))(f => f.required[BigInt]("a")).decode(fits)))
       .and(
         expect.same(
@@ -46,7 +47,7 @@ object CodecSuite extends SimpleIOSuite {
     val widest = CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     expect
       .same(
-        Left("integer of 33219 bits outside 0..18446744073709551615"),
+        Left(DecodeReason.IntegerRange(33219, Some(BigInt(0)), Some(two64 - 1))),
         Codec.uint.decoder.decode(widest).left.map(_.reason)
       )
       .and(expect.same(Left(CanonicalError.TypeMismatch("integer of 1000001 bits outside the schema range")), Codec.uint.encode(huge)))
@@ -54,7 +55,7 @@ object CodecSuite extends SimpleIOSuite {
 
   pureTest("a refused literal is named by the size of what came instead") {
     expect.same(
-      Left("expected 7, got an integer of 33219 bits"),
+      Left(DecodeReason.IntegerLiteral(BigInt(7), 33219)),
       Codec.literalInt(7).decoder.decode(CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)).left.map(_.reason)
     )
   }

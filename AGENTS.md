@@ -8,3 +8,4 @@
 - Use `tools/sbt` from the repository root or `sbt` inside `lang/scala`. Native Rust commands run in `lang/rust/native`; the patched guest has a separate workspace at `lang/rust`. Keep native and SP1 dependency graphs separate.
 - A guest-path change can change its ELF and verifying key. Run the SP1 key and proof checks; never loosen or remove the pinned-key assertion to make a layout change pass.
 - Keep investigation notes and handoffs in ignored `.workspace/`, never in tracked source or references from tracked documentation.
+- Represent failures and internal control states with ADTs. Never use strings as error values or branch on rendered error messages. Keep diagnostics at presentation boundaries, preserve typed causes, and use exhaustive matches over typed discriminants. Apply this to production code, bindings, generators and test tooling.

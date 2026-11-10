@@ -27,6 +27,20 @@ import scodec.bits.ByteVector
  */
 object SigmaProver {
 
+  enum Error {
+    case InvalidProposition(cause: SigmaError)
+    case InvalidChildren(cause: ChildPoint.Error)
+    case UnsatisfiedProposition
+
+    def message: String = this match {
+      case InvalidProposition(cause) => cause.message
+      case InvalidChildren(cause)    => cause.message
+      case UnsatisfiedProposition    => "the secrets do not satisfy the proposition"
+    }
+  }
+
+  final case class Failure(error: Error) extends RuntimeException(error.message)
+
   import SigmaProp._
 
   private val q = Secp256k1Group.Order
@@ -35,7 +49,7 @@ object SigmaProver {
   /** Proves `prop` for `message` with the given secret scalars; fails when they do not satisfy the proposition. */
   def prove[F[_]: Functor](prop: SigmaProp, secrets: Vector[BigInt], message: ByteVector)(
     using R: SecureRandom[F]
-  ): F[Either[String, ByteVector]] =
+  ): F[Either[Error, ByteVector]] =
     R.nextBytes(32).map(seed => proveWith(prop, secrets, message, ByteVector.view(seed)))
 
   // ---- randomness: a hash of the seed, the secrets, the statement, the message, and the node and purpose
@@ -117,7 +131,7 @@ object SigmaProver {
     }
   }
 
-  private def real(p: Plan, coins: Coins): Either[String, Draft] =
+  private def real(p: Plan, coins: Coins): Either[Error, Draft] =
     p match {
       case Plan.Leaf(leaf, path, scala.Some(w)) =>
         val r = coins.scalar(path, Nonce)
@@ -140,7 +154,7 @@ object SigmaProver {
   }
 
   /** A simulated subtree whose challenge is `e`. */
-  private def simulate(p: Plan, e: ByteVector, coins: Coins): Either[String, Draft] =
+  private def simulate(p: Plan, e: ByteVector, coins: Coins): Either[Error, Draft] =
     p match {
       case Plan.Leaf(leaf, path, _) =>
         val z = coins.scalar(path, Response)
@@ -159,6 +173,7 @@ object SigmaProver {
             val poly = Gf2Poly(e0 +: higher)
             ChildPoint
               .number(cs)
+              .leftMap(Error.InvalidChildren(_))
               .flatMap(_.traverse { case (c, x) => simulate(c, poly(x).bytes, coins) })
               .map(Draft.SimNode(prop, e, Option(poly), _))
           case _ => cs.traverse(simulate(_, e, coins)).map(Draft.SimNode(prop, e, scala.None, _))
@@ -185,7 +200,7 @@ object SigmaProver {
       case Draft.SimNode(_, _, _, cs) => cs.flatMap(commitments)
     }
 
-  private def settle(d: Draft, e: ByteVector): Either[String, Proved] =
+  private def settle(d: Draft, e: ByteVector): Either[Error, Proved] =
     d match {
       case Draft.SimLeaf(_, se, z, _)        => Proved.Leaf(se, z).asRight
       case Draft.SimNode(prop, se, poly, cs) => cs.traverse(c => settle(c, c.challenge.getOrElse(se))).map(Proved.Node(prop, se, poly, _))
@@ -196,7 +211,7 @@ object SigmaProver {
             val others = cs.flatMap(_.challenge.toList).foldLeft(e)(_ ^ _)
             cs.traverse(c => settle(c, c.challenge.getOrElse(others))).map(Proved.Node(prop, e, scala.None, _))
           case Threshold(_, _) =>
-            ChildPoint.number(cs).flatMap { numbered =>
+            ChildPoint.number(cs).leftMap(Error.InvalidChildren(_)).flatMap { numbered =>
               val simulated = numbered.flatMap { case (c, x) => c.challenge.flatMap(Gf2_192.fromBytes).map(x -> _).toList }.toMap
               val poly = Gf2Poly.interpolate(Gf2_192.fromBytes(e).getOrElse(Gf2_192.Zero), simulated)
               numbered.traverse { case (c, x) => settle(c, poly(x).bytes) }.map(Proved.Node(prop, e, Option(poly), _))
@@ -225,16 +240,16 @@ object SigmaProver {
     secrets: Vector[BigInt],
     message: ByteVector,
     seed:    ByteVector
-  ): Either[String, ByteVector] =
+  ): Either[Error, ByteVector] =
     // a proposition built around the smart constructors may be trivial: proving it would prove nothing
-    SigmaProp.validate(prop).leftMap(_.message).flatMap(proveChecked(_, secrets, message, seed))
+    SigmaProp.validate(prop).leftMap(Error.InvalidProposition(_)).flatMap(proveChecked(_, secrets, message, seed))
 
   private def proveChecked(
     prop:    SigmaProp,
     secrets: Vector[BigInt],
     message: ByteVector,
     seed:    ByteVector
-  ): Either[String, ByteVector] = {
+  ): Either[Error, ByteVector] = {
     val usable = secrets.filter(w => w > 0 && w < q)
     // one base multiplication per secret, not one per secret per leaf; w -> w·G is injective below q
     val byPublicKey = usable.map(w => Secp256k1Group.base(w).bytes -> w).toMap
@@ -252,7 +267,7 @@ object SigmaProver {
         .bytes
     )
     for {
-      _     <- Either.cond(planned.real, (), "the secrets do not satisfy the proposition")
+      _     <- Either.cond(planned.real, (), Error.UnsatisfiedProposition)
       draft <- real(planned, coins)
       e0 = Sigma.challenge(Sigma.fiatShamir(prop, commitments(draft)), message)
       proved <- settle(draft, e0)

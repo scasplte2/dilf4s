@@ -2,7 +2,7 @@
 package xyz.kd5ujc.models.trie
 
 import scodec.bits.ByteVector
-import xyz.kd5ujc.core.canonical.{Canonical, CanonicalDecoder, CanonicalValue, Codec}
+import xyz.kd5ujc.core.canonical.{Canonical, CanonicalDecoder, CanonicalValue, Codec, DecodeReason}
 
 final case class TrieBranch(s: TrieSegment, v: Option[ByteVector], c: TrieChildren)
 
@@ -35,7 +35,7 @@ enum TrieChildren(val wire: BigInt) {
 object TrieChildren {
   lazy val codec: Codec[TrieChildren] = Codec(
     e => Codec.int.encode(e.wire),
-    CanonicalDecoder.int.emap(i => TrieChildren.values.find(_.wire == i).toRight(s"an integer of ${i.bitLength} bits is not a TrieChildren"))
+    CanonicalDecoder.int.emap(i => TrieChildren.values.find(_.wire == i).toRight(DecodeReason.UnknownEnumInteger("TrieChildren", i.bitLength)))
   )
   given Canonical[TrieChildren] = codec.canonical
   given CanonicalDecoder[TrieChildren] = codec.decoder

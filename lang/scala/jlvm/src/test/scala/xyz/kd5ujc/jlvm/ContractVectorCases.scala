@@ -51,7 +51,7 @@ object ContractVectorCases extends IOApp {
   private val txb = "txHash" -> CBytes(tx)
 
   private def prove(r: SecureRandom[IO], prop: SigmaProp, secrets: Vector[BigInt], message: ByteVector): IO[ByteVector] =
-    SigmaProver.prove[IO](prop, secrets, message)(using summon, r).flatMap(e => IO.fromEither(e.leftMap(new IllegalStateException(_))))
+    SigmaProver.prove[IO](prop, secrets, message)(using summon, r).flatMap(e => e.leftMap(SigmaProver.Failure(_)).liftTo[IO])
 
   private val pool = value("""{"reserve0": 1000000, "reserve1": 4000000, "totalSupply": 1000000, "lp": {"lp1": 1000000}}""")
   private val swap = """{"method": "swap", "zeroForOne": true, "amountIn": 10000, "minOut": 0}"""

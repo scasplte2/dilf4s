@@ -34,11 +34,10 @@ object DiagnosticsSuite extends SimpleIOSuite {
    * shared/vectors/diagnostics_v1.json (conformance.md §8), the same in every SDK: each object repeats one member name,
    * refused as `DuplicateKey` with the preview given.
    */
-  private val vectors: Either[String, DiagnosticVectors] =
+  private val vectors: Either[CanonicalError | DecodeFailure, DiagnosticVectors] =
     CanonicalJson
       .parse(new String(Files.readAllBytes(Paths.get("shared", "vectors", "diagnostics_v1.json")), UTF_8))
-      .leftMap(_.toString)
-      .flatMap(DiagnosticVectors.codec.decoder.decode(_).leftMap(_.message))
+      .flatMap(DiagnosticVectors.codec.decoder.decode)
 
   pureTest("a preview keeps the first 32 code points and the UTF-8 length, the same in every SDK") {
     vectors.fold(
@@ -53,7 +52,7 @@ object DiagnosticsSuite extends SimpleIOSuite {
                 .and(expect.same(c.truncated, p.truncated))
             case other => failure(s"${c.json}: expected a duplicate key, got ${other.map(_ => "a value")}")
           }
-        }.and(expect(v.previews.size >= 11, "every row of the spec's table"))
+        }.and(expect.same(11, v.previews.size))
     )
   }
 
@@ -62,7 +61,12 @@ object DiagnosticsSuite extends SimpleIOSuite {
       .same("\"abc\" (UTF-8 length 3)", Preview.of("abc").toString)
       .and(expect.same(s"\"${"a" * 32}\"… (UTF-8 length 40)", Preview.of("a" * 40).toString))
       .and(expect.same("\"\\\"\\\\\\u0000\" (UTF-8 length 3)", Preview.of("\"\\\u0000").toString))
-      .and(expect.same(s"a.${"b" * 32}…: r", DecodeFailure(List(Preview.of("a"), Preview.of("b" * 33)), "r").message))
+      .and(
+        expect.same(
+          s"a.${"b" * 32}…: no alternative fits a map of 0 keys",
+          DecodeFailure(List(Preview.of("a"), Preview.of("b" * 33)), DecodeReason.NoMapAlternative(0)).message
+        )
+      )
   }
 
   pureTest("a repeated JSON member name of 1 MiB is held and rendered as a preview") {
@@ -107,7 +111,8 @@ object DiagnosticsSuite extends SimpleIOSuite {
         small.leftMap(_.toString).flatMap(record.decode(_).leftMap(_.message))
       )
       .and(many.toOption.map(record.decode).fold(failure("a map")) {
-        case Left(f)  => bounded("unknown keys", f.message).and(expect(f.reason.startsWith("4096 unknown keys"), f.reason))
+        case Left(f) =>
+          bounded("unknown keys", f.message).and(expect.same(DecodeReason.UnknownKeys(4096, Preview.of("u" * 256 + "0")), f.reason))
         case Right(_) => failure("4096 unknown keys accepted")
       })
   }

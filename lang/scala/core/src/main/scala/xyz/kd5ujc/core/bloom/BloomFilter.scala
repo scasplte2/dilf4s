@@ -29,8 +29,8 @@ object BloomParams {
 
   def apply(bits: Int, hashes: Int): Either[BloomError, BloomParams] =
     if (bits < MinBits || bits > MaxBits || Integer.bitCount(bits) != 1)
-      BloomError.InvalidParams(s"bits must be a power of two in $MinBits..$MaxBits, got $bits").asLeft
-    else if (hashes < 1 || hashes > MaxHashes) BloomError.InvalidParams(s"hashes must be 1..$MaxHashes, got $hashes").asLeft
+      BloomError.InvalidBits(bits, MinBits, MaxBits).asLeft
+    else if (hashes < 1 || hashes > MaxHashes) BloomError.InvalidHashes(hashes, MaxHashes).asLeft
     else (new BloomParams(bits, hashes) {}).asRight
 
   /** 2048 bits, 4 hashes: the Ethereum-style ledger bloom (the original Bifrost size). */
@@ -40,9 +40,12 @@ object BloomParams {
 sealed trait BloomError extends Product with Serializable
 
 object BloomError {
-  final case class InvalidParams(reason: String) extends BloomError
+  final case class InvalidBits(actual: Int, minimum: Int, maximum: Int) extends BloomError
+  final case class InvalidHashes(actual: Int, maximum: Int) extends BloomError
   final case class Mismatch(left: BloomParams, right: BloomParams) extends BloomError
-  final case class Encoding(reason: String) extends BloomError
+  final case class ByteLength(expected: Int, actual: Long) extends BloomError
+  case object InvalidFields extends BloomError
+  case object InvalidShape extends BloomError
 }
 
 /**
@@ -124,11 +127,11 @@ object BloomFilter {
               Either.cond(
                 b.size * 8 == p.bits.toLong,
                 new BloomFilter[H](p, b.bits),
-                BloomError.Encoding(s"expected ${p.bits / 8} bytes, got ${b.size}")
+                BloomError.ByteLength(p.bits / 8, b.size)
               )
             }
-          case _ => BloomError.Encoding("invalid bloom fields: m and k are 32-bit integers, b is bytes").asLeft
+          case _ => BloomError.InvalidFields.asLeft
         }
-      case _ => BloomError.Encoding("a bloom filter is exactly {m, k, b}").asLeft
+      case _ => BloomError.InvalidShape.asLeft
     }
 }

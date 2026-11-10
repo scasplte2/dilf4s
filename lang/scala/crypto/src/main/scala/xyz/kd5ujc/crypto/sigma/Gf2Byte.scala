@@ -33,6 +33,14 @@ opaque type ChildPoint <: Gf2Byte = Int
 
 object ChildPoint {
 
+  enum Error {
+    case TooManyChildren(actual: Int, limit: Int)
+
+    def message: String = this match {
+      case TooManyChildren(_, limit) => s"a connective has at most $limit children"
+    }
+  }
+
   /** The most children a connective may have: the nonzero bytes. */
   val Max: Int = xyz.kd5ujc.models.limits.SigmaMaxChildren
 
@@ -40,10 +48,10 @@ object ChildPoint {
   def from(i: Int): Option[ChildPoint] = Option.when(i >= 1 && i <= Max)(i)
 
   /** Each child with its point `1..n`, or `Left` when there are more than [[Max]]. */
-  def number[A](children: Vector[A]): Either[String, Vector[(A, ChildPoint)]] =
+  def number[A](children: Vector[A]): Either[Error, Vector[(A, ChildPoint)]] =
     Either.cond(
       children.size <= Max,
       children.zipWithIndex.map { case (c, i) => (c, i + 1) },
-      s"a connective has at most $Max children"
+      Error.TooManyChildren(children.size, Max)
     )
 }

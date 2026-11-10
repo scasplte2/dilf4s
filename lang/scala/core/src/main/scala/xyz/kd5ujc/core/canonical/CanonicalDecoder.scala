@@ -11,9 +11,9 @@ import scodec.bits.ByteVector
  * may be the caller's, so each segment is a [[Preview]]: the path holds at most `MaxDepth` of them, however long the
  * keys. `reason` quotes caller input only through a [[Preview]] (docs/specs/conformance.md §8).
  */
-final case class DecodeFailure(path: List[Preview], reason: String) {
+final case class DecodeFailure(path: List[Preview], reason: DecodeReason) {
   def at(segment: String): DecodeFailure = copy(path = Preview.of(segment) :: path)
-  def message: String = s"${if (path.isEmpty) "<root>" else path.map(_.short).mkString(".")}: $reason"
+  def message: String = s"${if (path.isEmpty) "<root>" else path.map(_.short).mkString(".")}: ${reason.message}"
 }
 
 /**
@@ -23,7 +23,7 @@ final case class DecodeFailure(path: List[Preview], reason: String) {
 trait CanonicalDecoder[A] {
   def decode(value: CanonicalValue): Either[DecodeFailure, A]
 
-  final def emap[B](f: A => Either[String, B]): CanonicalDecoder[B] =
+  final def emap[B](f: A => Either[DecodeReason, B]): CanonicalDecoder[B] =
     (v: CanonicalValue) => decode(v).flatMap(a => f(a).leftMap(DecodeFailure(Nil, _)))
   final def map[B](f: A => B): CanonicalDecoder[B] = (v: CanonicalValue) => decode(v).map(f)
 }
@@ -32,39 +32,29 @@ object CanonicalDecoder {
 
   def apply[A](implicit D: CanonicalDecoder[A]): CanonicalDecoder[A] = D
 
-  private def fail[A](reason: String): Either[DecodeFailure, A] = DecodeFailure(Nil, reason).asLeft
+  private def fail[A](reason: DecodeReason): Either[DecodeFailure, A] = DecodeFailure(Nil, reason).asLeft
 
-  private def kind(v: CanonicalValue): String = v match {
-    case CNull        => "null"
-    case CBool(_)     => "bool"
-    case CInt(_)      => "int"
-    case CRational(_) => "rational"
-    case CText(_)     => "text"
-    case CBytes(_)    => "bytes"
-    case CArray(_)    => "array"
-    case CMap(_)      => "map"
-  }
-
-  private def expected[A](what: String, v: CanonicalValue): Either[DecodeFailure, A] = fail(s"expected $what, got ${kind(v)}")
+  private def expected[A](what: ValueKind, v: CanonicalValue): Either[DecodeFailure, A] =
+    fail(DecodeReason.ExpectedType(Vector(what), ValueKind.of(v)))
 
   implicit val bool: CanonicalDecoder[Boolean] = {
     case CBool(b) => b.asRight
-    case other    => expected("bool", other)
+    case other    => expected(ValueKind.Bool, other)
   }
 
   implicit val int: CanonicalDecoder[BigInt] = {
     case CInt(i) => i.asRight
-    case other   => expected("int", other)
+    case other   => expected(ValueKind.Int, other)
   }
 
   implicit val bytes: CanonicalDecoder[ByteVector] = {
     case CBytes(b) => b.asRight
-    case other     => expected("bytes", other)
+    case other     => expected(ValueKind.Bytes, other)
   }
 
   implicit val text: CanonicalDecoder[String] = {
     case CText(s) => s.asRight
-    case other    => expected("text", other)
+    case other    => expected(ValueKind.Text, other)
   }
 
   /** An integer in `lo..hi` inclusive (`uint` is `intRange(0, None)`). A refusal names its size, never its digits. */
@@ -73,7 +63,7 @@ object CanonicalDecoder {
       Either.cond(
         lo.forall(i >= _) && hi.forall(i <= _),
         i,
-        s"integer of ${i.bitLength} bits outside ${lo.fold("")(_.toString)}..${hi.fold("")(_.toString)}"
+        DecodeReason.IntegerRange(i.bitLength, lo, hi)
       )
     )
 
@@ -83,30 +73,28 @@ object CanonicalDecoder {
   def longIn(lo: Long, hi: Long): CanonicalDecoder[Long] = intRange(Some(BigInt(lo)), Some(BigInt(hi))).map(_.toLong)
 
   def sizedBytes(lo: Long, hi: Option[Long]): CanonicalDecoder[ByteVector] =
-    bytes.emap(b =>
-      Either.cond(b.size >= lo && hi.forall(b.size <= _), b, s"byte string of ${b.size} bytes, expected $lo..${hi.fold("")(_.toString)}")
-    )
+    bytes.emap(b => Either.cond(b.size >= lo && hi.forall(b.size <= _), b, DecodeReason.ByteLength(b.size, lo, hi)))
 
   /** Text whose UTF-8 encoding is `lo` to `hi` bytes long (RFC 8610 `.size` on a text string counts bytes). */
   def sizedText(lo: Int, hi: Option[Int]): CanonicalDecoder[String] =
     text.emap { s =>
       val n = Utf16.utf8Length(s)
-      Either.cond(n >= lo && hi.forall(n <= _), s, s"text of $n UTF-8 bytes, expected $lo..${hi.fold("")(_.toString)}")
+      Either.cond(n >= lo && hi.forall(n <= _), s, DecodeReason.TextLength(n, lo, hi))
     }
 
   /** A homogeneous array with at least `min` and at most `max` elements; failures name the index. */
   def vector[A](min: Int, max: Option[Int])(implicit D: CanonicalDecoder[A]): CanonicalDecoder[Vector[A]] = {
     case CArray(values) =>
       if (values.size < min || max.exists(values.size > _))
-        fail(s"array of ${values.size} elements, expected $min..${max.fold("")(_.toString)}")
+        fail(DecodeReason.ArrayLength(values.size, min, max))
       else values.zipWithIndex.traverse { case (v, i) => D.decode(v).leftMap(_.at(s"[$i]")) }
-    case other => expected("array", other)
+    case other => expected(ValueKind.Array, other)
   }
 
   /** The fields of a map with exactly the given keys allowed; unknown keys are rejected. */
   final class Fields private[CanonicalDecoder] (entries: CanonicalEntries[CanonicalValue]) {
     def required[A](key: String)(implicit D: CanonicalDecoder[A]): Either[DecodeFailure, A] =
-      entries.get(key).toRight(DecodeFailure(Nil, s"missing required key \"$key\"")).flatMap(v => D.decode(v).leftMap(_.at(key)))
+      entries.get(key).toRight(DecodeFailure(Nil, DecodeReason.MissingKey(Preview.of(key)))).flatMap(v => D.decode(v).leftMap(_.at(key)))
     def optional[A](key: String)(implicit D: CanonicalDecoder[A]): Either[DecodeFailure, Option[A]] =
       entries.get(key).traverse(v => D.decode(v).leftMap(_.at(key)))
   }
@@ -123,9 +111,9 @@ object CanonicalDecoder {
       val unknown = entries.keysIterator.count(k => !known.contains(k))
       if (unknown > 0) {
         val first = entries.keysIterator.filterNot(k => known.contains(k)).minOption(using CanonicalKeyOrder).getOrElse("")
-        fail(s"$unknown unknown ${if (unknown == 1) "key" else "keys"}, the first ${Preview.of(first)}")
+        fail(DecodeReason.UnknownKeys(unknown, Preview.of(first)))
       } else f(new Fields(entries))
-    case other => expected("map", other)
+    case other => expected(ValueKind.Map, other)
   }
 
   // the canonical order of encoded keys; each comparison measures both keys, so finding the least is linear in them

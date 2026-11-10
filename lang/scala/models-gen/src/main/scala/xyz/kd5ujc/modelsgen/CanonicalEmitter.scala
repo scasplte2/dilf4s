@@ -126,7 +126,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
        |object $n {
        |  lazy val codec: Codec[$n] = Codec(
        |    e => Codec.int.encode(e.wire),
-       |    CanonicalDecoder.int.emap(i => $n.values.find(_.wire == i).toRight(s"an integer of $${i.bitLength} bits is not a $n"))
+       |    CanonicalDecoder.int.emap(i => $n.values.find(_.wire == i).toRight(DecodeReason.UnknownEnumInteger("$n", i.bitLength)))
        |  )
        |  given Canonical[$n] = codec.canonical
        |  given CanonicalDecoder[$n] = codec.decoder
@@ -295,7 +295,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
           rules.traverse(q => profile.rule(q).flatMap(emitRule(q, _))).map { bodies =>
             val code = bodies.flatten.mkString("\n")
             val canonical =
-              List("Canonical", "CanonicalDecoder", "CanonicalEntries", "CanonicalValue", "Codec")
+              List("Canonical", "CanonicalDecoder", "CanonicalEntries", "CanonicalValue", "Codec", "DecodeReason")
                 .filter(i => s"\\b$i\\b".r.findFirstIn(code).isDefined)
             val imports = List(
               Option.when(code.contains("ByteVector"))("import scodec.bits.ByteVector"),
@@ -372,6 +372,7 @@ object CanonicalEmitter {
     "CanonicalEntries",
     "CanonicalValue",
     "Codec",
+    "DecodeReason",
     "Int",
     "List",
     "Long",
@@ -385,7 +386,7 @@ object CanonicalEmitter {
   )
 
   /** Terms an enumeration's own body refers to, which one of its cases would shadow. */
-  private val reservedCases = Set("BigInt", "CanonicalDecoder", "Codec")
+  private val reservedCases = Set("BigInt", "CanonicalDecoder", "Codec", "DecodeReason")
 
   /** Members of every case class that a field cannot override (Scala requires `override`, or they are final). */
   private val reservedFields = Set(

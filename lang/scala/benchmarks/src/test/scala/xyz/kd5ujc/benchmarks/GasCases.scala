@@ -541,7 +541,7 @@ object GasCases {
     val dh = get(SigmaProp.dhTuple(g, h, g * ws(0), h * ws(0)))
     val dhC = m("type" -> t("dhtuple"), "g" -> b(g.bytes), "h" -> b(h.bytes), "u" -> b((g * ws(0)).bytes), "v" -> b((h * ws(0)).bytes))
     def prove(p: SigmaProp, secrets: Vector[BigInt], msg: ByteVector): IO[ByteVector] =
-      SigmaProver.prove[IO](p, secrets, msg).flatMap(e => IO.fromEither(e.leftMap(new IllegalStateException(_))))
+      SigmaProver.prove[IO](p, secrets, msg).flatMap(e => e.leftMap(SigmaProver.Failure(_)).liftTo[IO])
     val and8 = get(SigmaProp.and(ws.map(dlog)))
     val and8C = m("type" -> t("and"), "children" -> a(ws.map(dlogC)))
     val th = get(SigmaProp.threshold(4, ws.map(dlog)))

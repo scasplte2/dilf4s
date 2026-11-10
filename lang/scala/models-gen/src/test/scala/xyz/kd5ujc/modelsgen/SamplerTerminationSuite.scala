@@ -14,8 +14,10 @@ import weaver.SimpleIOSuite
 
 object SamplerTerminationSuite extends SimpleIOSuite {
 
-  private def sampler(cddl: String, maxDepth: Int = 7, sortMapKeys: Boolean = true): Either[String, CddlSampler] =
-    CddlParser.parse(cddl).bimap(_.message, file => new CddlSampler(Schema.build(Vector("t" -> Vector(file))), maxDepth, sortMapKeys))
+  private def sampler(cddl: String, maxDepth: Int = 7, sortMapKeys: Boolean = true): Either[GenError, CddlSampler] =
+    CddlParser
+      .parse(cddl)
+      .bimap(GenError.Parse("t", _), file => new CddlSampler(Schema.build(Vector("t" -> Vector(file))), maxDepth, sortMapKeys))
 
   private val r = QName("t", "r")
 
@@ -44,7 +46,7 @@ object SamplerTerminationSuite extends SimpleIOSuite {
     ).foldMap {
       case (cddl, size) =>
         (1L to 64L).toList.foldMap { seed =>
-          val head = sampler(cddl).flatMap(_.sample(r, new Random(seed)).leftMap(_.message)).map(_.headOption.map(_ & 0xff))
+          val head = sampler(cddl).flatMap(_.sample(r, new Random(seed))).map(_.headOption.map(_ & 0xff))
           expect.same(Right(Some(0x80 + size)), head)
         }
     }
@@ -57,7 +59,7 @@ object SamplerTerminationSuite extends SimpleIOSuite {
       case (cddl, i) =>
         sampler(cddl, sortMapKeys = false).flatMap { s =>
           val rnd = new Random(20261018L + i)
-          Vector.fill(128)(s.sample(r, rnd)).traverse(_.leftMap(_.message))
+          Vector.fill(128)(s.sample(r, rnd)).sequence
         }
     }
     val transcript = samples.map(_.flatten.foldLeft(ByteVector.empty) { (acc, bytes) =>

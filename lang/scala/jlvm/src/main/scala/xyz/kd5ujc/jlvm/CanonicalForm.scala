@@ -5,7 +5,7 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 
 import xyz.kd5ujc.core.canonical.CanonicalValue.{CArray, CMap, EmptyMap}
-import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalValue, DecodeFailure, Preview}
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalValue, DecodeFailure, DecodeReason, Preview}
 import xyz.kd5ujc.models.{jlvm => W}
 
 /**
@@ -105,7 +105,7 @@ private[jlvm] object CanonicalForm {
   def read(form: CanonicalValue): Either[DecodeFailure, W.JlvmExpr] =
     W.JlvmProgram.codec.decoder.decode(hollowed(form, List("expr"))).flatMap { _ =>
       field(form, "expr")
-        .toRight(DecodeFailure(Nil, "missing required key \"expr\""))
+        .toRight(DecodeFailure(Nil, DecodeReason.MissingKey(Preview.of("expr"))))
         .flatMap(e =>
           fold[(CanonicalValue, List[Preview]), W.JlvmExpr, W.JlvmExpr, DecodeFailure](e -> List(Preview.of("expr")))(opened)((w, xs) =>
             withParts(w, xs).asRight

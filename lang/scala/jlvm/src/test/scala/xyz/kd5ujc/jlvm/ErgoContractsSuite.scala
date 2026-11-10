@@ -37,7 +37,7 @@ object ErgoContractsSuite extends IOSuite {
   private def dlog(w: BigInt): SigmaProp = SigmaProp.dlog(Secp256k1Group.base(w)).fold(e => sys.error(e.message), identity)
 
   private def prove(r: SecureRandom[IO], prop: SigmaProp, secrets: Vector[BigInt], message: ByteVector): IO[ByteVector] =
-    SigmaProver.prove[IO](prop, secrets, message)(using summon, r).flatMap(e => IO.fromEither(e.leftMap(new IllegalStateException(_))))
+    SigmaProver.prove[IO](prop, secrets, message)(using summon, r).flatMap(e => e.leftMap(SigmaProver.Failure(_)).liftTo[IO])
 
   private val tx = ByteVector.fill(32)(0x51)
   private val otherTx = ByteVector.fill(32)(0x52)
