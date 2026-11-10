@@ -27,13 +27,13 @@ object SigmaErrorSuite extends FunSuite {
   test("proposition refusals distinguish identity, wrong field type and threshold bounds") {
     val wrongType = for {
       name  <- CanonicalValue.text("dlog")
-      value <- CanonicalValue.map(Vector("type" -> name, "pk" -> CanonicalValue.CNull))
+      value <- CanonicalValue.map(Vector("type" -> name, "pk" -> CanonicalValue.CInt(7)))
     } yield SigmaProp.decode(value)
     expect
       .same(Left(SigmaError.InvalidProposition(PropositionReason.Identity(PointRole.PublicKey))), SigmaProp.dlog(Secp256k1Group.Identity))
       .and(
         expect.same(
-          Right(Left(SigmaError.InvalidProposition(PropositionReason.PointBytes(PointRole.PublicKey, Some(ValueKind.Null))))),
+          Right(Left(SigmaError.InvalidProposition(PropositionReason.PointBytes(PointRole.PublicKey, Some(ValueKind.Int))))),
           wrongType
         )
       )
