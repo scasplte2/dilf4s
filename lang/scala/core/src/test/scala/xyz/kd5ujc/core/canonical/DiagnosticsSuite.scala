@@ -160,7 +160,7 @@ object DiagnosticsSuite extends SimpleIOSuite {
         refusals.take(4)
       )
       // past the one digit it reads beyond the width, the text is not read: its length refuses it, whatever follows
-      .and(expect.same(List("InvalidLength"), refusals.drop(4).map(_.fold(_.kind: String, _ => "accepted"))))
+      .and(expect.same(List(Some(xyz.kd5ujc.core.hash.HashErrorKind.InvalidLength)), refusals.drop(4).map(_.left.toOption.map(_.kind))))
       .and(refusals.foldMap(r => bounded("digest hex", r.fold(_.toString, _.toString))))
   }
 }

@@ -6,7 +6,7 @@ import java.nio.file.{Files, Paths}
 import cats.effect.IO
 import cats.syntax.all._
 
-import xyz.kd5ujc.models.crypto_errors.KeyError
+import xyz.kd5ujc.models.crypto_errors.{KeyError, KeyErrorKind}
 
 import scodec.bits.ByteVector
 import weaver.SimpleIOSuite
@@ -43,11 +43,13 @@ object Unicode15Suite extends SimpleIOSuite {
       val english = loaded.fold(e => sys.error(e.toString), identity)
       val valid = (List.fill(11)("abandon") :+ "about").mkString(" ")
       val mnemonic = Bip39.toEntropy(valid, english).map(_._1)
-      expect(Bip39.toEntropy(valid + lone, english).left.exists(_.kind == "InvalidMnemonic"), "the phrase")
-        .and(expect(mnemonic.flatMap(Bip39.seed(_, s"dilf4s$lone")).left.exists(_.kind == "InvalidPassphrase"), "the passphrase"))
+      expect(Bip39.toEntropy(valid + lone, english).left.exists(_.kind == KeyErrorKind.InvalidMnemonic), "the phrase")
+        .and(
+          expect(mnemonic.flatMap(Bip39.seed(_, s"dilf4s$lone")).left.exists(_.kind == KeyErrorKind.InvalidPassphrase), "the passphrase")
+        )
         .and(
           expect(
-            WordList(Bip39.Language.English, english.words.updated(0, s"abandon$lone")).left.exists(_.kind == "InvalidWordList"),
+            WordList(Bip39.Language.English, english.words.updated(0, s"abandon$lone")).left.exists(_.kind == KeyErrorKind.InvalidWordList),
             "a word"
           )
         )

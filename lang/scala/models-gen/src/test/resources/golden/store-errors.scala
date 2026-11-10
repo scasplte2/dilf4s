@@ -22,7 +22,7 @@ object StoreError {
    * @param reason Why.
    */
   final case class Encoding(context: String, reason: String) extends StoreError {
-    def kind: StoreErrorKind = "Encoding"
+    def kind: StoreErrorKind = StoreErrorKind.Encoding
   }
 
   /**
@@ -32,7 +32,7 @@ object StoreError {
    * @param prefix The hex of at most the key's first 16 bytes.
    */
   final case class NotFound(keyBytes: Long, prefix: xyz.kd5ujc.core.canonical.Preview) extends StoreError {
-    def kind: StoreErrorKind = "NotFound"
+    def kind: StoreErrorKind = StoreErrorKind.NotFound
   }
 
   /**
@@ -42,7 +42,7 @@ object StoreError {
    * @param actual The latest version.
    */
   final case class VersionConflict(expected: Long, actual: Long) extends StoreError {
-    def kind: StoreErrorKind = "VersionConflict"
+    def kind: StoreErrorKind = StoreErrorKind.VersionConflict
   }
 
   /**
@@ -52,7 +52,7 @@ object StoreError {
    * @param latest The latest version.
    */
   final case class UnknownVersion(requested: Long, latest: Long) extends StoreError {
-    def kind: StoreErrorKind = "UnknownVersion"
+    def kind: StoreErrorKind = StoreErrorKind.UnknownVersion
   }
 
   /**
@@ -62,7 +62,7 @@ object StoreError {
    * @param floor The floor.
    */
   final case class Pruned(requested: Long, floor: Long) extends StoreError {
-    def kind: StoreErrorKind = "Pruned"
+    def kind: StoreErrorKind = StoreErrorKind.Pruned
   }
 
   /**
@@ -72,7 +72,7 @@ object StoreError {
    * @param reason Why.
    */
   final case class Backend(operation: String, reason: String) extends StoreError {
-    def kind: StoreErrorKind = "Backend"
+    def kind: StoreErrorKind = StoreErrorKind.Backend
   }
 
   /**
@@ -81,30 +81,30 @@ object StoreError {
    * @param reason Why.
    */
   final case class Corrupt(reason: String) extends StoreError {
-    def kind: StoreErrorKind = "Corrupt"
+    def kind: StoreErrorKind = StoreErrorKind.Corrupt
   }
 }
 
 /** Every kind of StoreError, in the family's order. */
-type StoreErrorKind = "Encoding" | "NotFound" | "VersionConflict" | "UnknownVersion" | "Pruned" | "Backend" | "Corrupt"
+enum StoreErrorKind(val wire: String) {
+  case Encoding extends StoreErrorKind("Encoding")
+  case NotFound extends StoreErrorKind("NotFound")
+  case VersionConflict extends StoreErrorKind("VersionConflict")
+  case UnknownVersion extends StoreErrorKind("UnknownVersion")
+  case Pruned extends StoreErrorKind("Pruned")
+  case Backend extends StoreErrorKind("Backend")
+  case Corrupt extends StoreErrorKind("Corrupt")
+}
 
 object StoreErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[StoreErrorKind] = Vector("Encoding", "NotFound", "VersionConflict", "UnknownVersion", "Pruned", "Backend", "Corrupt")
+
+  private lazy val byWire = StoreErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[StoreErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[StoreErrorKind] = Codec(
-    {
-      case "Encoding" => Codec.literalText["Encoding"]("Encoding").encode("Encoding")
-      case "NotFound" => Codec.literalText["NotFound"]("NotFound").encode("NotFound")
-      case "VersionConflict" => Codec.literalText["VersionConflict"]("VersionConflict").encode("VersionConflict")
-      case "UnknownVersion" => Codec.literalText["UnknownVersion"]("UnknownVersion").encode("UnknownVersion")
-      case "Pruned" => Codec.literalText["Pruned"]("Pruned").encode("Pruned")
-      case "Backend" => Codec.literalText["Backend"]("Backend").encode("Backend")
-      case "Corrupt" => Codec.literalText["Corrupt"]("Corrupt").encode("Corrupt")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[StoreErrorKind](v, List(
-
-      ), List(("Encoding", "Encoding": StoreErrorKind), ("NotFound", "NotFound": StoreErrorKind), ("VersionConflict", "VersionConflict": StoreErrorKind), ("UnknownVersion", "UnknownVersion": StoreErrorKind), ("Pruned", "Pruned": StoreErrorKind), ("Backend", "Backend": StoreErrorKind), ("Corrupt", "Corrupt": StoreErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[StoreErrorKind](v, List(), List(("Encoding", StoreErrorKind.Encoding), ("NotFound", StoreErrorKind.NotFound), ("VersionConflict", StoreErrorKind.VersionConflict), ("UnknownVersion", StoreErrorKind.UnknownVersion), ("Pruned", StoreErrorKind.Pruned), ("Backend", StoreErrorKind.Backend), ("Corrupt", StoreErrorKind.Corrupt)))
   )
 }

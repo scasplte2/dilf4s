@@ -9,8 +9,8 @@ import cats.syntax.all._
 import scala.compiletime.constValueTuple
 import scala.deriving.Mirror
 
-import xyz.kd5ujc.core.canonical.{CanonicalJson, Preview}
-import xyz.kd5ujc.models.canonical_vectors.CanonicalVectors
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalJson, DecodeFailure, Preview}
+import xyz.kd5ujc.models.canonical_vectors.{CanonicalVectors, HashOutcome}
 
 import weaver.SimpleIOSuite
 
@@ -23,6 +23,8 @@ import weaver.SimpleIOSuite
  */
 object HashRefusalCoverageSuite extends SimpleIOSuite {
 
+  final case class ReadFailure(cause: CanonicalError | DecodeFailure) extends RuntimeException(cause.toString)
+
   inline def kinds[T](using m: Mirror.SumOf[T]): List[String] =
     constValueTuple[m.MirroredElemLabels].productIterator.map(_.toString).toList
 
@@ -30,22 +32,22 @@ object HashRefusalCoverageSuite extends SimpleIOSuite {
     IO.blocking(new String(Files.readAllBytes(Paths.get("shared", "vectors", "canonical_encoding_v1.json")), UTF_8)).flatMap { text =>
       CanonicalJson
         .parse(text)
-        .leftMap(_.toString)
-        .flatMap(CanonicalVectors.codec.decoder.decode(_).leftMap(_.message))
-        .leftMap(new IllegalStateException(_))
+        .flatMap(CanonicalVectors.codec.decoder.decode(_))
+        .leftMap(ReadFailure(_))
         .liftTo[IO]
     }
 
   /** The kind each section's rows record, as the vectors write it. */
-  val pinned: IO[Set[String]] = vectors.map { v =>
-    (v.domainTags.map(_.outcome) ++ v.algorithms.map(_.outcome) ++ v.digestHex.map(_.outcome) ++ v.expansions.map(_.outcome))
-      .map(identity[String])
-      .toSet - "accepted"
+  val pinned: IO[Set[HashErrorKind]] = vectors.map { v =>
+    (v.domainTags.map(_.outcome) ++ v.algorithms.map(_.outcome) ++ v.digestHex.map(_.outcome) ++ v.expansions.map(_.outcome)).flatMap {
+      case k: HashErrorKind     => Some(k)
+      case HashOutcome.Accepted => None
+    }.toSet
   }
 
   test("every HashError kind has a vector row, and every row names one of its kinds") {
     pinned.map { rows =>
-      val all = kinds[HashError]
+      val all = HashErrorKind.values.toList
       expect(all.filterNot(rows).isEmpty, s"no vector row pins ${all.filterNot(rows).mkString(", ")}")
         .and(expect((rows -- all).isEmpty, s"rows name kinds HashError does not have: ${rows -- all}"))
     }
@@ -53,12 +55,12 @@ object HashRefusalCoverageSuite extends SimpleIOSuite {
 
   test("every expansion refusal has a row, and only an InvalidExpansion row names one") {
     vectors.map { v =>
-      val refused = v.expansions.flatMap(_.refusal).map(identity[String]).toSet
-      val all = ExpansionRefusal.values.toList.map(identity[String])
+      val refused = v.expansions.flatMap(_.refusal).toSet
+      val all = ExpansionRefusal.values.toList
       expect(all.filterNot(refused).isEmpty, s"no row pins the expansion refusals ${all.filterNot(refused).mkString(", ")}")
         .and(
           expect(
-            v.expansions.forall(e => e.refusal.isDefined == ((e.outcome: String) == "InvalidExpansion")),
+            v.expansions.forall(e => e.refusal.isDefined == (e.outcome == HashErrorKind.InvalidExpansion)),
             "refusal exactly with InvalidExpansion"
           )
         )
@@ -70,12 +72,12 @@ object HashRefusalCoverageSuite extends SimpleIOSuite {
       HashError.InvalidLength("SHA-256", 32, 31),
       HashError.InvalidHex(0),
       HashError.InvalidDomainTag(Preview.of("x")),
-      HashError.InvalidExpansion("emptyDst", "SHA-256", 8160),
+      HashError.InvalidExpansion(ExpansionRefusal.EmptyDst, "SHA-256", 8160),
       HashError.UnknownAlgorithm(Preview.of("x"))
     )
     expect
       .same(kinds[HashError], samples.map(_.productPrefix))
-      .and(samples.foldMap(e => expect.same(e.productPrefix, e.kind: String)))
-      .and(expect.same(kinds[HashError], HashErrorKind.values.toList.map(identity[String])))
+      .and(samples.foldMap(e => expect.same(e.productPrefix, e.kind.wire)))
+      .and(expect.same(kinds[HashError], HashErrorKind.values.toList.map(_.wire)))
   }
 }

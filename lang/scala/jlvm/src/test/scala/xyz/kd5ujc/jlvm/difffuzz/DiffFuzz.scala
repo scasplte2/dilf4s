@@ -8,10 +8,11 @@ import cats.syntax.all._
 
 import scala.concurrent.duration._
 
-import xyz.kd5ujc.jlvm.{Expr, Jlvm, Op, Parser}
+import xyz.kd5ujc.jlvm.{Expr, Jlvm, JlvmErrorKind, Op, Parser, Site}
 
 import io.circe.Json
 import io.circe.syntax._
+import scodec.bits.ByteVector
 
 /** The options of a run (tools/difffuzz/README.md). */
 final case class Options(
@@ -125,16 +126,43 @@ final case class OpStats(reached: Long = 0, values: Long = 0, falses: Long = 0, 
 
 final case class Finding(signature: Set[Diff], original: FuzzCase, shrunk: FuzzCase, replies: Replies, source: String)
 
+enum OutcomeKind {
+  case Fault, Value
+  case Error(kind: JlvmErrorKind)
+
+  def label: String = this match {
+    case OutcomeKind.Fault => "fault"
+    case Value             => "value"
+    case Error(kind)       => kind.wire
+  }
+}
+
+enum FormKind {
+  case Fault, Decoded
+  case MissingIdentity(outcome: OutcomeKind)
+
+  def label: String = this match {
+    case FormKind.Fault           => "fault"
+    case Decoded                  => "decoded"
+    case MissingIdentity(outcome) => s"missing identity: ${outcome.label}"
+  }
+}
+
+enum CryptoResult {
+  case True, False, Value, WithCause, WithoutCause, Fault
+  case OtherError(kind: JlvmErrorKind)
+}
+
 final case class Stats(
   cases:    Long = 0,
   bySource: Map[String, Long] = Map.empty,
   byRoot:   Map[Op, OpStats] = Map.empty,
-  bySite:   Map[String, Long] = Map.empty,
-  byKind:   Map[String, Long] = Map.empty,
-  forms:    Map[String, Long] = Map.empty,
+  bySite:   Map[Site, Long] = Map.empty,
+  byKind:   Map[OutcomeKind, Long] = Map.empty,
+  forms:    Map[FormKind, Long] = Map.empty,
   boundary: Long = 0,
   late:     Long = 0,
-  crypto:   Map[(Op, String), Long] = Map.empty,
+  crypto:   Map[(Op, CryptoResult), Long] = Map.empty,
   findings: Vector[Finding] = Vector.empty
 )
 
@@ -145,6 +173,9 @@ final case class Stats(
  * A mismatch is shrunk, keeping the same mismatch, and written to `findings.jsonl`; the run then exits non-zero.
  */
 object DiffFuzz extends IOApp {
+
+  private val cborFalse = ByteVector(0xf4)
+  private val cborTrue = ByteVector(0xf5)
 
   private def say(s: String): IO[Unit] = IO.blocking(System.out.println(s))
 
@@ -248,32 +279,33 @@ object DiffFuzz extends IOApp {
 
   private def count(s: Stats, g: Generated, r: Either[Fault, Record]): Stats = {
     val rec = r.toOption
-    val kind = rec.map(_.outcome).fold("fault") {
-      case Record.Outcome.Value(_)       => "value"
-      case Record.Outcome.Error(k, _, _) => k
+    val kind = rec.map(_.outcome).fold[OutcomeKind](OutcomeKind.Fault) {
+      case Record.Outcome.Value(_)       => OutcomeKind.Value
+      case Record.Outcome.Error(k, _, _) => OutcomeKind.Error(k)
     }
     val site = rec.map(_.outcome).collect { case Record.Outcome.Error(_, Some(op), _) => op }
     val atRoot = root(g.c).map { op =>
       op -> rec.map(_.outcome).fold(OpStats(reached = 1, otherErrors = 1)) {
-        case Record.Outcome.Value("f4")                            => OpStats(reached = 1, falses = 1)
-        case Record.Outcome.Value(_)                               => OpStats(reached = 1, values = 1)
-        case Record.Outcome.Error(_, Some(at), _) if at == op.wire => OpStats(reached = 1, refused = 1)
-        case Record.Outcome.Error(_, _, _)                         => OpStats(reached = 1, otherErrors = 1)
+        case Record.Outcome.Value(`cborFalse`)                => OpStats(reached = 1, falses = 1)
+        case Record.Outcome.Value(_)                          => OpStats(reached = 1, values = 1)
+        case Record.Outcome.Error(_, Some(at), _) if at == op => OpStats(reached = 1, refused = 1)
+        case Record.Outcome.Error(_, _, _)                    => OpStats(reached = 1, otherErrors = 1)
       }
     }
     val form = g.c.source match {
-      case FuzzCase.Source.Form(_) => Some(rec.fold("fault")(x => if (x.program.isDefined) "decoded" else s"refused ${kind}"))
-      case _                       => None
+      case FuzzCase.Source.Form(_) =>
+        Some(rec.fold[FormKind](FormKind.Fault)(x => if (x.program.isDefined) FormKind.Decoded else FormKind.MissingIdentity(kind)))
+      case _ => None
     }
     // a cryptographic operation at the root: true, false, another value, a Crypto refusal with or without a cause
     val crypto = atRoot.map(_._1).filter(Corpus.crypto.contains).map { op =>
-      op -> rec.map(_.outcome).fold("fault") {
-        case Record.Outcome.Value("f5")                 => "true"
-        case Record.Outcome.Value("f4")                 => "false"
-        case Record.Outcome.Value(_)                    => "value"
-        case Record.Outcome.Error("Crypto", _, Some(_)) => "cause"
-        case Record.Outcome.Error("Crypto", _, None)    => "crypto"
-        case Record.Outcome.Error(other, _, _)          => other
+      op -> rec.map(_.outcome).fold[CryptoResult](CryptoResult.Fault) {
+        case Record.Outcome.Value(`cborTrue`)                       => CryptoResult.True
+        case Record.Outcome.Value(`cborFalse`)                      => CryptoResult.False
+        case Record.Outcome.Value(_)                                => CryptoResult.Value
+        case Record.Outcome.Error(JlvmErrorKind.Crypto, _, Some(_)) => CryptoResult.WithCause
+        case Record.Outcome.Error(JlvmErrorKind.Crypto, _, None)    => CryptoResult.WithoutCause
+        case Record.Outcome.Error(other, _, _)                      => CryptoResult.OtherError(other)
       }
     }
     s.copy(
@@ -292,16 +324,16 @@ object DiffFuzz extends IOApp {
     val header = f"${"operation"}%-26s ${"root"}%9s ${"value"}%9s ${"false"}%9s ${"refused"}%9s ${"other"}%9s ${"refused anywhere"}%17s"
     val rows = Op.values.toVector.map { op =>
       val st = s.byRoot.getOrElse(op, OpStats())
-      f"${op.wire}%-26s ${st.reached}%9d ${st.values}%9d ${st.falses}%9d ${st.refused}%9d ${st.otherErrors}%9d ${s.bySite.getOrElse(op.wire, 0L)}%17d"
+      f"${op.wire}%-26s ${st.reached}%9d ${st.values}%9d ${st.falses}%9d ${st.refused}%9d ${st.otherErrors}%9d ${s.bySite.getOrElse(op, 0L)}%17d"
     }
     val unreached = Op.values.toVector.filter(op => s.byRoot.get(op).forall(_.reached == 0)).map(_.wire)
     (List(
       s"cases: ${s.cases}; by source: ${s.bySource.toList.sorted.map { case (k, n) => s"$k $n" }.mkString(", ")}",
       s"at the exact cost or one below it: ${s.boundary}",
       s"cut off by the deadline, neither judged nor counted: ${s.late}",
-      s"outcomes: ${s.byKind.toList.sorted.map { case (k, n) => s"$k $n" }.mkString(", ")}",
-      s"canonical forms: ${s.forms.toList.sorted.map { case (k, n) => s"$k $n" }.mkString(", ")}",
-      s"var refusals: ${s.bySite.getOrElse("var", 0L)}",
+      s"outcomes: ${s.byKind.toList.map { case (k, n) => k.label -> n }.sorted.map { case (k, n) => s"$k $n" }.mkString(", ")}",
+      s"canonical forms: ${s.forms.toList.map { case (k, n) => k.label -> n }.sorted.map { case (k, n) => s"$k $n" }.mkString(", ")}",
+      s"var refusals: ${s.bySite.getOrElse(Site.Var, 0L)}",
       s"operations never at the root: ${if (unreached.isEmpty) "none" else unreached.mkString(", ")}",
       header
     ) ++ rows ++ List(
@@ -309,9 +341,9 @@ object DiffFuzz extends IOApp {
       "cryptographic operations at the root: true, false, another value, Crypto with a cause, Crypto without one, other",
       f"${"operation"}%-26s ${"true"}%9s ${"false"}%9s ${"value"}%9s ${"cause"}%9s ${"crypto"}%9s ${"other"}%9s"
     ) ++ Op.values.toVector.filter(Corpus.crypto.contains).map { op =>
-      val n = (k: String) => s.crypto.getOrElse(op -> k, 0L)
-      val other = s.crypto.collect { case ((o, k), v) if o == op && !Set("true", "false", "value", "cause", "crypto").contains(k) => v }.sum
-      f"${op.wire}%-26s ${n("true")}%9d ${n("false")}%9d ${n("value")}%9d ${n("cause")}%9d ${n("crypto")}%9d ${other}%9d"
+      val n = (k: CryptoResult) => s.crypto.getOrElse(op -> k, 0L)
+      val other = s.crypto.collect { case ((`op`, CryptoResult.OtherError(_) | CryptoResult.Fault), v) => v }.sum
+      f"${op.wire}%-26s ${n(CryptoResult.True)}%9d ${n(CryptoResult.False)}%9d ${n(CryptoResult.Value)}%9d ${n(CryptoResult.WithCause)}%9d ${n(CryptoResult.WithoutCause)}%9d ${other}%9d"
     }).mkString("\n")
   }
 

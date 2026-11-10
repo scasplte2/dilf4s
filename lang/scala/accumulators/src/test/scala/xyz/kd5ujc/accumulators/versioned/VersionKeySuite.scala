@@ -24,7 +24,7 @@ object VersionKeySuite extends SimpleIOSuite {
 
   pureTest("keyOf refuses an encoding of another width, and a width the history trie cannot key, as InvalidVersion") {
     val long = ByteVector.fill(1L << 20)(0xab)
-    expect(lying(8, long).keyOf(1L).swap.exists(_.kind == "InvalidVersion"), "a megabyte key for width 8")
+    expect(lying(8, long).keyOf(1L).swap.exists(_.kind == VersionedTrieErrorKind.InvalidVersion), "a megabyte key for width 8")
       .and(expect(lying(KeyMode.MaxFixedBytes + 1, ByteVector.fill(KeyMode.MaxFixedBytes + 1L)(1)).keyOf(1L).isLeft, "width 1025"))
       .and(expect(lying(0, ByteVector.empty).keyOf(1L).isLeft, "width 0"))
       .and(expect.same(Right(ByteVector.fill(8)(1)), lying(8, ByteVector.fill(8)(1)).keyOf(1L)))

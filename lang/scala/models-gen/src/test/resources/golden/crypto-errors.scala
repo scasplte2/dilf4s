@@ -17,34 +17,34 @@ sealed trait CryptoError extends Product with Serializable {
 
 object CryptoError {
   final case class InvalidEncoding(what: String, reason: String) extends CryptoError {
-    def kind: CryptoErrorKind = "InvalidEncoding"
+    def kind: CryptoErrorKind = CryptoErrorKind.InvalidEncoding
   }
 
   final case class InvalidKey(reason: String) extends CryptoError {
-    def kind: CryptoErrorKind = "InvalidKey"
+    def kind: CryptoErrorKind = CryptoErrorKind.InvalidKey
   }
 
   final case class BackendFailure(operation: String, reason: String) extends CryptoError {
-    def kind: CryptoErrorKind = "BackendFailure"
+    def kind: CryptoErrorKind = CryptoErrorKind.BackendFailure
   }
 }
 
-type CryptoErrorKind = "InvalidEncoding" | "InvalidKey" | "BackendFailure"
+enum CryptoErrorKind(val wire: String) {
+  case InvalidEncoding extends CryptoErrorKind("InvalidEncoding")
+  case InvalidKey extends CryptoErrorKind("InvalidKey")
+  case BackendFailure extends CryptoErrorKind("BackendFailure")
+}
 
 object CryptoErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[CryptoErrorKind] = Vector("InvalidEncoding", "InvalidKey", "BackendFailure")
+
+  private lazy val byWire = CryptoErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[CryptoErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[CryptoErrorKind] = Codec(
-    {
-      case "InvalidEncoding" => Codec.literalText["InvalidEncoding"]("InvalidEncoding").encode("InvalidEncoding")
-      case "InvalidKey" => Codec.literalText["InvalidKey"]("InvalidKey").encode("InvalidKey")
-      case "BackendFailure" => Codec.literalText["BackendFailure"]("BackendFailure").encode("BackendFailure")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[CryptoErrorKind](v, List(
-
-      ), List(("InvalidEncoding", "InvalidEncoding": CryptoErrorKind), ("InvalidKey", "InvalidKey": CryptoErrorKind), ("BackendFailure", "BackendFailure": CryptoErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[CryptoErrorKind](v, List(), List(("InvalidEncoding", CryptoErrorKind.InvalidEncoding), ("InvalidKey", CryptoErrorKind.InvalidKey), ("BackendFailure", CryptoErrorKind.BackendFailure)))
   )
 }
 
@@ -62,39 +62,39 @@ sealed trait Groth16Error extends Product with Serializable {
 
 object Groth16Error {
   final case class Malformed(reason: String) extends Groth16Error {
-    def kind: Groth16ErrorKind = "Malformed"
+    def kind: Groth16ErrorKind = Groth16ErrorKind.Malformed
   }
 
   final case class InvalidProof(reason: String) extends Groth16Error {
-    def kind: Groth16ErrorKind = "InvalidProof"
+    def kind: Groth16ErrorKind = Groth16ErrorKind.InvalidProof
   }
 
   case object PairingCheckFailed extends Groth16Error {
-    def kind: Groth16ErrorKind = "PairingCheckFailed"
+    def kind: Groth16ErrorKind = Groth16ErrorKind.PairingCheckFailed
   }
 
   final case class Rejected(reason: String) extends Groth16Error {
-    def kind: Groth16ErrorKind = "Rejected"
+    def kind: Groth16ErrorKind = Groth16ErrorKind.Rejected
   }
 }
 
-type Groth16ErrorKind = "Malformed" | "InvalidProof" | "PairingCheckFailed" | "Rejected"
+enum Groth16ErrorKind(val wire: String) {
+  case Malformed extends Groth16ErrorKind("Malformed")
+  case InvalidProof extends Groth16ErrorKind("InvalidProof")
+  case PairingCheckFailed extends Groth16ErrorKind("PairingCheckFailed")
+  case Rejected extends Groth16ErrorKind("Rejected")
+}
 
 object Groth16ErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[Groth16ErrorKind] = Vector("Malformed", "InvalidProof", "PairingCheckFailed", "Rejected")
+
+  private lazy val byWire = Groth16ErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[Groth16ErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[Groth16ErrorKind] = Codec(
-    {
-      case "Malformed" => Codec.literalText["Malformed"]("Malformed").encode("Malformed")
-      case "InvalidProof" => Codec.literalText["InvalidProof"]("InvalidProof").encode("InvalidProof")
-      case "PairingCheckFailed" => Codec.literalText["PairingCheckFailed"]("PairingCheckFailed").encode("PairingCheckFailed")
-      case "Rejected" => Codec.literalText["Rejected"]("Rejected").encode("Rejected")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[Groth16ErrorKind](v, List(
-
-      ), List(("Malformed", "Malformed": Groth16ErrorKind), ("InvalidProof", "InvalidProof": Groth16ErrorKind), ("PairingCheckFailed", "PairingCheckFailed": Groth16ErrorKind), ("Rejected", "Rejected": Groth16ErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[Groth16ErrorKind](v, List(), List(("Malformed", Groth16ErrorKind.Malformed), ("InvalidProof", Groth16ErrorKind.InvalidProof), ("PairingCheckFailed", Groth16ErrorKind.PairingCheckFailed), ("Rejected", Groth16ErrorKind.Rejected)))
   )
 }
 
@@ -112,39 +112,39 @@ sealed trait KesError extends Product with Serializable {
 
 object KesError {
   final case class Malformed(what: String, reason: String) extends KesError {
-    def kind: KesErrorKind = "Malformed"
+    def kind: KesErrorKind = KesErrorKind.Malformed
   }
 
   final case class PeriodOutOfRange(period: Long, total: Long) extends KesError {
-    def kind: KesErrorKind = "PeriodOutOfRange"
+    def kind: KesErrorKind = KesErrorKind.PeriodOutOfRange
   }
 
   final case class Exhausted(period: Long) extends KesError {
-    def kind: KesErrorKind = "Exhausted"
+    def kind: KesErrorKind = KesErrorKind.Exhausted
   }
 
   final case class InconsistentKey(reason: String) extends KesError {
-    def kind: KesErrorKind = "InconsistentKey"
+    def kind: KesErrorKind = KesErrorKind.InconsistentKey
   }
 }
 
-type KesErrorKind = "Malformed" | "PeriodOutOfRange" | "Exhausted" | "InconsistentKey"
+enum KesErrorKind(val wire: String) {
+  case Malformed extends KesErrorKind("Malformed")
+  case PeriodOutOfRange extends KesErrorKind("PeriodOutOfRange")
+  case Exhausted extends KesErrorKind("Exhausted")
+  case InconsistentKey extends KesErrorKind("InconsistentKey")
+}
 
 object KesErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[KesErrorKind] = Vector("Malformed", "PeriodOutOfRange", "Exhausted", "InconsistentKey")
+
+  private lazy val byWire = KesErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[KesErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[KesErrorKind] = Codec(
-    {
-      case "Malformed" => Codec.literalText["Malformed"]("Malformed").encode("Malformed")
-      case "PeriodOutOfRange" => Codec.literalText["PeriodOutOfRange"]("PeriodOutOfRange").encode("PeriodOutOfRange")
-      case "Exhausted" => Codec.literalText["Exhausted"]("Exhausted").encode("Exhausted")
-      case "InconsistentKey" => Codec.literalText["InconsistentKey"]("InconsistentKey").encode("InconsistentKey")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[KesErrorKind](v, List(
-
-      ), List(("Malformed", "Malformed": KesErrorKind), ("PeriodOutOfRange", "PeriodOutOfRange": KesErrorKind), ("Exhausted", "Exhausted": KesErrorKind), ("InconsistentKey", "InconsistentKey": KesErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[KesErrorKind](v, List(), List(("Malformed", KesErrorKind.Malformed), ("PeriodOutOfRange", KesErrorKind.PeriodOutOfRange), ("Exhausted", KesErrorKind.Exhausted), ("InconsistentKey", KesErrorKind.InconsistentKey)))
   )
 }
 
@@ -165,49 +165,49 @@ sealed trait KeyError extends Product with Serializable {
 
 object KeyError {
   final case class InvalidEntropy(reason: String) extends KeyError {
-    def kind: KeyErrorKind = "InvalidEntropy"
+    def kind: KeyErrorKind = KeyErrorKind.InvalidEntropy
   }
 
   final case class InvalidMnemonic(reason: String) extends KeyError {
-    def kind: KeyErrorKind = "InvalidMnemonic"
+    def kind: KeyErrorKind = KeyErrorKind.InvalidMnemonic
   }
 
   final case class InvalidWordList(reason: String, separator: Option[xyz.kd5ujc.core.canonical.Preview]) extends KeyError {
-    def kind: KeyErrorKind = "InvalidWordList"
+    def kind: KeyErrorKind = KeyErrorKind.InvalidWordList
   }
 
   final case class InvalidPassphrase(reason: String) extends KeyError {
-    def kind: KeyErrorKind = "InvalidPassphrase"
+    def kind: KeyErrorKind = KeyErrorKind.InvalidPassphrase
   }
 
   final case class InvalidDerivation(reason: String) extends KeyError {
-    def kind: KeyErrorKind = "InvalidDerivation"
+    def kind: KeyErrorKind = KeyErrorKind.InvalidDerivation
   }
 
   final case class InvalidPath(refusal: PathRefusal, reason: String) extends KeyError {
-    def kind: KeyErrorKind = "InvalidPath"
+    def kind: KeyErrorKind = KeyErrorKind.InvalidPath
   }
 }
 
-type KeyErrorKind = "InvalidEntropy" | "InvalidMnemonic" | "InvalidWordList" | "InvalidPassphrase" | "InvalidDerivation" | "InvalidPath"
+enum KeyErrorKind(val wire: String) {
+  case InvalidEntropy extends KeyErrorKind("InvalidEntropy")
+  case InvalidMnemonic extends KeyErrorKind("InvalidMnemonic")
+  case InvalidWordList extends KeyErrorKind("InvalidWordList")
+  case InvalidPassphrase extends KeyErrorKind("InvalidPassphrase")
+  case InvalidDerivation extends KeyErrorKind("InvalidDerivation")
+  case InvalidPath extends KeyErrorKind("InvalidPath")
+}
 
 object KeyErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[KeyErrorKind] = Vector("InvalidEntropy", "InvalidMnemonic", "InvalidWordList", "InvalidPassphrase", "InvalidDerivation", "InvalidPath")
+
+  private lazy val byWire = KeyErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[KeyErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[KeyErrorKind] = Codec(
-    {
-      case "InvalidEntropy" => Codec.literalText["InvalidEntropy"]("InvalidEntropy").encode("InvalidEntropy")
-      case "InvalidMnemonic" => Codec.literalText["InvalidMnemonic"]("InvalidMnemonic").encode("InvalidMnemonic")
-      case "InvalidWordList" => Codec.literalText["InvalidWordList"]("InvalidWordList").encode("InvalidWordList")
-      case "InvalidPassphrase" => Codec.literalText["InvalidPassphrase"]("InvalidPassphrase").encode("InvalidPassphrase")
-      case "InvalidDerivation" => Codec.literalText["InvalidDerivation"]("InvalidDerivation").encode("InvalidDerivation")
-      case "InvalidPath" => Codec.literalText["InvalidPath"]("InvalidPath").encode("InvalidPath")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[KeyErrorKind](v, List(
-
-      ), List(("InvalidEntropy", "InvalidEntropy": KeyErrorKind), ("InvalidMnemonic", "InvalidMnemonic": KeyErrorKind), ("InvalidWordList", "InvalidWordList": KeyErrorKind), ("InvalidPassphrase", "InvalidPassphrase": KeyErrorKind), ("InvalidDerivation", "InvalidDerivation": KeyErrorKind), ("InvalidPath", "InvalidPath": KeyErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[KeyErrorKind](v, List(), List(("InvalidEntropy", KeyErrorKind.InvalidEntropy), ("InvalidMnemonic", KeyErrorKind.InvalidMnemonic), ("InvalidWordList", KeyErrorKind.InvalidWordList), ("InvalidPassphrase", KeyErrorKind.InvalidPassphrase), ("InvalidDerivation", KeyErrorKind.InvalidDerivation), ("InvalidPath", KeyErrorKind.InvalidPath)))
   )
 }
 
@@ -216,25 +216,25 @@ object KeyErrorKind {
  * `m` and does not start with `m/`), "malformed" (a segment is not ASCII digits and an optional `'` or `h`),
  * "leadingZero", "tooManyDigits" (more than 10), "outOfRange" (2^31 or more), "tooDeep" (a 256th segment).
  */
-type PathRefusal = "missingMaster" | "malformed" | "leadingZero" | "tooManyDigits" | "outOfRange" | "tooDeep"
+enum PathRefusal(val wire: String) {
+  case MissingMaster extends PathRefusal("missingMaster")
+  case Malformed extends PathRefusal("malformed")
+  case LeadingZero extends PathRefusal("leadingZero")
+  case TooManyDigits extends PathRefusal("tooManyDigits")
+  case OutOfRange extends PathRefusal("outOfRange")
+  case TooDeep extends PathRefusal("tooDeep")
+}
 
 object PathRefusal {
-  /** Every alternative, in schema order. */
-  val values: Vector[PathRefusal] = Vector("missingMaster", "malformed", "leadingZero", "tooManyDigits", "outOfRange", "tooDeep")
+
+  private lazy val byWire = PathRefusal.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[PathRefusal] = byWire.get(wire)
 
   lazy val codec: Codec[PathRefusal] = Codec(
-    {
-      case "missingMaster" => Codec.literalText["missingMaster"]("missingMaster").encode("missingMaster")
-      case "malformed" => Codec.literalText["malformed"]("malformed").encode("malformed")
-      case "leadingZero" => Codec.literalText["leadingZero"]("leadingZero").encode("leadingZero")
-      case "tooManyDigits" => Codec.literalText["tooManyDigits"]("tooManyDigits").encode("tooManyDigits")
-      case "outOfRange" => Codec.literalText["outOfRange"]("outOfRange").encode("outOfRange")
-      case "tooDeep" => Codec.literalText["tooDeep"]("tooDeep").encode("tooDeep")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[PathRefusal](v, List(
-
-      ), List(("missingMaster", "missingMaster": PathRefusal), ("malformed", "malformed": PathRefusal), ("leadingZero", "leadingZero": PathRefusal), ("tooManyDigits", "tooManyDigits": PathRefusal), ("outOfRange", "outOfRange": PathRefusal), ("tooDeep", "tooDeep": PathRefusal)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[PathRefusal](v, List(), List(("missingMaster", PathRefusal.MissingMaster), ("malformed", PathRefusal.Malformed), ("leadingZero", PathRefusal.LeadingZero), ("tooManyDigits", PathRefusal.TooManyDigits), ("outOfRange", PathRefusal.OutOfRange), ("tooDeep", PathRefusal.TooDeep)))
   )
 }
 
@@ -251,39 +251,39 @@ sealed trait SigmaError extends Product with Serializable {
 
 object SigmaError {
   final case class InvalidProposition(reason: String) extends SigmaError {
-    def kind: SigmaErrorKind = "InvalidProposition"
+    def kind: SigmaErrorKind = SigmaErrorKind.InvalidProposition
   }
 
   final case class InvalidPoint(what: String, reason: String) extends SigmaError {
-    def kind: SigmaErrorKind = "InvalidPoint"
+    def kind: SigmaErrorKind = SigmaErrorKind.InvalidPoint
   }
 
   final case class ProofLength(expected: Long, actual: Long) extends SigmaError {
-    def kind: SigmaErrorKind = "ProofLength"
+    def kind: SigmaErrorKind = SigmaErrorKind.ProofLength
   }
 
   case object ResponseOutOfRange extends SigmaError {
-    def kind: SigmaErrorKind = "ResponseOutOfRange"
+    def kind: SigmaErrorKind = SigmaErrorKind.ResponseOutOfRange
   }
 }
 
-type SigmaErrorKind = "InvalidProposition" | "InvalidPoint" | "ProofLength" | "ResponseOutOfRange"
+enum SigmaErrorKind(val wire: String) {
+  case InvalidProposition extends SigmaErrorKind("InvalidProposition")
+  case InvalidPoint extends SigmaErrorKind("InvalidPoint")
+  case ProofLength extends SigmaErrorKind("ProofLength")
+  case ResponseOutOfRange extends SigmaErrorKind("ResponseOutOfRange")
+}
 
 object SigmaErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[SigmaErrorKind] = Vector("InvalidProposition", "InvalidPoint", "ProofLength", "ResponseOutOfRange")
+
+  private lazy val byWire = SigmaErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[SigmaErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[SigmaErrorKind] = Codec(
-    {
-      case "InvalidProposition" => Codec.literalText["InvalidProposition"]("InvalidProposition").encode("InvalidProposition")
-      case "InvalidPoint" => Codec.literalText["InvalidPoint"]("InvalidPoint").encode("InvalidPoint")
-      case "ProofLength" => Codec.literalText["ProofLength"]("ProofLength").encode("ProofLength")
-      case "ResponseOutOfRange" => Codec.literalText["ResponseOutOfRange"]("ResponseOutOfRange").encode("ResponseOutOfRange")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[SigmaErrorKind](v, List(
-
-      ), List(("InvalidProposition", "InvalidProposition": SigmaErrorKind), ("InvalidPoint", "InvalidPoint": SigmaErrorKind), ("ProofLength", "ProofLength": SigmaErrorKind), ("ResponseOutOfRange", "ResponseOutOfRange": SigmaErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[SigmaErrorKind](v, List(), List(("InvalidProposition", SigmaErrorKind.InvalidProposition), ("InvalidPoint", SigmaErrorKind.InvalidPoint), ("ProofLength", SigmaErrorKind.ProofLength), ("ResponseOutOfRange", SigmaErrorKind.ResponseOutOfRange)))
   )
 }
 
@@ -301,59 +301,59 @@ sealed trait VrfError extends Product with Serializable {
 
 object VrfError {
   final case class Malformed(what: String, reason: String) extends VrfError {
-    def kind: VrfErrorKind = "Malformed"
+    def kind: VrfErrorKind = VrfErrorKind.Malformed
   }
 
   case object InvalidPublicKey extends VrfError {
-    def kind: VrfErrorKind = "InvalidPublicKey"
+    def kind: VrfErrorKind = VrfErrorKind.InvalidPublicKey
   }
 
   case object SmallOrderPublicKey extends VrfError {
-    def kind: VrfErrorKind = "SmallOrderPublicKey"
+    def kind: VrfErrorKind = VrfErrorKind.SmallOrderPublicKey
   }
 
   case object InvalidGamma extends VrfError {
-    def kind: VrfErrorKind = "InvalidGamma"
+    def kind: VrfErrorKind = VrfErrorKind.InvalidGamma
   }
 
   case object NonCanonicalScalar extends VrfError {
-    def kind: VrfErrorKind = "NonCanonicalScalar"
+    def kind: VrfErrorKind = VrfErrorKind.NonCanonicalScalar
   }
 
   case object ChallengeMismatch extends VrfError {
-    def kind: VrfErrorKind = "ChallengeMismatch"
+    def kind: VrfErrorKind = VrfErrorKind.ChallengeMismatch
   }
 
   case object KeyMismatch extends VrfError {
-    def kind: VrfErrorKind = "KeyMismatch"
+    def kind: VrfErrorKind = VrfErrorKind.KeyMismatch
   }
 
   final case class HashToCurveFailed(reason: String) extends VrfError {
-    def kind: VrfErrorKind = "HashToCurveFailed"
+    def kind: VrfErrorKind = VrfErrorKind.HashToCurveFailed
   }
 }
 
-type VrfErrorKind = "Malformed" | "InvalidPublicKey" | "SmallOrderPublicKey" | "InvalidGamma" | "NonCanonicalScalar" | "ChallengeMismatch" | "KeyMismatch" | "HashToCurveFailed"
+enum VrfErrorKind(val wire: String) {
+  case Malformed extends VrfErrorKind("Malformed")
+  case InvalidPublicKey extends VrfErrorKind("InvalidPublicKey")
+  case SmallOrderPublicKey extends VrfErrorKind("SmallOrderPublicKey")
+  case InvalidGamma extends VrfErrorKind("InvalidGamma")
+  case NonCanonicalScalar extends VrfErrorKind("NonCanonicalScalar")
+  case ChallengeMismatch extends VrfErrorKind("ChallengeMismatch")
+  case KeyMismatch extends VrfErrorKind("KeyMismatch")
+  case HashToCurveFailed extends VrfErrorKind("HashToCurveFailed")
+}
 
 object VrfErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[VrfErrorKind] = Vector("Malformed", "InvalidPublicKey", "SmallOrderPublicKey", "InvalidGamma", "NonCanonicalScalar", "ChallengeMismatch", "KeyMismatch", "HashToCurveFailed")
+
+  private lazy val byWire = VrfErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[VrfErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[VrfErrorKind] = Codec(
-    {
-      case "Malformed" => Codec.literalText["Malformed"]("Malformed").encode("Malformed")
-      case "InvalidPublicKey" => Codec.literalText["InvalidPublicKey"]("InvalidPublicKey").encode("InvalidPublicKey")
-      case "SmallOrderPublicKey" => Codec.literalText["SmallOrderPublicKey"]("SmallOrderPublicKey").encode("SmallOrderPublicKey")
-      case "InvalidGamma" => Codec.literalText["InvalidGamma"]("InvalidGamma").encode("InvalidGamma")
-      case "NonCanonicalScalar" => Codec.literalText["NonCanonicalScalar"]("NonCanonicalScalar").encode("NonCanonicalScalar")
-      case "ChallengeMismatch" => Codec.literalText["ChallengeMismatch"]("ChallengeMismatch").encode("ChallengeMismatch")
-      case "KeyMismatch" => Codec.literalText["KeyMismatch"]("KeyMismatch").encode("KeyMismatch")
-      case "HashToCurveFailed" => Codec.literalText["HashToCurveFailed"]("HashToCurveFailed").encode("HashToCurveFailed")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[VrfErrorKind](v, List(
-
-      ), List(("Malformed", "Malformed": VrfErrorKind), ("InvalidPublicKey", "InvalidPublicKey": VrfErrorKind), ("SmallOrderPublicKey", "SmallOrderPublicKey": VrfErrorKind), ("InvalidGamma", "InvalidGamma": VrfErrorKind), ("NonCanonicalScalar", "NonCanonicalScalar": VrfErrorKind), ("ChallengeMismatch", "ChallengeMismatch": VrfErrorKind), ("KeyMismatch", "KeyMismatch": VrfErrorKind), ("HashToCurveFailed", "HashToCurveFailed": VrfErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[VrfErrorKind](v, List(), List(("Malformed", VrfErrorKind.Malformed), ("InvalidPublicKey", VrfErrorKind.InvalidPublicKey), ("SmallOrderPublicKey", VrfErrorKind.SmallOrderPublicKey), ("InvalidGamma", VrfErrorKind.InvalidGamma), ("NonCanonicalScalar", VrfErrorKind.NonCanonicalScalar), ("ChallengeMismatch", VrfErrorKind.ChallengeMismatch), ("KeyMismatch", VrfErrorKind.KeyMismatch), ("HashToCurveFailed", VrfErrorKind.HashToCurveFailed)))
   )
 }
 
@@ -371,28 +371,28 @@ sealed trait ZkError extends Product with Serializable {
 
 object ZkError {
   final case class Malformed(reason: String) extends ZkError {
-    def kind: ZkErrorKind = "Malformed"
+    def kind: ZkErrorKind = ZkErrorKind.Malformed
   }
 
   final case class InvalidPoint(reason: String) extends ZkError {
-    def kind: ZkErrorKind = "InvalidPoint"
+    def kind: ZkErrorKind = ZkErrorKind.InvalidPoint
   }
 }
 
-type ZkErrorKind = "Malformed" | "InvalidPoint"
+enum ZkErrorKind(val wire: String) {
+  case Malformed extends ZkErrorKind("Malformed")
+  case InvalidPoint extends ZkErrorKind("InvalidPoint")
+}
 
 object ZkErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[ZkErrorKind] = Vector("Malformed", "InvalidPoint")
+
+  private lazy val byWire = ZkErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[ZkErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[ZkErrorKind] = Codec(
-    {
-      case "Malformed" => Codec.literalText["Malformed"]("Malformed").encode("Malformed")
-      case "InvalidPoint" => Codec.literalText["InvalidPoint"]("InvalidPoint").encode("InvalidPoint")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[ZkErrorKind](v, List(
-
-      ), List(("Malformed", "Malformed": ZkErrorKind), ("InvalidPoint", "InvalidPoint": ZkErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[ZkErrorKind](v, List(), List(("Malformed", ZkErrorKind.Malformed), ("InvalidPoint", ZkErrorKind.InvalidPoint)))
   )
 }

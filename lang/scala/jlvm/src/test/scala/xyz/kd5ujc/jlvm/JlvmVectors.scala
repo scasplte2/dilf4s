@@ -9,6 +9,7 @@ import cats.syntax.all._
 import xyz.kd5ujc.core.canonical.{BuiltValues, CanonicalValue}
 import xyz.kd5ujc.core.circe.CanonicalCirce
 import xyz.kd5ujc.core.hash.Sha256
+import xyz.kd5ujc.models.{jlvm_vectors => vectorModel}
 
 import io.circe.syntax._
 import io.circe.{Decoder, Json}
@@ -24,7 +25,7 @@ object JlvmVectors {
   val parseRefusalsPath: Path = Paths.get("shared", "vectors", "jlvm_parse_refusals_v1.tsv")
 
   def renderParseRefusals(in: Inputs): String =
-    in.cases.flatMap(i => Parser.parse(i.program).left.toOption.map(e => s"${i.name}\t${e.kind}\n")).mkString
+    in.cases.flatMap(i => Parser.parse(i.program).left.toOption.map(e => s"${i.name}\t${e.kind.wire}\n")).mkString
 
   /**
    * `env` holds host bindings as JSON surface text, and `built` host bindings too heavy to write out, as `built-value`
@@ -88,7 +89,7 @@ object JlvmVectors {
     o.result.fold(
       e =>
         Json.fromFields(
-          List("error" -> (e.kind: String).asJson) ++ e.site.map(s => "op" -> s.wire.asJson) ++ cause(e).map("cause" -> _)
+          List("error" -> e.kind.wire.asJson) ++ e.site.map(s => "op" -> s.wire.asJson) ++ cause(e).map("cause" -> _)
         ),
       v =>
         Json
@@ -97,23 +98,38 @@ object JlvmVectors {
     )
 
   /** A Crypto error's cause as the vectors record it: `{family: kind}`, the family's name in lower camel case. */
-  def cause(e: JlvmError): Option[Json] = e match {
+  def cause(e: JlvmError): Option[Json] = causeValue(e).map(causeJson)
+
+  def causeValue(e: JlvmError): Option[vectorModel.JlvmCause] = e match {
     case JlvmError.Crypto(_, _, Some(c)) =>
-      val kind: String = c match {
-        case CryptoCause.Signing(x)        => x.kind
-        case CryptoCause.Sigma(x)          => x.kind
-        case CryptoCause.Zk(x)             => x.kind
-        case CryptoCause.Groth16(x)        => x.kind
-        case CryptoCause.Vrf(x)            => x.kind
-        case CryptoCause.Hash(x)           => x.kind
-        case CryptoCause.Merkle(x)         => x.kind
-        case CryptoCause.Trie(x)           => x.kind
-        case CryptoCause.Poseidon(x)       => x.kind
-        case CryptoCause.PoseidonMerkle(x) => x.kind
-      }
-      val family: String = c.kind
-      Some(Json.obj((family.take(1).toLowerCase + family.drop(1)) -> kind.asJson))
-    case _ => None
+      Some(c match {
+        case CryptoCause.Signing(x)        => vectorModel.JlvmSigningCause(x.kind)
+        case CryptoCause.Sigma(x)          => vectorModel.JlvmSigmaCause(x.kind)
+        case CryptoCause.Zk(x)             => vectorModel.JlvmZkCause(x.kind)
+        case CryptoCause.Groth16(x)        => vectorModel.JlvmGroth16Cause(x.kind)
+        case CryptoCause.Vrf(x)            => vectorModel.JlvmVrfCause(x.kind)
+        case CryptoCause.Hash(x)           => vectorModel.JlvmHashCause(x.kind)
+        case CryptoCause.Merkle(x)         => vectorModel.JlvmMerkleCause(x.kind)
+        case CryptoCause.Trie(x)           => vectorModel.JlvmTrieCause(x.kind)
+        case CryptoCause.Poseidon(x)       => vectorModel.JlvmPoseidonCause(x.kind)
+        case CryptoCause.PoseidonMerkle(x) => vectorModel.JlvmPoseidonMerkleCause(x.kind)
+      })
+    case JlvmError.Malformed(_) | JlvmError.Type(_, _) | JlvmError.Arity(_, _) | JlvmError.Arithmetic(_, _) | JlvmError.Domain(_, _) |
+        JlvmError.Crypto(_, _, None) | JlvmError.Limit(_) | JlvmError.OutOfGas(_, _) =>
+      None
+  }
+
+  def causeJson(c: vectorModel.JlvmCause): Json = c match {
+    case vectorModel.JlvmSigningCause(kind)        => Json.obj("signing" -> kind.wire.asJson)
+    case vectorModel.JlvmSigmaCause(kind)          => Json.obj("sigma" -> kind.wire.asJson)
+    case vectorModel.JlvmZkCause(kind)             => Json.obj("zk" -> kind.wire.asJson)
+    case vectorModel.JlvmGroth16Cause(kind)        => Json.obj("groth16" -> kind.wire.asJson)
+    case vectorModel.JlvmVrfCause(kind)            => Json.obj("vrf" -> kind.wire.asJson)
+    case vectorModel.JlvmHashCause(kind)           => Json.obj("hash" -> kind.wire.asJson)
+    case vectorModel.JlvmMerkleCause(kind)         => Json.obj("merkle" -> kind.wire.asJson)
+    case vectorModel.JlvmTrieCause(kind)           => Json.obj("trie" -> kind.wire.asJson)
+    case vectorModel.JlvmPoseidonCause(kind)       => Json.obj("poseidon" -> kind.wire.asJson)
+    case vectorModel.JlvmPoseidonMerkleCause(kind) => Json.obj("poseidonMerkle" -> kind.wire.asJson)
   }
 
   /** The arguments each aliased operation's row applies it to. */
@@ -175,7 +191,7 @@ object JlvmVectors {
         val outcome = Parser
           .fromCanonical(form)
           .fold(
-            e => Json.obj("error" -> (e.kind: String).asJson),
+            e => Json.obj("error" -> e.kind.wire.asJson),
             p => Json.obj("cbor" -> Parser.encode(p).fold(e => sys.error(e.message), _.toHex).asJson)
           )
         Json.obj(
@@ -345,10 +361,17 @@ object JlvmVectorsSuite extends IOSuite {
     case (_, _) =>
       IO {
         val kinds = JlvmVectors.decodingForms.map {
-          case (name, b) => name -> BuiltValues.build(b).toOption.map(Parser.fromCanonical).map(_.fold(e => e.kind: String, _ => "program"))
+          case (name, b) => name -> BuiltValues.build(b).toOption.map(Parser.fromCanonical).map(_.left.map(_.kind).map(_ => ()))
         }
         expect.same(
-          List(Some("Limit"), Some("Limit"), Some("Malformed"), Some("Malformed"), Some("Limit"), Some("program")),
+          List(
+            Some(Left(JlvmErrorKind.Limit)),
+            Some(Left(JlvmErrorKind.Limit)),
+            Some(Left(JlvmErrorKind.Malformed)),
+            Some(Left(JlvmErrorKind.Malformed)),
+            Some(Left(JlvmErrorKind.Limit)),
+            Some(Right(()))
+          ),
           kinds.map(_._2)
         )
       }
@@ -361,7 +384,7 @@ object JlvmVectorsSuite extends IOSuite {
         val deep = BuiltValues.of(CanonicalValue.CNull).wrap(JlvmVectors.surfaceOf("""["$", "$"]"""), 60)
         val form = BuiltValues.build(deep.wrap(JlvmVectors.surfaceOf("""{"jlvm": 1, "expr": {"arr": "$"}}""")))
         expect(form.map(_.weight > Parser.MaxCanonicalWeight) == Right(true), "the form is overweight")
-          .and(expect(form.map(Parser.fromCanonical).exists(_.left.exists(e => (e.kind: String) == "Limit")), "and Limit at once"))
+          .and(expect(form.map(Parser.fromCanonical).exists(_.left.exists(e => e.kind == JlvmErrorKind.Limit)), "and Limit at once"))
       }
   }
 

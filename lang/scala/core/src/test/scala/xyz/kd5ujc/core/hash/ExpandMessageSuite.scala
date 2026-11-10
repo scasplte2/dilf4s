@@ -48,14 +48,14 @@ object ExpandMessageSuite extends SimpleIOSuite {
   pureTest("expand_message_xmd(SHA-512): RFC 9380 K.3")(check[Sha512]("expand_message_xmd_sha512", 10))
 
   pureTest("an empty tag, then a length outside 1..limit, is InvalidExpansion by its refusal") {
-    val length = HashError.InvalidExpansion("outputLength", "SHA-256", 8160)
+    val length = HashError.InvalidExpansion(ExpansionRefusal.OutputLength, "SHA-256", 8160)
     expect
       .same(Left(length), ExpandMessage.xmd[Sha256](ByteVector.empty, ByteVector(1), 255 * 32 + 1))
       .and(expect.same(Left(length), ExpandMessage.xmd[Sha256](ByteVector.empty, ByteVector(1), 0)))
       .and(expect.same(Left(length), ExpandMessage.xmd[Sha256](ByteVector.empty, ByteVector.fill(256)(7), -1)))
       .and(
         expect.same(
-          Left(HashError.InvalidExpansion("emptyDst", "SHA-256", 8160)),
+          Left(HashError.InvalidExpansion(ExpansionRefusal.EmptyDst, "SHA-256", 8160)),
           ExpandMessage.xmd[Sha256](ByteVector.empty, ByteVector.empty, 0)
         )
       )

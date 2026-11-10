@@ -84,13 +84,12 @@ object ZkJlvmVectorsSuite extends IOSuite {
         val d = digest("dilf4s/zk/jlvm/result/v1", v)
         (Json.obj("result" -> d.toHex.asJson), right(CanonicalValue.map(List("result" -> CanonicalValue.bytes(d)))))
       case Left(e) =>
-        val fields = List("error" -> (e.kind: String).asJson) ++ e.site.map(s => "op" -> s.wire.asJson) ++
+        val fields = List("error" -> e.kind.wire.asJson) ++ e.site.map(s => "op" -> s.wire.asJson) ++
           JlvmVectors.cause(e).map("cause" -> _)
-        val cause = JlvmVectors.cause(e).map { j =>
-          val (family, kind) = j.asObject.flatMap(_.toList.headOption).getOrElse(sys.error("a cause"))
-          "cause" -> right(CanonicalValue.map(List(family -> right(CanonicalValue.text(kind.asString.getOrElse(""))))))
+        val cause = JlvmVectors.causeValue(e).map { c =>
+          "cause" -> right(xyz.kd5ujc.models.jlvm_vectors.JlvmCause.codec.encode(c))
         }
-        val value = List("error" -> right(CanonicalValue.text(e.kind: String))) ++
+        val value = List("error" -> right(CanonicalValue.text(e.kind.wire))) ++
           e.site.map(s => "op" -> right(CanonicalValue.text(s.wire))) ++ cause
         (Json.fromFields(fields), right(CanonicalValue.map(value)))
     }

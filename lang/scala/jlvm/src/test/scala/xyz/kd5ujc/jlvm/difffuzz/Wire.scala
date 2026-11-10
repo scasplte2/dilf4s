@@ -5,7 +5,10 @@ import java.nio.charset.StandardCharsets.UTF_8
 
 import cats.syntax.all._
 
-import xyz.kd5ujc.core.canonical.Preview
+import xyz.kd5ujc.core.canonical.{CanonicalError, DecodeFailure, Preview}
+import xyz.kd5ujc.core.circe.CanonicalCirce
+import xyz.kd5ujc.jlvm.{JlvmErrorKind, JlvmVectors, Op, Site, wire}
+import xyz.kd5ujc.models.jlvm_vectors.JlvmCause
 
 import io.circe.syntax._
 import io.circe.{ACursor, HCursor, Json}
@@ -14,10 +17,15 @@ import scodec.bits.ByteVector
 enum WireError {
   case Json(cause: io.circe.Error)
   case InvalidHex(input: Preview)
+  case NonCanonicalHex(input: Preview)
   case InvalidUtf8(cause: Throwable)
   case SourceChoice(name: String, program: Boolean, form: Boolean)
   case Keys(required: Set[String], optional: Set[String], actual: Set[String])
   case CauseCardinality(actual: Int)
+  case UnknownErrorKind(input: Preview)
+  case UnknownSite(input: Preview)
+  case Canonical(cause: CanonicalError)
+  case Decode(cause: DecodeFailure)
 }
 
 object WireError {
@@ -167,17 +175,17 @@ final case class Record(
 object Record {
 
   enum Outcome {
-    case Value(cbor: String)
+    case Value(cbor: ByteVector)
 
     /** `cause` is the family, in lower camel case (`poseidonMerkle`), and that family's kind. */
-    case Error(kind: String, op: Option[String], cause: Option[(String, String)])
+    case Error(kind: JlvmErrorKind, op: Option[Site], cause: Option[JlvmCause])
   }
 
   def outcomeJson(o: Outcome): Json = o match {
-    case Outcome.Value(cbor) => Json.obj("cbor" -> cbor.asJson)
+    case Outcome.Value(cbor) => Json.obj("cbor" -> cbor.toHex.asJson)
     case Outcome.Error(kind, op, cause) =>
       Json.fromFields(
-        List("error" -> kind.asJson) ++ op.map("op" -> _.asJson) ++ cause.map { case (f, k) => "cause" -> Json.obj(f -> k.asJson) }
+        List("error" -> kind.wire.asJson) ++ op.map(s => "op" -> s.wire.asJson) ++ cause.map(c => "cause" -> JlvmVectors.causeJson(c))
       )
   }
 
@@ -205,16 +213,36 @@ object Record {
       .success
       .fold {
         for {
-          _    <- exactly(c, Set("error"), Set("op", "cause"))
-          kind <- c.get[String]("error").leftMap(WireError.Json(_))
-          op   <- c.get[Option[String]]("op").leftMap(WireError.Json(_))
+          _ <- exactly(c, Set("error"), Set("op", "cause"))
+          kind <- c
+            .get[String]("error")
+            .leftMap(WireError.Json(_))
+            .flatMap(s => JlvmErrorKind.fromWire(s).toRight(WireError.UnknownErrorKind(Preview.of(s))))
+          op <- c
+            .get[Option[String]]("op")
+            .leftMap(WireError.Json(_))
+            .flatMap(_.traverse {
+              case "var" => Right(Site.Var)
+              case s     => Op.fromWire(s).toRight(WireError.UnknownSite(Preview.of(s)))
+            })
           cause <- c.get[Option[Map[String, String]]]("cause").leftMap(WireError.Json(_)).flatMap {
-            case None                     => Right(None)
-            case Some(m) if m.sizeIs == 1 => Right(m.headOption)
-            case Some(m)                  => Left(WireError.CauseCardinality(m.size))
+            case None => Right(None)
+            case Some(m) if m.sizeIs == 1 =>
+              CanonicalCirce
+                .fromCirce(Json.fromFields(m.toVector.map { case (f, k) => f -> k.asJson }))
+                .leftMap(WireError.Canonical(_))
+                .flatMap(JlvmCause.codec.decoder.decode(_).leftMap(WireError.Decode(_)))
+                .map(Some(_))
+            case Some(m) => Left(WireError.CauseCardinality(m.size))
           }
         } yield Outcome.Error(kind, op, cause)
-      }(v => exactly(c, Set("cbor"), Set.empty) *> v.as[String].leftMap(WireError.Json(_)).map(Outcome.Value(_)))
+      }(v =>
+        exactly(c, Set("cbor"), Set.empty) *> v.as[String].leftMap(WireError.Json(_)).flatMap { hex =>
+          WireError
+            .bytes(hex)
+            .flatMap(bytes => Either.cond(hex == bytes.toHex, Outcome.Value(bytes), WireError.NonCanonicalHex(Preview.of(hex))))
+        }
+      )
 
   def fromLine(line: String): Either[WireError, Record] =
     io.circe.parser.parse(line).leftMap(WireError.Json(_)).flatMap { j =>

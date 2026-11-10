@@ -62,10 +62,24 @@ object CryptoOpsSuite extends IOSuite with Checkers {
       val badPoint = verify(b.jlvm, Op.SchnorrVerify, CBytes(ByteVector.fill(33)(9)), message, ByteVector.fill(56)(0))
       val badG1 = b.ops(Op.Bn254Add, Vector(CBytes(ByteVector.fill(64)(1)), CBytes(ByteVector.fill(64)(0))))
       val shortG1 = b.ops(Op.Bn254Add, Vector(CBytes(ByteVector.fill(63)(0)), CBytes(ByteVector.fill(64)(0))))
-      expect(cause(shortKey).exists(_.kind == "Signing"), s"$shortKey")
-        .and(expect(cause(shortKey).exists { case CryptoCause.Signing(e) => e.kind == "InvalidEncoding"; case _ => false }, s"$shortKey"))
-        .and(expect(cause(badPoint).exists { case CryptoCause.Sigma(e) => e.kind == "InvalidPoint"; case _ => false }, s"$badPoint"))
-        .and(expect(badG1.flatMap(r => cause(r)).exists(_.kind == "Zk"), s"$badG1"))
+      expect(cause(shortKey).exists(_.kind == CryptoCauseKind.Signing), s"$shortKey")
+        .and(
+          expect(
+            cause(shortKey).exists {
+              case CryptoCause.Signing(e) => e.kind == xyz.kd5ujc.models.crypto_errors.CryptoErrorKind.InvalidEncoding; case _ => false
+            },
+            s"$shortKey"
+          )
+        )
+        .and(
+          expect(
+            cause(badPoint).exists {
+              case CryptoCause.Sigma(e) => e.kind == xyz.kd5ujc.models.crypto_errors.SigmaErrorKind.InvalidPoint; case _ => false
+            },
+            s"$badPoint"
+          )
+        )
+        .and(expect(badG1.flatMap(r => cause(r)).exists(_.kind == CryptoCauseKind.Zk), s"$badG1"))
         .and(expect(shortG1.exists(r => crypto(r) && cause(r).isEmpty), s"a width the operation checks itself: $shortG1"))
     }
   }
@@ -532,16 +546,22 @@ object CryptoOpsSuite extends IOSuite with Checkers {
   private val signatureOps: List[Op] =
     List(Op.Ed25519Verify, Op.Secp256k1Verify, Op.Bip340Verify, Op.BlsVerify, Op.BlsAggregateVerify, Op.SchnorrVerify, Op.SigmaVerify)
 
-  /** The outcome's category: a boolean, a 20-byte address, or the error's kind. */
-  private def outcome(r: Option[Either[JlvmError, CanonicalValue]]): String = r match {
-    case scala.None                             => "unimplemented"
-    case Some(Right(True)) | Some(Right(False)) => "boolean"
-    case Some(Right(CBytes(a))) if a.size == 20 => "address"
-    case Some(Right(other))                     => s"value $other"
-    case Some(Left(e))                          => e.getClass.getSimpleName
+  private enum VerificationOutcome {
+    case Unimplemented, BooleanValue, Address
+    case Value(value: CanonicalValue)
+    case Error(kind: JlvmErrorKind)
   }
 
-  private val errors = Set("Type", "Arity", "Crypto")
+  private def outcome(r: Option[Either[JlvmError, CanonicalValue]]): VerificationOutcome = r match {
+    case scala.None                             => VerificationOutcome.Unimplemented
+    case Some(Right(True)) | Some(Right(False)) => VerificationOutcome.BooleanValue
+    case Some(Right(CBytes(a))) if a.size == 20 => VerificationOutcome.Address
+    case Some(Right(other))                     => VerificationOutcome.Value(other)
+    case Some(Left(e))                          => VerificationOutcome.Error(e.kind)
+  }
+
+  private val errors: Set[VerificationOutcome] =
+    Set(JlvmErrorKind.Type, JlvmErrorKind.Arity, JlvmErrorKind.Crypto).map(VerificationOutcome.Error(_))
 
   /** Well-formed keys and signatures, so that generated arguments also get past decoding. */
   private val knownBytes: List[ByteVector] = List(
@@ -576,14 +596,14 @@ object CryptoOpsSuite extends IOSuite with Checkers {
     forall(Gen.zip(ops, Gen.choose(0, 4).flatMap(Gen.listOfN(_, cryptoArg)).map(_.toVector))) {
       case (op, args) =>
         val o = outcome(b.ops(op, args))
-        val allowed = if (op == Op.Ecrecover) errors + "address" else errors + "boolean"
+        val allowed = if (op == Op.Ecrecover) errors + VerificationOutcome.Address else errors + VerificationOutcome.BooleanValue
         expect(allowed(o), s"${op.wire}: unexpected outcome $o")
     }
   }
 
   test("structured hostile input to the signature and sigma ops gives the typed error the specs define") { b =>
     IO {
-      def is(op: Op, args: CanonicalValue*)(want: String) = {
+      def is(op: Op, args: CanonicalValue*)(want: VerificationOutcome) = {
         val o = outcome(b.ops(op, args.toVector))
         expect(o == want, s"${op.wire}(${args.map(_.toString.take(48)).mkString(", ")}): expected $want, got $o")
       }
@@ -603,45 +623,55 @@ object CryptoOpsSuite extends IOSuite with Checkers {
       val threshold = node("type" -> text("threshold"), "k" -> int(5), "children" -> arr(dlog(g), dlog(g)))
       val wide = node("type" -> text("or"), "children" -> arr(Vector.fill(256)(dlog(g))*))
       val bls =
-        is(Op.BlsVerify)("Arity")
-          .and(is(Op.BlsVerify, msg, msg)("Arity"))
-          .and(is(Op.BlsVerify, int(1), int(2), int(3))("Type"))
-          .and(is(Op.BlsVerify, text("0xabc"), msg, aggregate)("Type"))
-          .and(is(Op.BlsVerify, msg, msg, msg)("Crypto"))
-          .and(is(Op.BlsVerify, CBytes(ByteVector.fill(48)(0x11)), msg, CBytes(ByteVector.fill(96)(0x33)))("Crypto"))
-          .and(is(Op.BlsAggregateVerify)("Arity"))
+        is(Op.BlsVerify)(VerificationOutcome.Error(JlvmErrorKind.Arity))
+          .and(is(Op.BlsVerify, msg, msg)(VerificationOutcome.Error(JlvmErrorKind.Arity)))
+          .and(is(Op.BlsVerify, int(1), int(2), int(3))(VerificationOutcome.Error(JlvmErrorKind.Type)))
+          .and(is(Op.BlsVerify, text("0xabc"), msg, aggregate)(VerificationOutcome.Error(JlvmErrorKind.Type)))
+          .and(is(Op.BlsVerify, msg, msg, msg)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(
+            is(Op.BlsVerify, CBytes(ByteVector.fill(48)(0x11)), msg, CBytes(ByteVector.fill(96)(0x33)))(
+              VerificationOutcome.Error(JlvmErrorKind.Crypto)
+            )
+          )
+          .and(is(Op.BlsAggregateVerify)(VerificationOutcome.Error(JlvmErrorKind.Arity)))
           .and(expect.same(Some(Right(False)), b.ops(Op.BlsAggregateVerify, Vector(arr(), msg, aggregate))))
-          .and(is(Op.BlsAggregateVerify, msg, msg, aggregate)("Type"))
-          .and(is(Op.BlsAggregateVerify, arr(Vector.fill(5000)(msg)*), msg, aggregate)("Crypto"))
-          .and(is(Op.BlsAggregateVerify, arr(int(1)), int(2), int(3))("Type"))
-          .and(is(Op.BlsAggregateVerify, arr(blsKey), msg, CBytes(ByteVector.fill(96)(0x33)))("Crypto"))
+          .and(is(Op.BlsAggregateVerify, msg, msg, aggregate)(VerificationOutcome.Error(JlvmErrorKind.Type)))
+          .and(is(Op.BlsAggregateVerify, arr(Vector.fill(5000)(msg)*), msg, aggregate)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.BlsAggregateVerify, arr(int(1)), int(2), int(3))(VerificationOutcome.Error(JlvmErrorKind.Type)))
+          .and(
+            is(Op.BlsAggregateVerify, arr(blsKey), msg, CBytes(ByteVector.fill(96)(0x33)))(VerificationOutcome.Error(JlvmErrorKind.Crypto))
+          )
       val schnorr =
-        is(Op.SchnorrVerify)("Arity")
-          .and(is(Op.SchnorrVerify, g, msg)("Arity"))
-          .and(is(Op.SchnorrVerify, int(1), int(2), int(3))("Type"))
-          .and(is(Op.SchnorrVerify, CBytes(hex"04" ++ ByteVector.fill(32)(1)), msg, proof56)("Crypto"))
-          .and(is(Op.SchnorrVerify, CBytes(hex"02" ++ ByteVector.high(32)), msg, proof56)("Crypto"))
-          .and(is(Op.SchnorrVerify, identity33, msg, proof56)("Crypto"))
-          .and(is(Op.SchnorrVerify, g, msg, CBytes(hex"dead"))("Crypto"))
-          .and(is(Op.SchnorrVerify, g, msg, zIsQ)("Crypto"))
-          .and(is(Op.SchnorrVerify, g, text("0xabc"), proof56)("Type"))
-          .and(is(Op.SchnorrVerify, g, msg, proof56)("boolean"))
+        is(Op.SchnorrVerify)(VerificationOutcome.Error(JlvmErrorKind.Arity))
+          .and(is(Op.SchnorrVerify, g, msg)(VerificationOutcome.Error(JlvmErrorKind.Arity)))
+          .and(is(Op.SchnorrVerify, int(1), int(2), int(3))(VerificationOutcome.Error(JlvmErrorKind.Type)))
+          .and(
+            is(Op.SchnorrVerify, CBytes(hex"04" ++ ByteVector.fill(32)(1)), msg, proof56)(VerificationOutcome.Error(JlvmErrorKind.Crypto))
+          )
+          .and(is(Op.SchnorrVerify, CBytes(hex"02" ++ ByteVector.high(32)), msg, proof56)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SchnorrVerify, identity33, msg, proof56)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SchnorrVerify, g, msg, CBytes(hex"dead"))(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SchnorrVerify, g, msg, zIsQ)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SchnorrVerify, g, text("0xabc"), proof56)(VerificationOutcome.Error(JlvmErrorKind.Type)))
+          .and(is(Op.SchnorrVerify, g, msg, proof56)(VerificationOutcome.BooleanValue))
       val sigma =
-        is(Op.SigmaVerify)("Arity")
-          .and(is(Op.SigmaVerify, dlog(g), proof56)("Arity"))
-          .and(is(Op.SigmaVerify, msg, proof56, msg)("Crypto"))
-          .and(is(Op.SigmaVerify, node("type" -> text("xor"), "pk" -> g), proof56, msg)("Crypto"))
-          .and(is(Op.SigmaVerify, node("type" -> text("dlog")), proof56, msg)("Crypto"))
-          .and(is(Op.SigmaVerify, dlog(identity33), proof56, msg)("Crypto"))
-          .and(is(Op.SigmaVerify, dhtuple, proof56, msg)("Crypto"))
-          .and(is(Op.SigmaVerify, threshold, proof56, msg)("Crypto"))
-          .and(is(Op.SigmaVerify, dlog(g), zIsQ, msg)("Crypto"))
-          .and(is(Op.SigmaVerify, dlog(g), CBytes(ByteVector.low(200000)), msg)("Crypto"))
-          .and(is(Op.SigmaVerify, deep, proof56, msg)("Crypto"))
-          .and(is(Op.SigmaVerify, wide, proof56, msg)("Crypto"))
-          .and(is(Op.SigmaVerify, dlog(g), proof56, int(1))("Type"))
-          .and(is(Op.SigmaVerify, dlog(g), proof56, text("0xZZ"))("Type")) // not 0x-hex, so text, not bytes
-          .and(is(Op.SigmaVerify, dlog(g), proof56, msg)("boolean"))
+        is(Op.SigmaVerify)(VerificationOutcome.Error(JlvmErrorKind.Arity))
+          .and(is(Op.SigmaVerify, dlog(g), proof56)(VerificationOutcome.Error(JlvmErrorKind.Arity)))
+          .and(is(Op.SigmaVerify, msg, proof56, msg)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SigmaVerify, node("type" -> text("xor"), "pk" -> g), proof56, msg)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SigmaVerify, node("type" -> text("dlog")), proof56, msg)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SigmaVerify, dlog(identity33), proof56, msg)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SigmaVerify, dhtuple, proof56, msg)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SigmaVerify, threshold, proof56, msg)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SigmaVerify, dlog(g), zIsQ, msg)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SigmaVerify, dlog(g), CBytes(ByteVector.low(200000)), msg)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SigmaVerify, deep, proof56, msg)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SigmaVerify, wide, proof56, msg)(VerificationOutcome.Error(JlvmErrorKind.Crypto)))
+          .and(is(Op.SigmaVerify, dlog(g), proof56, int(1))(VerificationOutcome.Error(JlvmErrorKind.Type)))
+          .and(
+            is(Op.SigmaVerify, dlog(g), proof56, text("0xZZ"))(VerificationOutcome.Error(JlvmErrorKind.Type))
+          ) // not 0x-hex, so text, not bytes
+          .and(is(Op.SigmaVerify, dlog(g), proof56, msg)(VerificationOutcome.BooleanValue))
       bls.and(schnorr).and(sigma)
     }
   }
@@ -684,7 +714,7 @@ object CryptoOpsSuite extends IOSuite with Checkers {
     forall(Gen.zip(sigmaNode(4), sigmaProof, Gen.oneOf(biasedBytes, Gen.const(CInt(1): CanonicalValue)))) {
       case (prop, proof, msg) =>
         val o = outcome(b.ops(Op.SigmaVerify, Vector(prop, proof, msg)))
-        expect(errors(o) || o == "boolean", s"unexpected outcome $o")
+        expect(errors(o) || o == VerificationOutcome.BooleanValue, s"unexpected outcome $o")
     }
   }
 

@@ -13,60 +13,69 @@ object Errors {
 
   def jsonSyntaxReason(r: xyz.kd5ujc.models.codec_errors.JsonSyntaxReason): xyz.kd5ujc.dilf4s.error.JsonSyntaxReason =
     r match {
-      case "expectedValue"          => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.EXPECTED_VALUE
-      case "expectedMemberName"     => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.EXPECTED_MEMBER_NAME
-      case "expectedColon"          => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.EXPECTED_COLON
-      case "expectedCommaOrBracket" => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.EXPECTED_COMMA_OR_BRACKET
-      case "expectedCommaOrBrace"   => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.EXPECTED_COMMA_OR_BRACE
-      case "trailingContent"        => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.TRAILING_CONTENT
-      case "unterminatedString"     => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.UNTERMINATED_STRING
-      case "controlCharacter"       => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.CONTROL_CHARACTER
-      case "invalidEscape"          => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.INVALID_ESCAPE
+      case xyz.kd5ujc.models.codec_errors.JsonSyntaxReason.ExpectedValue => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.EXPECTED_VALUE
+      case xyz.kd5ujc.models.codec_errors.JsonSyntaxReason.ExpectedMemberName =>
+        xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.EXPECTED_MEMBER_NAME
+      case xyz.kd5ujc.models.codec_errors.JsonSyntaxReason.ExpectedColon => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.EXPECTED_COLON
+      case xyz.kd5ujc.models.codec_errors.JsonSyntaxReason.ExpectedCommaOrBracket =>
+        xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.EXPECTED_COMMA_OR_BRACKET
+      case xyz.kd5ujc.models.codec_errors.JsonSyntaxReason.ExpectedCommaOrBrace =>
+        xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.EXPECTED_COMMA_OR_BRACE
+      case xyz.kd5ujc.models.codec_errors.JsonSyntaxReason.TrailingContent => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.TRAILING_CONTENT
+      case xyz.kd5ujc.models.codec_errors.JsonSyntaxReason.UnterminatedString =>
+        xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.UNTERMINATED_STRING
+      case xyz.kd5ujc.models.codec_errors.JsonSyntaxReason.ControlCharacter => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.CONTROL_CHARACTER
+      case xyz.kd5ujc.models.codec_errors.JsonSyntaxReason.InvalidEscape    => xyz.kd5ujc.dilf4s.error.JsonSyntaxReason.INVALID_ESCAPE
     }
 
   def nonCanonicalReason(r: xyz.kd5ujc.models.codec_errors.NonCanonicalReason): xyz.kd5ujc.dilf4s.error.NonCanonicalReason =
     r match {
-      case "nonShortestArgument" => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.NON_SHORTEST_ARGUMENT
-      case "keyOrder"            => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.KEY_ORDER
-      case "nullMapValue"        => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.NULL_MAP_VALUE
-      case "bignumLeadingZero"   => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.BIGNUM_LEADING_ZERO
-      case "bignumInRange"       => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.BIGNUM_IN_RANGE
-      case "bignumNotBytes"      => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.BIGNUM_NOT_BYTES
-      case "rationalNotPair"     => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.RATIONAL_NOT_PAIR
-      case "rationalNotInteger"  => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.RATIONAL_NOT_INTEGER
-      case "rationalDenominator" => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.RATIONAL_DENOMINATOR
-      case "rationalNotReduced"  => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.RATIONAL_NOT_REDUCED
+      case xyz.kd5ujc.models.codec_errors.NonCanonicalReason.NonShortestArgument =>
+        xyz.kd5ujc.dilf4s.error.NonCanonicalReason.NON_SHORTEST_ARGUMENT
+      case xyz.kd5ujc.models.codec_errors.NonCanonicalReason.KeyOrder     => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.KEY_ORDER
+      case xyz.kd5ujc.models.codec_errors.NonCanonicalReason.NullMapValue => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.NULL_MAP_VALUE
+      case xyz.kd5ujc.models.codec_errors.NonCanonicalReason.BignumLeadingZero =>
+        xyz.kd5ujc.dilf4s.error.NonCanonicalReason.BIGNUM_LEADING_ZERO
+      case xyz.kd5ujc.models.codec_errors.NonCanonicalReason.BignumInRange   => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.BIGNUM_IN_RANGE
+      case xyz.kd5ujc.models.codec_errors.NonCanonicalReason.BignumNotBytes  => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.BIGNUM_NOT_BYTES
+      case xyz.kd5ujc.models.codec_errors.NonCanonicalReason.RationalNotPair => xyz.kd5ujc.dilf4s.error.NonCanonicalReason.RATIONAL_NOT_PAIR
+      case xyz.kd5ujc.models.codec_errors.NonCanonicalReason.RationalNotInteger =>
+        xyz.kd5ujc.dilf4s.error.NonCanonicalReason.RATIONAL_NOT_INTEGER
+      case xyz.kd5ujc.models.codec_errors.NonCanonicalReason.RationalDenominator =>
+        xyz.kd5ujc.dilf4s.error.NonCanonicalReason.RATIONAL_DENOMINATOR
+      case xyz.kd5ujc.models.codec_errors.NonCanonicalReason.RationalNotReduced =>
+        xyz.kd5ujc.dilf4s.error.NonCanonicalReason.RATIONAL_NOT_REDUCED
     }
 
   def notJson(r: xyz.kd5ujc.models.codec_errors.NotJson): xyz.kd5ujc.dilf4s.error.NotJson =
     r match {
-      case "bytes"                    => xyz.kd5ujc.dilf4s.error.NotJson.BYTES
-      case "non-terminating rational" => xyz.kd5ujc.dilf4s.error.NotJson.NON_TERMINATING_RATIONAL
-      case "over-long number"         => xyz.kd5ujc.dilf4s.error.NotJson.OVER_LONG_NUMBER
+      case xyz.kd5ujc.models.codec_errors.NotJson.Bytes                  => xyz.kd5ujc.dilf4s.error.NotJson.BYTES
+      case xyz.kd5ujc.models.codec_errors.NotJson.NonTerminatingRational => xyz.kd5ujc.dilf4s.error.NotJson.NON_TERMINATING_RATIONAL
+      case xyz.kd5ujc.models.codec_errors.NotJson.OverLongNumber         => xyz.kd5ujc.dilf4s.error.NotJson.OVER_LONG_NUMBER
     }
 
   def expansionRefusal(r: xyz.kd5ujc.models.hash_errors.ExpansionRefusal): xyz.kd5ujc.dilf4s.error.ExpansionRefusal =
     r match {
-      case "emptyDst"     => xyz.kd5ujc.dilf4s.error.ExpansionRefusal.EMPTY_DST
-      case "outputLength" => xyz.kd5ujc.dilf4s.error.ExpansionRefusal.OUTPUT_LENGTH
+      case xyz.kd5ujc.models.hash_errors.ExpansionRefusal.EmptyDst     => xyz.kd5ujc.dilf4s.error.ExpansionRefusal.EMPTY_DST
+      case xyz.kd5ujc.models.hash_errors.ExpansionRefusal.OutputLength => xyz.kd5ujc.dilf4s.error.ExpansionRefusal.OUTPUT_LENGTH
     }
 
   def pathRefusal(r: xyz.kd5ujc.models.crypto_errors.PathRefusal): xyz.kd5ujc.dilf4s.error.PathRefusal =
     r match {
-      case "missingMaster" => xyz.kd5ujc.dilf4s.error.PathRefusal.MISSING_MASTER
-      case "malformed"     => xyz.kd5ujc.dilf4s.error.PathRefusal.MALFORMED
-      case "leadingZero"   => xyz.kd5ujc.dilf4s.error.PathRefusal.LEADING_ZERO
-      case "tooManyDigits" => xyz.kd5ujc.dilf4s.error.PathRefusal.TOO_MANY_DIGITS
-      case "outOfRange"    => xyz.kd5ujc.dilf4s.error.PathRefusal.OUT_OF_RANGE
-      case "tooDeep"       => xyz.kd5ujc.dilf4s.error.PathRefusal.TOO_DEEP
+      case xyz.kd5ujc.models.crypto_errors.PathRefusal.MissingMaster => xyz.kd5ujc.dilf4s.error.PathRefusal.MISSING_MASTER
+      case xyz.kd5ujc.models.crypto_errors.PathRefusal.Malformed     => xyz.kd5ujc.dilf4s.error.PathRefusal.MALFORMED
+      case xyz.kd5ujc.models.crypto_errors.PathRefusal.LeadingZero   => xyz.kd5ujc.dilf4s.error.PathRefusal.LEADING_ZERO
+      case xyz.kd5ujc.models.crypto_errors.PathRefusal.TooManyDigits => xyz.kd5ujc.dilf4s.error.PathRefusal.TOO_MANY_DIGITS
+      case xyz.kd5ujc.models.crypto_errors.PathRefusal.OutOfRange    => xyz.kd5ujc.dilf4s.error.PathRefusal.OUT_OF_RANGE
+      case xyz.kd5ujc.models.crypto_errors.PathRefusal.TooDeep       => xyz.kd5ujc.dilf4s.error.PathRefusal.TOO_DEEP
     }
 
   def rootComponent(r: xyz.kd5ujc.models.proofs_errors.VtRootComponent): xyz.kd5ujc.dilf4s.error.RootComponent =
     r match {
-      case "root"    => xyz.kd5ujc.dilf4s.error.RootComponent.ROOT
-      case "state"   => xyz.kd5ujc.dilf4s.error.RootComponent.STATE
-      case "history" => xyz.kd5ujc.dilf4s.error.RootComponent.HISTORY
-      case "parent"  => xyz.kd5ujc.dilf4s.error.RootComponent.PARENT
+      case xyz.kd5ujc.models.proofs_errors.VtRootComponent.Root    => xyz.kd5ujc.dilf4s.error.RootComponent.ROOT
+      case xyz.kd5ujc.models.proofs_errors.VtRootComponent.State   => xyz.kd5ujc.dilf4s.error.RootComponent.STATE
+      case xyz.kd5ujc.models.proofs_errors.VtRootComponent.History => xyz.kd5ujc.dilf4s.error.RootComponent.HISTORY
+      case xyz.kd5ujc.models.proofs_errors.VtRootComponent.Parent  => xyz.kd5ujc.dilf4s.error.RootComponent.PARENT
     }
 
   def canonicalError(e: xyz.kd5ujc.models.codec_errors.CanonicalError): xyz.kd5ujc.dilf4s.error.CanonicalError =

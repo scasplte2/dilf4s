@@ -384,7 +384,7 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
             s"${documented(c.doc, s"The kind `${c.kind}`.", "    ")}\n    ${c.kind}$body,"
         }
         val kindArms = withFields.map {
-          case (c, fs) => s"            Self::${c.kind}${if (fs.isEmpty) "" else " { .. }"} => $k::${CanonicalEmitter.pascal(c.kind)},"
+          case (c, fs) => s"            Self::${c.kind}${if (fs.isEmpty) "" else " { .. }"} => $k::${c.member},"
         }
         val displayArms = withFields.map {
           case (c, Vector()) => s"            Self::${c.kind} => f.write_str(${string(c.kind)}),"

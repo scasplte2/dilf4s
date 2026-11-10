@@ -178,8 +178,8 @@ object StateKeySuite extends SimpleIOSuite with Checkers {
       expect(
         head.exists(hd =>
           Projection.verifyAgainst[H](lying.entries(s1), hd.stateRoot).left.exists {
-            case VersionedTrieError.RootMismatch("state", _, _) => true
-            case _                                              => false
+            case VersionedTrieError.RootMismatch(VtRootComponent.State, _, _) => true
+            case _                                                            => false
           }
         )
       )

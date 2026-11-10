@@ -73,11 +73,11 @@ object Replica {
       keys    <- checked.history.traverse { case (u, _) => V.keyOf(u) }
       hashed  <- checked.entries.traverse { case (k, v) => VersionedTrie.valueHash[H](v).map(k.bytes -> _) }
       state   <- VersionedTrie.trie(Trie.fromEntries[H](modes._1, hashed))
-      _       <- Either.cond(state.root == trusted.stateRoot, (), mismatch("state", trusted.stateRoot, state.root))
+      _       <- Either.cond(state.root == trusted.stateRoot, (), mismatch(VtRootComponent.State, trusted.stateRoot, state.root))
       history <- VersionedTrie.trie(
         Trie.fromEntries[H](modes._2, keys.zip(checked.history).map { case (k, (_, s)) => k -> VersionedTrie.bytesHash[H](s.bytes) })
       )
-      _ <- Either.cond(history.root == trusted.historyRoot, (), mismatch("history", trusted.historyRoot, history.root))
+      _ <- Either.cond(history.root == trusted.historyRoot, (), mismatch(VtRootComponent.History, trusted.historyRoot, history.root))
     } yield Replica(Some(trusted), state, history, TreeMap.from(checked.entries)(using order))
 
   /**
@@ -95,7 +95,7 @@ object Replica {
       _ <- Either.cond(
         parent == claimed,
         (),
-        VersionedTrieError.RootMismatch("parent", parent.fold("none")(_.hex), claimed.fold("none")(_.hex))
+        VersionedTrieError.RootMismatch(VtRootComponent.Parent, parent.fold("none")(_.hex), claimed.fold("none")(_.hex))
       )
       nk <- V.keyOf(delta.head.version)
       hk <- r.head.traverse(h => V.keyOf(h.version))
@@ -113,9 +113,9 @@ object Replica {
       upserts <- delta.upserts.traverse { case (k, v) => VersionedTrie.valueHash[H](v).map(h => k.bytes -> Option(h)) }
       ops = delta.removes.map(k => k.bytes -> Option.empty[Digest[H]]) ++ upserts
       state   <- VersionedTrie.trie(r.state.update(ops))
-      _       <- Either.cond(state.root == delta.head.stateRoot, (), mismatch("state", delta.head.stateRoot, state.root))
+      _       <- Either.cond(state.root == delta.head.stateRoot, (), mismatch(VtRootComponent.State, delta.head.stateRoot, state.root))
       history <- VersionedTrie.trie(r.history.put(nk, VersionedTrie.bytesHash[H](state.root.bytes)))
-      _       <- Either.cond(history.root == delta.head.historyRoot, (), mismatch("history", delta.head.historyRoot, history.root))
+      _ <- Either.cond(history.root == delta.head.historyRoot, (), mismatch(VtRootComponent.History, delta.head.historyRoot, history.root))
     } yield Replica(Some(delta.head), state, history, delta.upserts.foldLeft(r.values -- delta.removes)(_ + _))
   }
 }

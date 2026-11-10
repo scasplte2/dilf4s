@@ -97,12 +97,12 @@ object ReplicaSuite extends SimpleIOSuite with Checkers {
         val forgedHistory = d.copy(head = d.head.copy(historyRoot = heads.head.historyRoot))
         val forgedVersion = d.copy(head = d.head.copy(version = 9L))
         expect(Replica.applyDelta(r1, forgedState).left.exists {
-          case VersionedTrieError.RootMismatch("state", _, _) => true
-          case _                                              => false
+          case VersionedTrieError.RootMismatch(VtRootComponent.State, _, _) => true
+          case _                                                            => false
         })
           .and(expect(Replica.applyDelta(r1, forgedHistory).left.exists {
-            case VersionedTrieError.RootMismatch("history", _, _) => true
-            case _                                                => false
+            case VersionedTrieError.RootMismatch(VtRootComponent.History, _, _) => true
+            case _                                                              => false
           }))
           .and(expect(Replica.applyDelta(r1, forgedVersion).isLeft, "the version is in the history key"))
     }

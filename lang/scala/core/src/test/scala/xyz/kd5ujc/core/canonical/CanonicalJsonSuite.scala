@@ -17,7 +17,7 @@ object CanonicalJsonSuite extends SimpleIOSuite with Checkers {
     def rational(n: BigInt, d: BigInt) =
       Ratio.of(n, d).fold(e => sys.error(e.toString), r => CanonicalValue.number(r).fold(e => sys.error(e.toString), identity))
     val third = rational(BigInt(1) << 30000, BigInt(3))
-    val refusal = NotJsonRepresentable("non-terminating rational")
+    val refusal = NotJsonRepresentable(NotJson.NonTerminatingRational)
     // a rational that wide is no value (CanonicalValue.MaxRationalBits); the widest integer is, and renders
     val huge = CanonicalGens.int((BigInt(1) << CanonicalValue.MaxIntegerBits) - 1)
     expect

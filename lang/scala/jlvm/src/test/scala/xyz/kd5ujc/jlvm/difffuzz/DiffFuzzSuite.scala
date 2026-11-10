@@ -9,9 +9,12 @@ import cats.syntax.all._
 import scala.concurrent.duration._
 
 import xyz.kd5ujc.core.canonical.{BuiltValues, DecodeFailure, DecodeReason, Preview}
-import xyz.kd5ujc.jlvm.{Jlvm, JlvmVectors, Op}
+import xyz.kd5ujc.jlvm.{Jlvm, JlvmErrorKind, JlvmVectors, Op}
+import xyz.kd5ujc.models.crypto_errors.CryptoErrorKind
+import xyz.kd5ujc.models.jlvm_vectors.JlvmSigningCause
 
 import io.circe.Json
+import scodec.bits.ByteVector
 import weaver.IOSuite
 
 /**
@@ -57,6 +60,32 @@ object DiffFuzzSuite extends IOSuite {
       .and(expect.same(Left(WireError.SourceChoice("x", false, false)), FuzzCase.fromTransport(neither)))
   }
 
+  pureTest("wire outcomes preserve typed errors and refuse unknown kinds and sites") {
+    def row(outcome: String) = s"""{"name":"x","outcome":$outcome,"gasUsed":1,"warnings":[]}"""
+    val typed = Record(
+      "x",
+      None,
+      Record.Outcome.Error(JlvmErrorKind.Crypto, Some(Op.Sha256), Some(JlvmSigningCause(CryptoErrorKind.InvalidEncoding))),
+      None,
+      1L,
+      Vector.empty
+    )
+    expect
+      .same(Right(typed), Record.fromLine(row("""{"error":"Crypto","op":"sha256","cause":{"signing":"InvalidEncoding"}}""")))
+      .and(expect.same(Left(WireError.UnknownErrorKind(Preview.of("unknown"))), Record.fromLine(row("""{"error":"unknown"}"""))))
+      .and(expect.same(Left(WireError.UnknownSite(Preview.of("unknown"))), Record.fromLine(row("""{"error":"Crypto","op":"unknown"}"""))))
+  }
+
+  pureTest("typed outcome bytes cannot normalize away a wire discrepancy") {
+    def row(hex: String) = s"""{"name":"x","outcome":{"cbor":"$hex"},"gasUsed":1,"warnings":[]}"""
+    expect
+      .same(Left(WireError.InvalidHex(Preview.of("zz"))), Record.fromLine(row("zz")))
+      .and(expect.same(Left(WireError.NonCanonicalHex(Preview.of("F4"))), Record.fromLine(row("F4"))))
+      .and(
+        expect.same(Right(Record("x", None, Record.Outcome.Value(ByteVector(0xf4)), None, 1L, Vector.empty)), Record.fromLine(row("f4")))
+      )
+  }
+
   test("a malformed built binding remains a runner fault with its exact cause") { res =>
     IO {
       val c = FuzzCase(
@@ -82,7 +111,7 @@ object DiffFuzzSuite extends IOSuite {
   pureTest("a reference fault during the unlimited metering check is preserved") {
     val fault = Fault.MissingReply
     val c = FuzzCase("metered", FuzzCase.Source.Surface("1"), "null", gasLimit = Some(1L))
-    val r = Record(c.name, Some("01"), Record.Outcome.Value("01"), None, 1L, Vector.empty)
+    val r = Record(c.name, Some("01"), Record.Outcome.Value(ByteVector(1)), None, 1L, Vector.empty)
     expect.same(Left(fault), Evaluate.metered(_ => Left(fault), c, r))
   }
 
@@ -92,7 +121,7 @@ object DiffFuzzSuite extends IOSuite {
       val gen = new Generator(res.corpus, _ => Left(fault), Some("grammar"))
       val generated = (0L until 30L).iterator.map(gen(seed, _)).find(_.referenceFault.nonEmpty)
       val result = generated.map { g =>
-        val successful = Right(Record(g.c.name, None, Record.Outcome.Value("01"), None, 0L, Vector.empty))
+        val successful = Right(Record(g.c.name, None, Record.Outcome.Value(ByteVector(1)), None, 0L, Vector.empty))
         g.replies(Replies(successful, Vector("rust" -> successful))).scala
       }
       expect.same(Some(Left(fault)), result)
@@ -111,7 +140,7 @@ object DiffFuzzSuite extends IOSuite {
         val fault = Fault.MissingReply
         val c = FuzzCase("generation fault", FuzzCase.Source.Surface("1"), "null")
         val g = Generated(c, "grammar", false, Some(fault))
-        val successful = Right(Record(c.name, None, Record.Outcome.Value("01"), None, 0L, Vector.empty))
+        val successful = Right(Record(c.name, None, Record.Outcome.Value(ByteVector(1)), None, 0L, Vector.empty))
         val replies = g.replies(Replies(successful, Vector("rust" -> successful)))
         val options = Options(out = out, shrinkBudget = 1)
         for {

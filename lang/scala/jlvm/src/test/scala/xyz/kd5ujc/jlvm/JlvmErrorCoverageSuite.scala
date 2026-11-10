@@ -9,7 +9,9 @@ import cats.syntax.all._
 import scala.compiletime.constValueTuple
 import scala.deriving.Mirror
 
-import io.circe.Json
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalJson, DecodeFailure}
+import xyz.kd5ujc.models.{jlvm_vectors => model}
+
 import weaver.SimpleIOSuite
 
 /**
@@ -24,68 +26,75 @@ object JlvmErrorCoverageSuite extends SimpleIOSuite {
   inline def kinds[T](using m: Mirror.SumOf[T]): List[String] =
     constValueTuple[m.MirroredElemLabels].productIterator.map(_.toString).toList
 
-  def uncovered(kinds: List[String], pinned: Set[String]): List[String] = kinds.filterNot(pinned)
+  def uncovered[A](kinds: List[A], pinned: Set[A]): List[A] = kinds.filterNot(pinned)
 
-  /** The error of every failing case: its kind and `op`, if it has one. */
-  private val errors: IO[List[(String, Option[String])]] =
+  final case class ReadFailure(cause: CanonicalError | DecodeFailure) extends RuntimeException(cause.toString)
+
+  private val errors: IO[List[model.JlvmError]] =
     IO.blocking(new String(Files.readAllBytes(JlvmVectors.path), UTF_8))
-      .flatMap(io.circe.parser.parse(_).liftTo[IO])
-      .map { v =>
-        v.hcursor.downField("cases").as[List[Json]].getOrElse(Nil).flatMap { c =>
-          val o = c.hcursor.downField("outcome")
-          o.get[String]("error").toOption.map(_ -> o.get[String]("op").toOption)
-        }
+      .flatMap { text =>
+        CanonicalJson.parse(text).flatMap(model.JlvmVectors.codec.decoder.decode(_)).leftMap(ReadFailure(_)).liftTo[IO]
       }
+      .map(_.cases.toList.flatMap(_.outcome match {
+        case e: model.JlvmError => Some(e)
+        case _: model.JlvmValue => None
+      }))
 
-  test("a cause is recorded only for Crypto errors, and every cause family a vector names is one of the schema's") {
-    IO.blocking(new String(Files.readAllBytes(JlvmVectors.path), UTF_8)).flatMap(io.circe.parser.parse(_).liftTo[IO]).map { v =>
-      val outcomes = v.hcursor.downField("cases").as[List[Json]].getOrElse(Nil).map(_.hcursor.downField("outcome"))
-      val caused = outcomes.filter(_.downField("cause").succeeded)
-      val families = caused.flatMap(_.downField("cause").keys.toList.flatten).toSet
-      expect(caused.forall(_.get[String]("error").contains("Crypto")), "a cause on a kind other than Crypto")
-        .and(expect(caused.nonEmpty, "no row records a cause"))
-        .and(
-          expect(
-            families.subsetOf(CryptoCauseKind.values.map(k => k.take(1).toLowerCase + k.drop(1)).toSet),
-            s"unknown families: $families"
-          )
-        )
+  private def family(cause: model.JlvmCause): CryptoCauseKind = cause match {
+    case _: model.JlvmSigningCause        => CryptoCauseKind.Signing
+    case _: model.JlvmSigmaCause          => CryptoCauseKind.Sigma
+    case _: model.JlvmZkCause             => CryptoCauseKind.Zk
+    case _: model.JlvmGroth16Cause        => CryptoCauseKind.Groth16
+    case _: model.JlvmVrfCause            => CryptoCauseKind.Vrf
+    case _: model.JlvmHashCause           => CryptoCauseKind.Hash
+    case _: model.JlvmMerkleCause         => CryptoCauseKind.Merkle
+    case _: model.JlvmTrieCause           => CryptoCauseKind.Trie
+    case _: model.JlvmPoseidonCause       => CryptoCauseKind.Poseidon
+    case _: model.JlvmPoseidonMerkleCause => CryptoCauseKind.PoseidonMerkle
+  }
+
+  test("exactly 90 Crypto refusals record the expected cause families") {
+    errors.map { es =>
+      val caused = es.filter(_.cause.isDefined)
+      val expected = Set(
+        CryptoCauseKind.Signing,
+        CryptoCauseKind.Sigma,
+        CryptoCauseKind.Zk,
+        CryptoCauseKind.Groth16,
+        CryptoCauseKind.Merkle,
+        CryptoCauseKind.Trie,
+        CryptoCauseKind.Poseidon,
+        CryptoCauseKind.PoseidonMerkle
+      )
+      expect
+        .same(Set(JlvmErrorKind.Crypto), caused.map(_.error).toSet)
+        .and(expect.same(90, caused.size))
+        .and(expect.same(expected, caused.flatMap(_.cause).map(family).toSet))
     }
   }
 
-  /** Which kind of site a site is: an operation (`Op`) or the read of a computed path (`Var`). */
-  def category(s: Site): String = s match {
-    case _: Op => "Op"
-    case _     => "Var"
-  }
+  enum SiteKind { case Operation, Variable }
 
-  /** The kind of site a recorded `op` names: one of the generated `Site.values`, by its wire name. */
-  def site(op: String): Option[String] = Site.values.find(_.wire == op).map(category)
+  def category(s: Site): SiteKind = s match {
+    case _: Op                                      => SiteKind.Operation
+    case xyz.kd5ujc.models.jlvm_errors.JlvmSite.Var => SiteKind.Variable
+  }
 
   test("every JLVM error kind has a vector row") {
     errors.map { es =>
-      val pinned = es.map(_._1).toSet
-      val all = JlvmErrorKind.values.toList.map(identity[String])
-      expect(uncovered(all, pinned).isEmpty, s"no jlvm_v1.json row pins ${uncovered(all, pinned).mkString(", ")}")
-        .and(expect(pinned.subsetOf(all.toSet), s"rows name kinds JlvmError does not have: ${pinned -- all}"))
-        .and(expect.same(all, kinds[JlvmError]))
+      val all = JlvmErrorKind.values.toList
+      expect
+        .same(all.toSet, es.map(_.error).toSet)
+        .and(expect.same(kinds[JlvmError], all.map(_.wire)))
     }
   }
 
-  test("every site has a row, and every recorded op names one") {
-    errors.map { es =>
-      val ops = es.flatMap(_._2)
-      val unknown = ops.filter(site(_).isEmpty).distinct
-      val pinned = ops.flatMap(site).toSet
-      expect(unknown.isEmpty, s"ops that name no site: ${unknown.mkString(", ")}").and {
-        val sites = Site.values.map(category).distinct.toList
-        expect(uncovered(sites, pinned).isEmpty, s"no row pins the site ${uncovered(sites, pinned).mkString(", ")}")
-      }
-    }
+  test("both site categories have rows, and every recorded op decodes as a site") {
+    errors.map(es => expect.same(SiteKind.values.toSet, es.flatMap(_.op).map(category).toSet))
   }
 
   test("an op is recorded exactly for the kinds whose errors carry a site") {
-    val withSite = Set("Type", "Arity", "Arithmetic", "Domain", "Crypto")
+    val withSite = Set(JlvmErrorKind.Type, JlvmErrorKind.Arity, JlvmErrorKind.Arithmetic, JlvmErrorKind.Domain, JlvmErrorKind.Crypto)
     val sample: List[JlvmError] = List(
       JlvmError.Malformed(""),
       JlvmError.Type(Op.Add, ""),
@@ -97,9 +106,9 @@ object JlvmErrorCoverageSuite extends SimpleIOSuite {
       JlvmError.OutOfGas(1, 0)
     )
     errors.map { es =>
-      val wrong = es.filter { case (k, op) => withSite(k) != op.isDefined }
+      val wrong = es.filter(e => withSite(e.error) != e.op.isDefined)
       expect(wrong.isEmpty, s"rows whose op does not match their kind: ${wrong.take(5)}")
-        .and(expect.same(kinds[JlvmError], sample.map(_.kind: String)))
+        .and(expect.same(kinds[JlvmError], sample.map(_.kind.wire)))
         .and(expect.same(sample.map(e => withSite(e.kind)), sample.map(_.site.isDefined)))
     }
   }
@@ -111,6 +120,6 @@ object JlvmErrorCoverageSuite extends SimpleIOSuite {
   }
 
   pureTest("the gate finds a case with no row: the cases come from the compiler, not from a list") {
-    expect.same(List("Unpinned"), uncovered(kinds[Probe], Set("Pinned")))
+    expect.same(List(Probe.Unpinned), uncovered[Probe](List(Probe.Pinned, Probe.Unpinned), Set(Probe.Pinned)))
   }
 }

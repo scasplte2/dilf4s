@@ -18,7 +18,7 @@ object ProgramStackSuite extends SimpleIOSuite {
 
   private def nested(n: Int): String = "{\"var\": " * n + "\"a\"" + "}" * n
 
-  private def kind(r: Either[JlvmError, ?]): String = r.fold(e => e.kind: String, _ => "program")
+  private def kind(r: Either[JlvmError, ?]): Either[JlvmErrorKind, Unit] = r.leftMap(_.kind).void
 
   test("the deepest program parses, and reads back from its canonical form and CBOR as itself") {
     StackProbe.fits("the deepest program") {
@@ -42,11 +42,11 @@ object ProgramStackSuite extends SimpleIOSuite {
   }
 
   test("text one level deeper is refused by the bound on its canonical form, not by the stack") {
-    StackProbe.fits("one level deeper")(kind(Parser.parse(nested(256))))(k => expect.same("Limit", k))
+    StackProbe.fits("one level deeper")(kind(Parser.parse(nested(256))))(k => expect.same(Left(JlvmErrorKind.Limit), k))
   }
 
   test("an array nested as deep as JSON allows is read, then refused by the bound") {
-    StackProbe.fits("the deepest array")(kind(Parser.parse("[" * 256 + "1" + "]" * 256)))(k => expect.same("Limit", k))
+    StackProbe.fits("the deepest array")(kind(Parser.parse("[" * 256 + "1" + "]" * 256)))(k => expect.same(Left(JlvmErrorKind.Limit), k))
   }
 
   test("a canonical form as deep as a value nests, refused at its deepest node, names the whole path") {

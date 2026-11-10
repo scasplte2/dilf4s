@@ -135,43 +135,55 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     }
   }
 
-  private def union(rule: QName, ks: Vector[UnionAlternative], texts: Vector[String], choices: Vector[TextChoice]): String = {
+  private def union(
+    rule:    QName,
+    ks:      Vector[UnionAlternative],
+    texts:   Vector[String],
+    choices: Vector[TextChoice]
+  ): Either[GenError, String] = {
     val n = typeName(rule)
-    // a choice of named texts is an enum, encoded as itself; the other texts are their own literal types
-    val (named, plain) = choices.partition(_.named)
-    val names = ks.map(a => qualified(rule.module, a.rule)) ++ named.map(c => qualified(rule.module, c.rule))
-    val literals = texts ++ plain.flatMap(_.texts)
-    val enc = (names.map(t => s"      case a: $t => $t.codec.encode(a)") ++
-      literals.map(t => s"      case ${literal(t)} => Codec.literalText[${literal(t)}](${literal(t)}).encode(${literal(t)})"))
-      .mkString("\n")
-    // every text, with the value it decodes to, in schema order
-    val members = texts.map(t => t -> literal(t)) ++ choices.flatMap { c =>
-      if (c.named) c.texts.zip(c.names).map((t, m) => t -> s"${qualified(rule.module, c.rule)}.$m") else c.texts.map(t => t -> literal(t))
-    }
-    val textAlts = members.map((t, v) => s"(${literal(t)}, $v: $n)").mkString(", ")
-    val values =
-      if (ks.nonEmpty) ""
-      else s"\n  /** Every alternative, in schema order. */\n  val values: Vector[$n] = Vector(${members.map(_._2).mkString(", ")})\n"
-    def set(s: Set[String]) = s"Set(${s.toList.sorted.map(k => s""""$k"""").mkString(", ")})"
-    val sel = ks.map { a =>
-      s"        (${set(a.required)}, ${set(a.allowed)}, ${qualified(rule.module, a.rule)}.codec.decoder.map(x => x: $n))"
-    }.mkString(",\n")
-    s"""${doc(rule)}type $n = ${(ks.map(a => qualified(rule.module, a.rule)) ++ texts.map(literal) ++ choices.map(c =>
-        qualified(rule.module, c.rule)
-      )).mkString(" | ")}
-       |
-       |object $n {$values
-       |  lazy val codec: Codec[$n] = Codec(
-       |    {
-       |$enc
-       |    },
-       |    (v: CanonicalValue) =>
-       |      Codec.selectAlternative[$n](v, List(
-       |$sel
-       |      ), List($textAlts))
-       |  )
-       |}
-       |""".stripMargin
+    val literalMembers = texts.map(t => NamedText(pascal(t), t, Vector.empty))
+    if (ks.isEmpty && choices.isEmpty) namedTexts(rule, literalMembers)
+    else
+      validateTextMembers(rule, literalMembers, Set("Literal", "Set", "Vector")).map { _ =>
+        def full(q: QName): String = s"$packagePrefix.${CanonicalEmitter.packageSegment(q.module)}.${typeName(q)}"
+        val names = ks.map(a => full(a.rule)) ++ choices.map(c => full(c.rule))
+        val literalType = Option.when(texts.nonEmpty)(s"$n.Literal")
+        val enc = (names.map(t => s"      case a: $t => $t.codec.encode(a)") ++
+          literalType.map(_ => "      case a: Literal => Codec.text.encode(a.wire)"))
+          .mkString("\n")
+        val members = literalMembers.map(m => m.text -> s"$n.${m.name}") ++ choices.flatMap { c =>
+          c.texts.zip(c.names).map((t, m) => t -> s"${full(c.rule)}.$m")
+        }
+        val textAlts = members.map((t, v) => s"(${literal(t)}, $v: $n)").mkString(", ")
+        val values =
+          if (ks.nonEmpty) ""
+          else s"\n  /** Every alternative, in schema order. */\n  val values: Vector[$n] = Vector(${members.map(_._2).mkString(", ")})\n"
+        val literalCases =
+          if (literalMembers.isEmpty) ""
+          else {
+            val cases = literalMembers.map(m => s"    case ${m.name} extends Literal(${literal(m.text)})").mkString("\n")
+            s"\n  enum Literal(val wire: String) {\n$cases\n  }\n  export Literal.{${literalMembers.map(_.name).mkString(", ")}}\n"
+          }
+        def set(s: Set[String]) = s"Set(${s.toList.sorted.map(literal).mkString(", ")})"
+        val sel = ks.map { a =>
+          s"        (${set(a.required)}, ${set(a.allowed)}, ${full(a.rule)}.codec.decoder.map(x => x: $n))"
+        }.mkString(",\n")
+        s"""${doc(rule)}type $n = ${(names ++ literalType).mkString(" | ")}
+         |
+         |object $n {$literalCases$values
+         |  lazy val codec: Codec[$n] = Codec(
+         |    {
+         |$enc
+         |    },
+         |    (v: CanonicalValue) =>
+         |      Codec.selectAlternative[$n](v, List(
+         |$sel
+         |      ), List($textAlts))
+         |  )
+         |}
+         |""".stripMargin
+      }
   }
 
   /** A sealed trait with one case per kind; a kind without fields is a case object. */
@@ -185,7 +197,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     clash.toLeft(()).flatMap(_ => cases.traverse(c => fields(rule, c.fields).map(c -> _))).map { withFields =>
       val members = withFields.map {
         case (c, fs) =>
-          val body = s" extends $n {\n    def kind: $k = ${literal(c.kind)}\n  }"
+          val body = s" extends $n {\n    def kind: $k = $k.${c.member}\n  }"
           // the kind's documentation, then each documented field's
           val params = c.fields.zip(fs).collect {
             case (p, f) if p.doc.nonEmpty => s"@param ${f.name.stripPrefix("`").stripSuffix("`")} ${p.doc.mkString(" ")}"
@@ -213,12 +225,27 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
     }
   }
 
+  private def validateTextMembers(
+    rule:          QName,
+    members:       Vector[NamedText],
+    extraReserved: Set[String] = Set.empty
+  ): Either[GenError, Unit] = {
+    val invalid = members.collectFirst {
+      case m if !Profile.isIdentifier(m.name) =>
+        GenError.Unsupported(rule.toString, UnsupportedFeature.OutsideProfile(ProfileRefusal.InvalidAlternativeName(m.text)))
+      case m if reservedCases(m.name) || reservedNamed(m.name) || extraReserved(m.name) || m.name == typeName(rule) =>
+        GenError.ReservedName(rule.toString, Language.Scala, m.name)
+    }
+    val clash = members.groupBy(_.name).toVector.sortBy(_._1).collectFirst {
+      case (name, ms) if ms.size > 1 => GenError.NameClash(rule.toString, name, ms.map(_.text))
+    }
+    invalid.orElse(clash).toLeft(())
+  }
+
   /** An enum carrying each member's text, encoded as that text; its members are named by their rules. */
   private def namedTexts(rule: QName, members: Vector[NamedText]): Either[GenError, String] = {
     val n = typeName(rule)
-    members.collectFirst {
-      case m if reservedCases(m.name) || reservedNamed(m.name) => GenError.ReservedName(rule.toString, Language.Scala, m.name)
-    }.toLeft {
+    validateTextMembers(rule, members).map { _ =>
       val cases = members.map(m => s"${scaladoc(m.doc, "  ")}  case ${m.name} extends $n(${literal(m.text)})").mkString("\n")
       val alts = members.map(m => s"(${literal(m.text)}, $n.${m.name})").mkString(", ")
       s"""${doc(rule)}enum $n(val wire: String) {
@@ -267,7 +294,7 @@ final class CanonicalEmitter(schema: Schema, packagePrefix: String) {
   private def emitRule(q: QName, model: ModelRule): Either[GenError, Option[String]] = model match {
     case ModelRule.Record(fs)                  => record(q, fs).map(Some(_))
     case ModelRule.Enumeration(cs)             => enumeration(q, cs).map(Some(_))
-    case ModelRule.Union(alts, texts, choices) => Some(union(q, alts, texts, choices)).asRight
+    case ModelRule.Union(alts, texts, choices) => union(q, alts, texts, choices).map(Some(_))
     case ModelRule.ErrorFamily(kinds, cases)   => errorFamily(q, kinds, cases).map(Some(_))
     case ModelRule.Alias(t)                    => Some(alias(q, t)).asRight
     case ModelRule.Constant(v)                 => Some(constant(q, v)).asRight
@@ -403,7 +430,7 @@ object CanonicalEmitter {
   )
 
   /** Case names the generated named-texts enum body would shadow (`Option` in `fromWire`, its own `values`). */
-  private val reservedNamed = Set("Option", "String", "values", "wire")
+  private val reservedNamed = Set("Option", "String", "List", "values", "wire")
 
   /** Blank-line-led documentation lines, or nothing: a paragraph after a comment's first line. */
   def paragraph(lines: Vector[String]): Vector[String] = if (lines.isEmpty) lines else "" +: lines

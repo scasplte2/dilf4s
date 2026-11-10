@@ -113,6 +113,33 @@ object CanonicalEmitterSuite extends FunSuite {
     expect.same(Left(GenError.NameClash("t", "AB", Vector("a-b", "a_b"))), gen("c-d = uint\nc_d = text\na-b = uint\na_b = text\n"))
   }
 
+  test("text alternatives have exact naming refusals before emitting Scala") {
+    expect
+      .same(Left(GenError.NameClash("t:r", "AB", Vector("a-b", "a_b"))), gen("r = \"a-b\" / \"a_b\""))
+      .and(
+        expect.same(
+          Left(GenError.Unsupported("t:r", UnsupportedFeature.OutsideProfile(ProfileRefusal.InvalidAlternativeName("!")))),
+          gen("r = \"!\" / \"ok\"")
+        )
+      )
+      .and(List("List", "R").foldMap { name =>
+        expect.same(Left(GenError.ReservedName("t:r", Language.Scala, name)), gen(s"r = \"$name\" / \"ok\""))
+      })
+      .and(List("Set", "Vector", "Literal").foldMap { name =>
+        expect
+          .same(Left(GenError.ReservedName("t:r", Language.Scala, name)), gen(s"r = \"$name\" / rec\nrec = { \"x\": uint }"))
+          .and(expect(gen(s"r = \"$name\" / \"ok\"").isRight, s"$name shadows no pure text enum dependency"))
+      })
+  }
+
+  test("plain text alternatives and error kinds are enums with original wire spellings") {
+    val result =
+      gen("r = \"not-ready\" / \"ready\"\ne-kind = \"Failed\" / \"Missing\"\ne = { \"kind\": \"Failed\" // \"kind\": \"Missing\" }")
+    expect(result.exists(_.contains("case NotReady extends R(\"not-ready\")")), result.toString)
+      .and(expect(result.exists(_.contains("def kind: EKind = EKind.Failed")), result.toString))
+      .and(expect(result.exists(_.contains("def fromWire(wire: String): Option[R]")), result.toString))
+  }
+
   test("a rule named like a type the generated Scala refers to is a ReservedName in Scala") {
     val names = List(
       "big-int"           -> "BigInt",

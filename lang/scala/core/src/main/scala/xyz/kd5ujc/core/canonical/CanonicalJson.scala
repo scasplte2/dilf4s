@@ -84,25 +84,25 @@ object CanonicalJson {
               case Right((v, next, now)) => run(s, maxScale, keys, Deliver(v, next, stack, depth), now)
               case Left(e)               => e.asLeft
             }
-          case None => syntax(p, "expectedValue").asLeft
+          case None => syntax(p, JsonSyntaxReason.ExpectedValue).asLeft
         }
 
       case ExpectKey(p0, acc, seen, stack, depth) =>
         val p = skipWs(s, p0)
-        if (!charAt(s, p).contains('"')) syntax(p, "expectedMemberName").asLeft
+        if (!charAt(s, p).contains('"')) syntax(p, JsonSyntaxReason.ExpectedMemberName).asLeft
         else
           string(s, p) match {
             case Left(e)                               => e.asLeft
             case Right((key, _)) if seen.contains(key) => DuplicateKey(Preview.of(key)).asLeft
             case Right((key, next)) =>
               val colon = skipWs(s, next)
-              if (!charAt(s, colon).contains(':')) syntax(colon, "expectedColon").asLeft
+              if (!charAt(s, colon).contains(':')) syntax(colon, JsonSyntaxReason.ExpectedColon).asLeft
               else run(s, maxScale, keys, ExpectValue(colon + 1, InObject(acc, seen.added(key), key) :: stack, depth), spent)
           }
 
       case Deliver(v, p0, Nil, _) =>
         val p = skipWs(s, p0)
-        Either.cond(p == s.length, v, syntax(p, "trailingContent"))
+        Either.cond(p == s.length, v, syntax(p, JsonSyntaxReason.TrailingContent))
 
       case Deliver(v, p0, InArray(acc) :: rest, depth) =>
         val p = skipWs(s, p0)
@@ -113,7 +113,7 @@ object CanonicalJson {
               case Right(arr) => run(s, maxScale, keys, Deliver(arr, p + 1, rest, depth - 1), spent)
               case Left(e)    => e.asLeft
             }
-          case _ => syntax(p, "expectedCommaOrBracket").asLeft
+          case _ => syntax(p, JsonSyntaxReason.ExpectedCommaOrBracket).asLeft
         }
 
       case Deliver(v, p0, InObject(acc, seen, key) :: rest, depth) =>
@@ -125,7 +125,7 @@ object CanonicalJson {
               case Right(m) => run(s, maxScale, keys, Deliver(m, p + 1, rest, depth - 1), spent)
               case Left(e)  => e.asLeft
             }
-          case _ => syntax(p, "expectedCommaOrBrace").asLeft
+          case _ => syntax(p, JsonSyntaxReason.ExpectedCommaOrBrace).asLeft
         }
     }
 
@@ -137,7 +137,7 @@ object CanonicalJson {
       case Some('f') if s.startsWith("false", p) => (False, p + 5, spent).asRight
       case Some('n') if s.startsWith("null", p)  => (CNull, p + 4, spent).asRight
       case Some(c) if c == '-' || isDigit(c)     => parseNumber(s, p, maxScale, spent)
-      case _                                     => syntax(p, "expectedValue").asLeft
+      case _                                     => syntax(p, JsonSyntaxReason.ExpectedValue).asLeft
     }
 
   /**
@@ -197,9 +197,9 @@ object CanonicalJson {
     @tailrec
     def go(i: Int, segment: Int, acc: Vector[String]): Either[CanonicalError, (String, Int)] =
       charAt(s, i) match {
-        case None               => syntax(i, "unterminatedString").asLeft
+        case None               => syntax(i, JsonSyntaxReason.UnterminatedString).asLeft
         case Some('"')          => ((acc :+ s.substring(segment, i)).mkString, i + 1).asRight
-        case Some(c) if c < ' ' => syntax(i, "controlCharacter").asLeft
+        case Some(c) if c < ' ' => syntax(i, JsonSyntaxReason.ControlCharacter).asLeft
         case Some('\\') =>
           val prefix = acc :+ s.substring(segment, i)
           charAt(s, i + 1) match {
@@ -213,7 +213,7 @@ object CanonicalJson {
             case Some('t')  => go(i + 2, i + 2, prefix :+ "\t")
             case Some('u') if i + 6 <= s.length && s.substring(i + 2, i + 6).forall(isHex) =>
               go(i + 6, i + 6, prefix :+ Integer.parseInt(s.substring(i + 2, i + 6), 16).toChar.toString)
-            case _ => syntax(i, "invalidEscape").asLeft
+            case _ => syntax(i, JsonSyntaxReason.InvalidEscape).asLeft
           }
         case Some(_) => go(i + 1, segment, acc)
       }
@@ -235,9 +235,9 @@ object CanonicalJson {
   private def isHex(c:       Char): Boolean = isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
   private def syntax(offset: Int, reason: JsonSyntaxReason): CanonicalError = JsonSyntax(offset.toLong, reason)
 
-  private val nonTerminating: CanonicalError = NotJsonRepresentable("non-terminating rational")
+  private val nonTerminating: CanonicalError = NotJsonRepresentable(NotJson.NonTerminatingRational)
 
-  private val overLong: CanonicalError = NotJsonRepresentable("over-long number")
+  private val overLong: CanonicalError = NotJsonRepresentable(NotJson.OverLongNumber)
 
   /**
    * An integer's JSON text, which [[parse]] reads back: total, since every integer is within
@@ -422,7 +422,7 @@ object CanonicalJson {
         // "0x" and two hex digits a byte, quoted: its length is known before the hex is built
         case CBytes(b) if hexBytes =>
           if (out.left < 4L || b.size > (out.left - 4L) / 2) out.refused.asLeft else out.ascii("\"0x" + b.toHex + "\"").map((None, _))
-        case CBytes(_)  => RenderError.Canonical(NotJsonRepresentable("bytes")).asLeft
+        case CBytes(_)  => RenderError.Canonical(NotJsonRepresentable(NotJson.Bytes)).asLeft
         case CArray(vs) => out.ascii("[").map((Some(Pending.Items(vs, 0)), _))
         case CMap(m)    => out.ascii("{").map((Some(Pending.Members(m.codePointOrdered, 0)), _))
       }

@@ -7,21 +7,21 @@ import xyz.kd5ujc.core.canonical.{CanonicalValue, Codec}
  * Why `expand_message_xmd` (RFC 9380 section 5.3.1) is refused, checked in this order: "emptyDst" (the domain
  * separation tag is empty), "outputLength" (the length asked for is not 1 to `limit`).
  */
-type ExpansionRefusal = "emptyDst" | "outputLength"
+enum ExpansionRefusal(val wire: String) {
+  case EmptyDst extends ExpansionRefusal("emptyDst")
+  case OutputLength extends ExpansionRefusal("outputLength")
+}
 
 object ExpansionRefusal {
-  /** Every alternative, in schema order. */
-  val values: Vector[ExpansionRefusal] = Vector("emptyDst", "outputLength")
+
+  private lazy val byWire = ExpansionRefusal.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[ExpansionRefusal] = byWire.get(wire)
 
   lazy val codec: Codec[ExpansionRefusal] = Codec(
-    {
-      case "emptyDst" => Codec.literalText["emptyDst"]("emptyDst").encode("emptyDst")
-      case "outputLength" => Codec.literalText["outputLength"]("outputLength").encode("outputLength")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[ExpansionRefusal](v, List(
-
-      ), List(("emptyDst", "emptyDst": ExpansionRefusal), ("outputLength", "outputLength": ExpansionRefusal)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[ExpansionRefusal](v, List(), List(("emptyDst", ExpansionRefusal.EmptyDst), ("outputLength", ExpansionRefusal.OutputLength)))
   )
 }
 
@@ -41,43 +41,43 @@ sealed trait HashError extends Product with Serializable {
 
 object HashError {
   final case class InvalidLength(algorithm: String, expected: Long, actual: Long) extends HashError {
-    def kind: HashErrorKind = "InvalidLength"
+    def kind: HashErrorKind = HashErrorKind.InvalidLength
   }
 
   final case class InvalidHex(offset: Long) extends HashError {
-    def kind: HashErrorKind = "InvalidHex"
+    def kind: HashErrorKind = HashErrorKind.InvalidHex
   }
 
   final case class InvalidDomainTag(tag: xyz.kd5ujc.core.canonical.Preview) extends HashError {
-    def kind: HashErrorKind = "InvalidDomainTag"
+    def kind: HashErrorKind = HashErrorKind.InvalidDomainTag
   }
 
   final case class InvalidExpansion(refusal: ExpansionRefusal, algorithm: String, limit: Long) extends HashError {
-    def kind: HashErrorKind = "InvalidExpansion"
+    def kind: HashErrorKind = HashErrorKind.InvalidExpansion
   }
 
   final case class UnknownAlgorithm(name: xyz.kd5ujc.core.canonical.Preview) extends HashError {
-    def kind: HashErrorKind = "UnknownAlgorithm"
+    def kind: HashErrorKind = HashErrorKind.UnknownAlgorithm
   }
 }
 
-type HashErrorKind = "InvalidLength" | "InvalidHex" | "InvalidDomainTag" | "InvalidExpansion" | "UnknownAlgorithm"
+enum HashErrorKind(val wire: String) {
+  case InvalidLength extends HashErrorKind("InvalidLength")
+  case InvalidHex extends HashErrorKind("InvalidHex")
+  case InvalidDomainTag extends HashErrorKind("InvalidDomainTag")
+  case InvalidExpansion extends HashErrorKind("InvalidExpansion")
+  case UnknownAlgorithm extends HashErrorKind("UnknownAlgorithm")
+}
 
 object HashErrorKind {
-  /** Every alternative, in schema order. */
-  val values: Vector[HashErrorKind] = Vector("InvalidLength", "InvalidHex", "InvalidDomainTag", "InvalidExpansion", "UnknownAlgorithm")
+
+  private lazy val byWire = HashErrorKind.values.iterator.map(m => m.wire -> m).toMap
+
+  /** The member written as `wire`, if any. */
+  def fromWire(wire: String): Option[HashErrorKind] = byWire.get(wire)
 
   lazy val codec: Codec[HashErrorKind] = Codec(
-    {
-      case "InvalidLength" => Codec.literalText["InvalidLength"]("InvalidLength").encode("InvalidLength")
-      case "InvalidHex" => Codec.literalText["InvalidHex"]("InvalidHex").encode("InvalidHex")
-      case "InvalidDomainTag" => Codec.literalText["InvalidDomainTag"]("InvalidDomainTag").encode("InvalidDomainTag")
-      case "InvalidExpansion" => Codec.literalText["InvalidExpansion"]("InvalidExpansion").encode("InvalidExpansion")
-      case "UnknownAlgorithm" => Codec.literalText["UnknownAlgorithm"]("UnknownAlgorithm").encode("UnknownAlgorithm")
-    },
-    (v: CanonicalValue) =>
-      Codec.selectAlternative[HashErrorKind](v, List(
-
-      ), List(("InvalidLength", "InvalidLength": HashErrorKind), ("InvalidHex", "InvalidHex": HashErrorKind), ("InvalidDomainTag", "InvalidDomainTag": HashErrorKind), ("InvalidExpansion", "InvalidExpansion": HashErrorKind), ("UnknownAlgorithm", "UnknownAlgorithm": HashErrorKind)))
+    m => Codec.text.encode(m.wire),
+    (v: CanonicalValue) => Codec.selectAlternative[HashErrorKind](v, List(), List(("InvalidLength", HashErrorKind.InvalidLength), ("InvalidHex", HashErrorKind.InvalidHex), ("InvalidDomainTag", HashErrorKind.InvalidDomainTag), ("InvalidExpansion", HashErrorKind.InvalidExpansion), ("UnknownAlgorithm", HashErrorKind.UnknownAlgorithm)))
   )
 }

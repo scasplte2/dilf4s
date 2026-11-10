@@ -13,9 +13,9 @@ import xyz.kd5ujc.accumulators.merkle.{MerkleError, MerkleErrorKind}
 import xyz.kd5ujc.accumulators.poseidon.{PoseidonMerkleError, PoseidonMerkleErrorKind}
 import xyz.kd5ujc.accumulators.trie.{TrieError, TrieErrorKind}
 import xyz.kd5ujc.accumulators.versioned.{StateKeyError, StateKeyErrorKind, VersionedTrieError, VersionedTrieErrorKind}
-import xyz.kd5ujc.core.canonical.{CanonicalJson, Codec}
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalJson, Codec, DecodeFailure}
 import xyz.kd5ujc.models.merkle_vectors.MerkleVectors
-import xyz.kd5ujc.models.refusal_vectors.{MerkleRefusal, PoseidonRefusal, RefusalVectors, TrieRefusal, VtKeyCause, VtRefusal, VtTrieCause}
+import xyz.kd5ujc.models.refusal_vectors._
 import xyz.kd5ujc.models.trie_vectors.TrieVectors
 import xyz.kd5ujc.models.versioned_trie_vectors.{VersionedTrieVectors, VtStateKeyRefusal, VtUnknownVersion, VtVersionNotIncreasing}
 
@@ -33,57 +33,81 @@ object RefusalCoverageSuite extends SimpleIOSuite {
   inline def kinds[T](using m: Mirror.SumOf[T]): List[String] =
     constValueTuple[m.MirroredElemLabels].productIterator.map(_.toString).toList
 
-  final case class Family(name: String, kinds: List[String], cases: List[String], exempt: Map[String, String])
+  enum FamilyName { case VersionedTrie, Merkle, Trie, Poseidon, StateKeys }
+  type Kind = VersionedTrieErrorKind | MerkleErrorKind | TrieErrorKind | PoseidonMerkleErrorKind | StateKeyErrorKind
+
+  def wire(kind: Kind): String = kind match {
+    case k: VersionedTrieErrorKind  => k.wire
+    case k: MerkleErrorKind         => k.wire
+    case k: TrieErrorKind           => k.wire
+    case k: PoseidonMerkleErrorKind => k.wire
+    case k: StateKeyErrorKind       => k.wire
+  }
+
+  final case class Family(name: FamilyName, kinds: List[Kind], cases: List[String], exempt: Map[Kind, String])
+  final case class ReadFailure(file: String, cause: CanonicalError | DecodeFailure) extends RuntimeException(s"$file: $cause")
 
   val families: List[Family] = List(
     Family(
-      "versioned trie",
+      FamilyName.VersionedTrie,
       VersionedTrieErrorKind.values.toList,
       kinds[VersionedTrieError],
-      List("Empty", "VersionConflict", "CommitRewrite", "NotRetained", "Store").map(_ -> "the store's own refusal").toMap
+      List(
+        VersionedTrieErrorKind.Empty,
+        VersionedTrieErrorKind.VersionConflict,
+        VersionedTrieErrorKind.CommitRewrite,
+        VersionedTrieErrorKind.NotRetained,
+        VersionedTrieErrorKind.Store
+      ).map(_ -> "the store's own refusal").toMap
     ),
-    Family("merkle", MerkleErrorKind.values.toList, kinds[MerkleError], Map.empty),
-    Family("trie", TrieErrorKind.values.toList, kinds[TrieError], List("MissingNode", "InvalidNode").map(_ -> "a store read").toMap),
+    Family(FamilyName.Merkle, MerkleErrorKind.values.toList, kinds[MerkleError], Map.empty),
     Family(
-      "poseidon",
+      FamilyName.Trie,
+      TrieErrorKind.values.toList,
+      kinds[TrieError],
+      List(TrieErrorKind.MissingNode, TrieErrorKind.InvalidNode).map(_ -> "a store read").toMap
+    ),
+    Family(
+      FamilyName.Poseidon,
       PoseidonMerkleErrorKind.values.toList,
       kinds[PoseidonMerkleError],
-      List("Depth", "OccupiedPosition").map(_ -> "building a tree").toMap
+      List(PoseidonMerkleErrorKind.Depth, PoseidonMerkleErrorKind.OccupiedPosition).map(_ -> "building a tree").toMap
     ),
-    Family("state keys", StateKeyErrorKind.values.toList, kinds[StateKeyError], Map.empty)
+    Family(FamilyName.StateKeys, StateKeyErrorKind.values.toList, kinds[StateKeyError], Map.empty)
   )
 
   /** A family's kinds with neither a row nor an exemption. */
-  def uncovered(f: Family, pinned: Set[String]): List[String] = f.kinds.filterNot(k => pinned(k) || f.exempt.contains(k))
+  def uncovered[K](all: List[K], pinned: Set[K], exempt: Set[K]): List[K] = all.filterNot(k => pinned(k) || exempt(k))
 
   private def load[A](file: String, codec: Codec[A]): IO[A] =
     IO.blocking(new String(Files.readAllBytes(Paths.get("shared", "vectors", file)), UTF_8)).flatMap { text =>
       CanonicalJson
         .parse(text)
-        .leftMap(_.toString)
-        .flatMap(codec.decoder.decode(_).leftMap(_.message))
-        .leftMap(e => new IllegalStateException(s"$file: $e"))
+        .flatMap(codec.decoder.decode(_))
+        .leftMap(ReadFailure(file, _))
         .liftTo[IO]
     }
 
   /** The family a check refuses as (conformance.md §6). */
-  private def family(check: String): String =
-    if (check.startsWith("vt-")) "versioned trie"
-    else if (check.startsWith("merkle-")) "merkle"
-    else if (check.startsWith("trie-")) "trie"
-    else if (check.startsWith("poseidon-")) "poseidon"
-    else check
+  private def family(check: RefusalCheck): FamilyName = check match {
+    case RefusalCheck.VtValue | RefusalCheck.VtChunk | RefusalCheck.VtDelta | RefusalCheck.VtProof | RefusalCheck.VtState |
+        RefusalCheck.VtHistorical | RefusalCheck.VtReplica | RefusalCheck.VtCommit =>
+      FamilyName.VersionedTrie
+    case RefusalCheck.MerkleInclusion | RefusalCheck.MerkleConsistency | RefusalCheck.MerkleVerify => FamilyName.Merkle
+    case RefusalCheck.TrieLookup | RefusalCheck.TrieVerify | RefusalCheck.TriePrefixVerify         => FamilyName.Trie
+    case RefusalCheck.PoseidonProof                                                                => FamilyName.Poseidon
+  }
 
   /** Each refusal row's family (by its key) and kind, and the check's family: the two must agree. */
-  val refusals: IO[List[(String, String, String)]] =
+  val refusals: IO[List[(FamilyName, FamilyName, Kind)]] =
     load("refusals_v1.json", RefusalVectors.codec).map(_.cases.toList.flatMap { c =>
       val f = family(c.check)
       c.outcome match {
-        case _: String          => Nil
-        case r: VtRefusal       => List((f, "versioned trie", r.versionedTrie: String))
-        case r: MerkleRefusal   => List((f, "merkle", r.merkle: String))
-        case r: TrieRefusal     => List((f, "trie", r.trie: String))
-        case r: PoseidonRefusal => List((f, "poseidon", r.poseidonMerkle: String))
+        case RefusalOutcome.Accepted => Nil
+        case r: VtRefusal            => List((f, FamilyName.VersionedTrie, r.versionedTrie: Kind))
+        case r: MerkleRefusal        => List((f, FamilyName.Merkle, r.merkle: Kind))
+        case r: TrieRefusal          => List((f, FamilyName.Trie, r.trie: Kind))
+        case r: PoseidonRefusal      => List((f, FamilyName.Poseidon, r.poseidonMerkle: Kind))
       }
     })
 
@@ -92,7 +116,7 @@ object RefusalCoverageSuite extends SimpleIOSuite {
    * kind), the `malformed` rows of merkle_v1.json and trie_v1.json, and versioned_trie_v1.json's state keys, bytes,
    * namespaces and version errors.
    */
-  val pinned: IO[Map[String, Set[String]]] =
+  val pinned: IO[Map[FamilyName, Set[Kind]]] =
     (
       load("refusals_v1.json", RefusalVectors.codec),
       load("merkle_v1.json", MerkleVectors.codec),
@@ -101,19 +125,19 @@ object RefusalCoverageSuite extends SimpleIOSuite {
       refusals
     ).mapN { (r, merkle, trie, vt, rows) =>
       val causes = r.cases.toList.flatMap(_.outcome match {
-        case VtRefusal(_, Some(VtTrieCause(t)), _, _, _)   => List("trie" -> (t: String))
-        case VtRefusal(_, Some(VtKeyCause(k, _)), _, _, _) => List("state keys" -> (k: String))
+        case VtRefusal(_, Some(VtTrieCause(t)), _, _, _)   => List(FamilyName.Trie -> (t: Kind))
+        case VtRefusal(_, Some(VtKeyCause(k, _)), _, _, _) => List(FamilyName.StateKeys -> (k: Kind))
         case _                                             => Nil
       })
       val keyRows = (vt.stateKeys.map(_.outcome) ++ vt.stateKeyBytes.map(_.outcome) ++ vt.namespaces.map(_.outcome)).toList.collect {
-        case k: VtStateKeyRefusal => "state keys" -> (k.kind: String)
+        case k: VtStateKeyRefusal => FamilyName.StateKeys -> (k.kind: Kind)
       }
       val versionRows = vt.versionErrors.toList.map(_.outcome match {
-        case _: VtVersionNotIncreasing => "versioned trie" -> "VersionNotIncreasing"
-        case _: VtUnknownVersion       => "versioned trie" -> "UnknownVersion"
+        case _: VtVersionNotIncreasing => FamilyName.VersionedTrie -> VersionedTrieErrorKind.VersionNotIncreasing
+        case _: VtUnknownVersion       => FamilyName.VersionedTrie -> VersionedTrieErrorKind.UnknownVersion
       })
-      (rows.map((_, f, k) => f -> k) ++ causes ++ keyRows ++ versionRows ++ merkle.malformed.toList.map("merkle" -> _.error) ++
-      trie.malformed.toList.map("trie" -> _.error))
+      (rows.map((_, f, k) => f -> k) ++ causes ++ keyRows ++ versionRows ++ merkle.malformed.toList.map(FamilyName.Merkle -> _.error) ++
+      trie.malformed.toList.map(FamilyName.Trie -> _.error))
         .groupMap(_._1)(_._2)
         .view
         .mapValues(_.toSet)
@@ -131,7 +155,7 @@ object RefusalCoverageSuite extends SimpleIOSuite {
     load("refusals_v1.json", RefusalVectors.codec).map(_.cases.toList.foldMap { c =>
       c.outcome match {
         case VtRefusal(_, Some(VtKeyCause(k, segment)), _, _, _) =>
-          val names = k == "InvalidSegment" || k == "SegmentTooLong"
+          val names = k == StateKeyErrorKind.InvalidSegment || k == StateKeyErrorKind.SegmentTooLong
           expect(segment.isDefined == names, s"${c.name}: $k ${if (names) "without" else "with"} a segment")
         case _ => success
       }
@@ -139,14 +163,17 @@ object RefusalCoverageSuite extends SimpleIOSuite {
   }
 
   test("every family's generated kinds are its cases, in order") {
-    IO.pure(families.foldMap(f => expect.same(f.kinds, f.cases)))
+    IO.pure(families.foldMap(f => expect.same(f.kinds.map(wire), f.cases)))
   }
 
   test("every refusal kind of the verifiers and the versioned trie has a vector row, or is exempt with a reason") {
     pinned.map { p =>
       families.foldMap { f =>
         val rows = p.getOrElse(f.name, Set.empty)
-        expect(uncovered(f, rows).isEmpty, s"${f.name}: no vector row pins ${uncovered(f, rows).mkString(", ")}")
+        expect(
+          uncovered(f.kinds, rows, f.exempt.keySet).isEmpty,
+          s"${f.name}: no vector row pins ${uncovered(f.kinds, rows, f.exempt.keySet).mkString(", ")}"
+        )
           .and(expect(f.exempt.keySet.subsetOf(f.kinds.toSet), s"${f.name}: exempts kinds it does not have: ${f.exempt.keySet -- f.kinds}"))
           .and(expect(f.exempt.keySet.intersect(rows).isEmpty, s"${f.name}: exempts pinned kinds: ${f.exempt.keySet.intersect(rows)}"))
           .and(expect(rows.subsetOf(f.kinds.toSet), s"${f.name}: rows name kinds it does not have: ${rows -- f.kinds}"))
@@ -159,23 +186,18 @@ object RefusalCoverageSuite extends SimpleIOSuite {
       val table =
         spec.linesIterator.dropWhile(!_.startsWith("| Family | Kind | Why it has no row |")).takeWhile(_.startsWith("|")).mkString("\n")
       families.foldMap { f =>
-        f.exempt.keySet.toList.foldMap(k => expect(table.contains(s"`$k`"), s"${f.name}: $k is exempt here but not in conformance.md §6"))
+        f.exempt.keySet.toList
+          .foldMap(k => expect(table.contains(s"`${wire(k)}`"), s"${f.name}: $k is exempt here but not in conformance.md §6"))
       }
     }
   }
 
-  sealed trait Probe
-  object Probe {
-    final case class Pinned(reason: String) extends Probe
-    case object Unpinned extends Probe
-    case object Exempted extends Probe
-  }
+  enum Probe { case Pinned, Unpinned, Exempted }
 
-  pureTest("the gate finds a case with no row: the cases come from the compiler, not from a list") {
-    val probe = Family("probe", kinds[Probe], kinds[Probe], Map("Exempted" -> "a reason"))
+  pureTest("the gate finds an unpinned kind and preserves its exemption") {
+    def missing(pinned: Set[Probe]): List[Probe] = uncovered(Probe.values.toList, pinned, Set(Probe.Exempted))
     expect
-      .same(List("Pinned", "Unpinned", "Exempted"), probe.kinds)
-      .and(expect.same(List("Unpinned"), uncovered(probe, Set("Pinned"))))
-      .and(expect.same(Nil, uncovered(probe, Set("Pinned", "Unpinned"))))
+      .same(List(Probe.Unpinned), missing(Set(Probe.Pinned)))
+      .and(expect.same(List.empty[Probe], missing(Set(Probe.Pinned, Probe.Unpinned))))
   }
 }

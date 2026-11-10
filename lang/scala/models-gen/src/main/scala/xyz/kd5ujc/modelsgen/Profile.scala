@@ -74,7 +74,7 @@ final case class UnionAlternative(rule: QName, required: Set[String], allowed: S
 final case class TextChoice(rule: QName, texts: Vector[String], names: Vector[String], named: Boolean = false)
 
 /** One kind of an error family, with its fields in schema order and its documentation (the CDDL comment above it). */
-final case class ErrorCase(kind: String, fields: Vector[ProfileField], doc: Vector[String] = Vector.empty)
+final case class ErrorCase(kind: String, member: String, fields: Vector[ProfileField], doc: Vector[String] = Vector.empty)
 
 /** One member of a [[ModelRule.NamedTexts]]: its identifier (from its rule's name), its text, and its documentation. */
 final case class NamedText(name: String, text: String, doc: Vector[String])
@@ -349,22 +349,22 @@ final class Profile(val schema: Schema) {
       es.filter(_.key.contains(RKey.TextKey("kind"))) match {
         case Vector(e @ REntry(occ, _, _, RT.LitText(k), _)) if occ == Occ.Once && k.matches("[A-Z][A-Za-z0-9]*") =>
           fields(q, es.filterNot(_.key.contains(RKey.TextKey("kind"))), inError = true)
-            .flatMap(fs => fs.traverse_(f => errorField(q, f.tpe, Set.empty)).as(ErrorCase(k, fs, e.doc)))
+            .flatMap(fs => fs.traverse_(f => errorField(q, f.tpe, Set.empty)).as(ErrorCase(k, CanonicalEmitter.pascal(k), fs, e.doc)))
         case Vector(REntry(occ, _, _, RT.LitText(k), _)) if occ == Occ.Once =>
           outside(q, ProfileRefusal.InvalidErrorKind(k)).asLeft
         case _ => outside(q, ProfileRefusal.ErrorKindField(es)).asLeft
       }
     }.flatMap { cases =>
       val kinds = cases.map(_.kind)
-      val listed = textChoice(kindRule).toOption.flatten.map(_.texts)
+      val listed = textChoice(kindRule).toOption.flatten
       if (kinds.distinct.size != kinds.size)
         outside(q, ProfileRefusal.RepeatedErrorKinds(kinds.diff(kinds.distinct))).asLeft
-      else if (!listed.contains(kinds))
-        outside(
-          q,
-          ProfileRefusal.ErrorKindOrder(kindRule, kinds, listed)
-        ).asLeft
-      else ModelRule.ErrorFamily(kindRule, cases).asRight
+      else
+        listed match {
+          case Some(choice) if choice.texts == kinds =>
+            ModelRule.ErrorFamily(kindRule, cases.zip(choice.names).map((c, member) => c.copy(member = member))).asRight
+          case _ => outside(q, ProfileRefusal.ErrorKindOrder(kindRule, kinds, listed.map(_.texts))).asLeft
+        }
     }
   }
 
