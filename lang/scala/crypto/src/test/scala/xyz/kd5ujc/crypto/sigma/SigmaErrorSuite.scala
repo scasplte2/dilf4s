@@ -1,6 +1,6 @@
 package xyz.kd5ujc.crypto.sigma
 
-import scala.compiletime.testing.typeCheckErrors
+import scala.compiletime.testing.{ErrorKind, typeCheckErrors}
 
 import xyz.kd5ujc.core.canonical.{CanonicalValue, ValueKind}
 import xyz.kd5ujc.crypto.sigma.SigmaError.{PointRole, PropositionReason}
@@ -45,10 +45,23 @@ object SigmaErrorSuite extends FunSuite {
       )
   }
 
+  test("typed sigma constructor positive controls compile") {
+    val accepted = List(
+      typeCheckErrors("import xyz.kd5ujc.crypto.sigma.*; SigmaError.InvalidProposition(SigmaError.PropositionReason.EmptyChildren)"),
+      typeCheckErrors(
+        "import xyz.kd5ujc.crypto.sigma.*; SigmaError.InvalidPoint(SigmaError.PointRole.G, Secp256k1Group.DecodeError.InvalidPoint)"
+      )
+    )
+    expect.same(2, accepted.size).and(expect.same(0, accepted.flatten.size))
+  }
+
   test("string-taking sigma constructors and the generated escape hatch are unavailable") {
+    val proposition = typeCheckErrors("xyz.kd5ujc.crypto.sigma.SigmaError.InvalidProposition(\"bad\")")
+    val point = typeCheckErrors("xyz.kd5ujc.crypto.sigma.SigmaError.InvalidPoint(\"pk\", \"bad\")")
+    val legacy = typeCheckErrors("xyz.kd5ujc.models.crypto_errors.SigmaError")
     expect
-      .same(1, typeCheckErrors("xyz.kd5ujc.crypto.sigma.SigmaError.InvalidProposition(\"bad\")").size)
-      .and(expect.same(2, typeCheckErrors("xyz.kd5ujc.crypto.sigma.SigmaError.InvalidPoint(\"pk\", \"bad\")").size))
-      .and(expect.same(1, typeCheckErrors("xyz.kd5ujc.models.crypto_errors.SigmaError").size))
+      .same(List(ErrorKind.Typer), proposition.map(_.kind))
+      .and(expect.same(List(ErrorKind.Typer, ErrorKind.Typer), point.map(_.kind)))
+      .and(expect.same(List(ErrorKind.Typer), legacy.map(_.kind)))
   }
 }

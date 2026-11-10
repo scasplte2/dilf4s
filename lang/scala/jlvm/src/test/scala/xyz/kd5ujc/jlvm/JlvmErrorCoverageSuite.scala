@@ -81,6 +81,10 @@ object JlvmErrorCoverageSuite extends SimpleIOSuite {
     case xyz.kd5ujc.models.jlvm_errors.JlvmSite.Var => SiteKind.Variable
   }
 
+  pureTest("native crypto cause families exactly match generated protocol kinds") {
+    expect.same(kinds[CryptoCause], CryptoCauseKind.values.toList.map(_.wire))
+  }
+
   test("every JLVM error kind has a vector row") {
     errors.map { es =>
       val all = JlvmErrorKind.values.toList

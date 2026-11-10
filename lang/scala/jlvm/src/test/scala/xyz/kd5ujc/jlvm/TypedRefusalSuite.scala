@@ -1,6 +1,6 @@
 package xyz.kd5ujc.jlvm
 
-import scala.compiletime.testing.typeCheckErrors
+import scala.compiletime.testing.{ErrorKind, typeCheckErrors}
 import scala.compiletime.{erasedValue, summonFrom}
 import scala.deriving.Mirror
 
@@ -68,7 +68,7 @@ object TypedRefusalSuite extends FunSuite {
       .and(expect.same(true, typedFields[Long *: Preview *: EmptyTuple]))
   }
 
-  test("native JLVM refusal cases cannot gain raw string payloads") {
+  test("JLVM and Sigma owned payloads are typed; external causes retain their owners types") {
     expect(typedPayloads[JlvmError], "JlvmError fields must be typed")
       .and(expect(typedPayloads[MalformedReason], "malformed reasons must be typed"))
       .and(expect(typedPayloads[TypeReason], "type reasons must be typed"))
@@ -85,7 +85,22 @@ object TypedRefusalSuite extends FunSuite {
       .and(expect(typedPayloads[SigmaError.PropositionReason], "sigma proposition reasons must be typed"))
       .and(expect(typedPayloads[Secp256k1Group.DecodeError], "point decoding reasons must be typed"))
       .and(expect(typedPayloads[ChildPoint.Error], "child index errors must be typed"))
-      .and(expect(typedPayloads[CryptoCause], "crypto causes must retain their domain types"))
+      .and(
+        expect(typedPayloads[CryptoCause], "crypto cause wrappers must retain external owner types; leaf payloads are outside this guard")
+      )
+  }
+
+  test("typed constructor positive controls compile in the same namespace") {
+    val accepted = List(
+      typeCheckErrors("import xyz.kd5ujc.jlvm.*; import JlvmError.*; JlvmError.Malformed(MalformedReason.NotJson)"),
+      typeCheckErrors("import xyz.kd5ujc.jlvm.*; import JlvmError.*; JlvmError.Type(Op.Add, TypeReason.Entry)"),
+      typeCheckErrors("import xyz.kd5ujc.jlvm.*; import JlvmError.*; JlvmError.Arity(Op.Add, ArgumentCount.Exactly(2), 0)"),
+      typeCheckErrors("import xyz.kd5ujc.jlvm.*; import JlvmError.*; JlvmError.Arithmetic(Op.Add, ArithmeticReason.DivisionByZero)"),
+      typeCheckErrors("import xyz.kd5ujc.jlvm.*; import JlvmError.*; JlvmError.Domain(Op.Add, DomainReason.InvalidHex)"),
+      typeCheckErrors("import xyz.kd5ujc.jlvm.*; import JlvmError.*; JlvmError.Crypto(Op.Add, CryptoReason.Unavailable)"),
+      typeCheckErrors("import xyz.kd5ujc.jlvm.*; import JlvmError.*; JlvmError.Limit(LimitReason.ProgramSize(1))")
+    )
+    expect.same(7, accepted.size).and(expect.same(0, accepted.flatten.size))
   }
 
   test("the compiler rejects every former string-taking error constructor") {
@@ -104,7 +119,7 @@ object TypedRefusalSuite extends FunSuite {
           expect(
             errors.size == expected,
             s"$name must reject its former string constructor with exactly $expected compiler errors; got $errors"
-          )
+          ).and(expect.same(List.fill(expected)(ErrorKind.Typer), errors.map(_.kind)))
         )
     }
   }
@@ -114,7 +129,7 @@ object TypedRefusalSuite extends FunSuite {
       typeCheckErrors("xyz.kd5ujc.models.jlvm_errors.JlvmError.Malformed(\"bad\")"),
       typeCheckErrors("xyz.kd5ujc.models.jlvm_errors.JlvmCryptoCause")
     )
-    errors.foldLeft(expect.same(2, errors.size))((acc, e) => acc.and(expect.same(1, e.size)))
+    errors.foldLeft(expect.same(2, errors.size))((acc, e) => acc.and(expect.same(List(ErrorKind.Typer), e.map(_.kind))))
   }
 
   test("type refusals preserve expected and actual kinds, and arity preserves exact counts") {

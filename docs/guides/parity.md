@@ -234,6 +234,8 @@ The vector columns above say what is gated. These tables say where each capabili
 | Bloom errors (`BloomError`) | hand-written ADT, `lang/scala/core/m/bloom/BloomFilter.scala:36`, not generated and not pinned (**GAP-6**) | missing | missing |
 | ecrecover's refusal | `Either[Ecrecover.Error, …]`: distinct length, recovery-ID and public-key cases; `toCryptoError` adapts to the shared family (**GAP-4** vectors remain) | `CryptoError`, `rs/signing/src/ecrecover.rs:33` | `CryptoRefusal`, `ts/signing/src/ecrecover.ts:38` |
 
+Native error wrappers retain the module-owned cause types. Other crypto/proof leaf families still carry diagnostic string fields and remain separate migration work. The Java binding preserves its documented diagnostic records, rendering native structured reasons at that boundary.
+
 Scala native ecrecover now exposes structured refusal cases. Java `Ecrecover.address` maps an invalid public key to `InvalidKey`, matching Rust; it previously returned `InvalidEncoding`. Decoder diagnostic wording may differ across implementations; messages remain informative under conformance §2, while failure kinds and normative payloads remain exact.
 
 ### 3.3 Signatures and key derivation (`signing.md`)

@@ -47,6 +47,7 @@ object CanonicalEmitterSuite extends FunSuite {
       .same(rules, NativeErrorFamily.values.toVector.map(_.rule))
       .and(expect.same(NativeErrorFamily.values.toVector.map(Some(_)), rules.map(NativeErrorFamily.fromRule)))
       .and(expect.same(None, NativeErrorFamily.fromRule(QName("jlvm-errors", "extra"))))
+      .and(expect.same(Vector(None, None, None), rules.map(q => NativeErrorFamily.fromRule(QName("other", q.name)))))
       .and(expect(generated.exists(_.contains("sealed trait Extra")), "an additional error family in the same module is generated"))
   }
 
