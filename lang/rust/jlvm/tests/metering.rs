@@ -658,3 +658,29 @@ fn keys_values_and_entries_list_interleaved_lengths_under_a_long_prefix_in_code_
     assert_eq!(listed("values"), keys.iter().map(|k| value(k)).collect::<Vec<_>>());
     assert_eq!(listed("entries"), keys.iter().map(|k| arr(vec![t(k), value(k)])).collect::<Vec<_>>());
 }
+
+#[test]
+fn production_dedup_keys_preserve_unsigned_bytes_unicode_and_first_occurrences() {
+    let values = vec![
+        Value::bytes(vec![0]),
+        Value::bytes(vec![0x7f]),
+        Value::bytes(vec![0x80]),
+        Value::bytes(vec![0xff]),
+        t("\u{0}"),
+        t("\u{ff}"),
+        t("\u{100}"),
+        t("\u{10000}"),
+    ];
+    let duplicates = values.iter().chain(values.iter().rev()).cloned().collect();
+    let data = obj(vec![("xs", arr(duplicates)), ("ys", arr(values.clone()))]);
+    assert_eq!(eval_limit(r#"{"unique":{"var":"xs"}}"#, &data, 1 << 24).result, Ok(arr(values)));
+    assert_eq!(
+        eval_limit(r#"{"intersect":[{"var":"xs"},{"var":"ys"}]}"#, &data, 1 << 24).result,
+        Ok(Value::Bool(true))
+    );
+    assert_eq!(
+        eval_limit(r#"{"intersect":[["0x00"],["0x80"]]}"#, &Value::Null, 1 << 24).result,
+        Ok(Value::Bool(false))
+    );
+    assert_eq!(eval_limit(r#"{"intersect":[["ÿ"],["Ā"]]}"#, &Value::Null, 1 << 24).result, Ok(Value::Bool(false)));
+}

@@ -11,6 +11,7 @@ object DedupInputs {
   private def index(i: Int, n: Int, order: String): Int = order match {
     case "ascending"  => i
     case "descending" => n - 1 - i
+    case "repeated"   => i                     % 32
     case _            => ((i.toLong * 104729L) % n).toInt
   }
 
@@ -20,7 +21,11 @@ object DedupInputs {
         for {
           n <- count.toIntOption.filter(n => n > 0 && n <= (1 << 24)).toRight(JlvmError.Malformed("invalid dedup input count"))
           _ <- Either.cond(Set("int", "short", "prefix")(kind), (), JlvmError.Malformed("invalid dedup input kind"))
-          _ <- Either.cond(Set("ascending", "descending", "permuted")(order), (), JlvmError.Malformed("invalid dedup input order"))
+          _ <- Either.cond(
+            Set("ascending", "descending", "permuted", "repeated")(order),
+            (),
+            JlvmError.Malformed("invalid dedup input order")
+          )
           _ <- Either.cond(BigInt(n).gcd(BigInt(104729)) == 1, (), JlvmError.Malformed("dedup permutation must be bijective"))
           values <-
             if (kind == "int") Right(Vector.tabulate(n)(i => CInt(index(i, n, order).toLong)))
@@ -31,8 +36,10 @@ object DedupInputs {
                 }
                 .sequence
                 .leftMap(e => JlvmError.Malformed(e.toString))
-          array <- CanonicalValue.array(values).leftMap(e => JlvmError.Malformed(e.toString))
-          data  <- CanonicalValue.map(Vector("a0" -> array, "a1" -> array)).leftMap(e => JlvmError.Malformed(e.toString))
+          array    <- CanonicalValue.array(values).leftMap(e => JlvmError.Malformed(e.toString))
+          expected <- CanonicalValue.array(values.take(32)).leftMap(e => JlvmError.Malformed(e.toString))
+          fields = Vector("a0" -> array, "a1" -> array) ++ Option.when(order == "repeated")("a2" -> expected)
+          data <- CanonicalValue.map(fields).leftMap(e => JlvmError.Malformed(e.toString))
         } yield data
       case _ => JsonSurface.parse(text)
     }

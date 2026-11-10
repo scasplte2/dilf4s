@@ -71,7 +71,7 @@ fn input(text: &str) -> Result<Value, String> {
     if !["int", "short", "prefix"].contains(kind) {
         return Err("invalid dedup kind".into());
     }
-    if !["ascending", "descending", "permuted"].contains(order) {
+    if !["ascending", "descending", "permuted", "repeated"].contains(order) {
         return Err("invalid dedup order".into());
     }
     let values = (0..n)
@@ -79,6 +79,7 @@ fn input(text: &str) -> Result<Value, String> {
             let index = match *order {
                 "ascending" => i,
                 "descending" => n - 1 - i,
+                "repeated" => i % 32,
                 _ => usize::try_from((i as u64 * 104_729) % n as u64).map_err(|e| e.to_string())?,
             };
             if *kind == "int" {
@@ -92,8 +93,12 @@ fn input(text: &str) -> Result<Value, String> {
             }
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let expected = Value::array(values.iter().take(32).cloned().collect()).map_err(|e| e.to_string())?;
     let array = Value::array(values).map_err(|e| e.to_string())?;
-    Value::map([(String::from("a0"), array.clone()), (String::from("a1"), array)]).map_err(|e| e.to_string())
+    let fields = [(String::from("a0"), array.clone()), (String::from("a1"), array)]
+        .into_iter()
+        .chain((*order == "repeated").then_some((String::from("a2"), expected)));
+    Value::map(fields).map_err(|e| e.to_string())
 }
 
 fn xorshift(steps: u32, seed: u64) -> u64 {

@@ -35,12 +35,11 @@ object RadixIndexSuite extends SimpleIOSuite with Checkers {
     val inserted = index.added(short)
     expect
       .same(false, found)
-      .and(expect.same(1L, work.branches))
-      .and(expect(work.bytes <= 2 * short.length, s"short probe read ${work.bytes} bytes"))
+      .and(expect.same(RadixIndex.Work(14, 1), work))
       .and(expect.same(true, inserted.added))
       .and(expect.same(true, inserted.index.contains(short)._1))
       .and(expect.same(false, index.contains(short)._1))
-      .and(expect(inserted.work.bytes <= 18 * short.length + 1, s"short insertion read ${inserted.work.bytes} bytes"))
+      .and(expect.same(RadixIndex.Work(15, 1), inserted.work))
   }
 
   private val payload: Gen[(Int, Vector[Int])] = for {

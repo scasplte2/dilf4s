@@ -206,9 +206,8 @@ mod tests {
         }
         let (found, work) = index.contains(&short)?;
         assert!(!found);
-        assert_eq!(work.branches, 1);
-        assert!(work.bytes <= short.len().saturating_mul(2));
-        assert!(index.add(&short)?.0);
+        assert_eq!(work, Work { bytes: 14, branches: 1 });
+        assert_eq!(index.add(&short)?, (true, Work { bytes: 15, branches: 1 }));
         assert!(index.contains(&short)?.0);
         for key in &keys {
             assert!(index.contains(key)?.0);

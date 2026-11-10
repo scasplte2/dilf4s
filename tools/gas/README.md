@@ -10,14 +10,15 @@ tools/gas/dedup.sh .gas/short-max short 1864135 permuted 101 3
 
 Arguments are output directory, value kind, count, order, rounds and processes per backend. Kinds are `int`,
 `short` (eight-digit text), and `prefix` (1024 shared characters plus eight digits). Orders are `ascending`,
-`descending` and `permuted` (multiplication by 104729 modulo count; count must be coprime to it).
+`descending`, `permuted` (multiplication by 104729 modulo count; count must be coprime to it), and
+`repeated` (the first 32 values repeated in order; `a2` supplies their exact first occurrences).
 Largest individual arrays within the canonical weight cap have 16777215 integers, 1864135 short texts or 16241
 prefix texts. Host data exposes the same array as `a0` and `a1`; each input array fits the value cap independently.
 These are deliberately above the default evaluation gas budget: measurement uses the harness's maximum gas limit.
 
 Parsing and constructing input are outside the timed section. The baseline is one `a0` lookup; intersection also
-includes its second lookup. Checks assert that `unique` preserves the distinct input exactly and `intersect`
-returns true. Java uses a fixed 4 GiB heap, pre-touch and Serial GC. Some maximum shapes may exceed that heap;
+includes its second lookup. For `repeated` unique, the baseline looks up `a2` instead. Checks assert that `unique`
+returns the exact first occurrences and `intersect` returns true. Java uses a fixed 4 GiB heap, pre-touch and Serial GC. Some maximum shapes may exceed that heap;
 record such a failure as a capacity limit, never a timing result.
 
 Keep raw TSV rounds, check logs, GC logs and `summary.tsv`. `ratios.py` reports rejected rounds, confidence intervals,

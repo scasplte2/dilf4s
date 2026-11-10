@@ -174,6 +174,27 @@ object MeteringSuite extends IOSuite {
     override def equals(that: Any): Boolean = sys.error(s"element $n was compared for equality")
   }
 
+  test("production dedup keys preserve unsigned bytes, Unicode and first occurrences") { jlvm =>
+    val values = Vector(
+      CBytes(ByteVector(0x00)),
+      CBytes(ByteVector(0x7f)),
+      CBytes(ByteVector(0x80.toByte)),
+      CBytes(ByteVector(0xff.toByte)),
+      t("\u0000"),
+      t("\u00ff"),
+      t("\u0100"),
+      t("\ud800\udc00")
+    )
+    val data = obj("xs" -> arr(values ++ values.reverse), "ys" -> arr(values))
+    IO.pure(
+      expect
+        .same(Right(arr(values)), eval(jlvm, program("""{"unique":{"var":"xs"}}"""), data).result)
+        .and(expect.same(Right(True), eval(jlvm, program("""{"intersect":[{"var":"xs"},{"var":"ys"}]}"""), data).result))
+        .and(expect.same(Right(False), eval(jlvm, program("""{"intersect":[["0x00"],["0x80"]]}"""), CNull).result))
+        .and(expect.same(Right(False), eval(jlvm, program("""{"intersect":[["ÿ"],["Ā"]]}"""), CNull).result))
+    )
+  }
+
   test("radix deduplication reads explicit keys without hashing or comparing payload objects") { _ =>
     val n = 8192
     val xs = Vector.tabulate(n)(i => new Opaque(i % (n / 2)))
@@ -237,6 +258,7 @@ object MeteringSuite extends IOSuite {
     IO(
       limit(run(unique, obj("a" -> arr(Vector(CInt(1), big)))))
         .and(limit(run(intersect, obj("a" -> arr(Vector(CInt(1))), "b" -> arr(Vector(big))))))
+        .and(limit(run(intersect, obj("a" -> arr(Vector(CInt(0))), "b" -> arr(Vector(CInt(1), CInt(1), big))))))
         .and(limit(run(intersect, obj("a" -> arr(Vector(big, CInt(0))), "b" -> arr(Vector(CInt(1)))))))
         .and(expect.same(Right(False), run(intersect, obj("a" -> arr(Vector(CInt(0), big)), "b" -> arr(Vector(CInt(1)))))))
         .and(expect.same(Right(arr(Vector(CInt(1)))), run(unique, obj("a" -> arr(Vector(CInt(1), CInt(1)))))))

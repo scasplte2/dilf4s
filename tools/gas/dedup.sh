@@ -5,7 +5,7 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$root"
 out=${1:?usage: tools/gas/dedup.sh OUT KIND COUNT [ORDER] [ROUNDS] [PROCESSES]}
 kind=${2:?int, short or prefix}
-count=${3:?number of distinct values}
+count=${3:?number of input values}
 order=${4:-permuted}
 rounds=${5:-101}
 processes=${6:-3}
@@ -24,7 +24,7 @@ out, kind, count, order = sys.argv[1:]
 root = Path(out)
 n = int(count)
 assert kind in ('int', 'short', 'prefix')
-assert order in ('ascending', 'descending', 'permuted')
+assert order in ('ascending', 'descending', 'permuted', 'repeated')
 assert 0 < n < 2**24 and n % 104729 != 0
 anchors = '\n'.join((root / 'all-cases.tsv').read_text().splitlines()[:2]) + '\n'
 for op in ('unique', 'intersect'):
@@ -32,7 +32,7 @@ for op in ('unique', 'intersect'):
     path.mkdir(exist_ok=True)
     args = [{'var': 'a0'}] if op == 'unique' else [{'var': 'a0'}, {'var': 'a1'}]
     row = [f'dedup/{kind}-{n}-{order}-{op}', op, '0', json.dumps({op: args}, separators=(',', ':')),
-           '{"var":"a0"}', f'dedup:{kind}:{n}:{order}']
+           json.dumps({'var': 'a2' if order == 'repeated' and op == 'unique' else 'a0'}, separators=(',', ':')), f'dedup:{kind}:{n}:{order}']
     (path / 'cases.tsv').write_text(anchors + '\t'.join(row) + '\n')
 INPUTS
 reference=(-Xms4g -Xmx4g -XX:+UseSerialGC -XX:+AlwaysPreTouch)
@@ -44,7 +44,7 @@ for op in unique intersect; do
   for log in "$dir/jvm-check.log" "$dir/rust-check.log"; do
     awk -F '\t' 'NF != 3 || $3 != "ok" { bad = 1 } END { exit bad || NR != 3 }' "$log"
   done
-  # Both checks assert the exact dedup outcome: unchanged distinct input for unique, true for intersect.
+  # Both checks assert the exact dedup outcome: first occurrences for unique, true for intersect.
   for ((i = 1; i <= processes; i++)); do
     taskset -c "$cpu" java "${reference[@]}" "-Xlog:gc:file=$dir/jvm-$i.gc" -cp "$(cat "$out/classpath")" xyz.kd5ujc.benchmarks.GasRatios measure "$rounds" '' "$dir/cases.tsv" > "$dir/jvm-$i.tsv"
     taskset -c "$cpu" "$runner" "$dir/cases.tsv" "$rounds" > "$dir/rust-$i.tsv"

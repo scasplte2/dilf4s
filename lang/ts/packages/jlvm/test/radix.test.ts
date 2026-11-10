@@ -24,9 +24,8 @@ describe("radix membership", () => {
     const short = key(4, []);
     const result = index.contains(short);
     expect(result.found).toBe(false);
-    expect(result.work.branches).toBe(1);
-    expect(result.work.bytes).toBeLessThanOrEqual(2 * short.length);
-    expect(index.add(short).added).toBe(true);
+    expect(result.work).toEqual({ bytes: 14, branches: 1 });
+    expect(index.add(short)).toEqual({ added: true, work: { bytes: 15, branches: 1 } });
     expect(index.contains(short).found).toBe(true);
   });
 
