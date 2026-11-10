@@ -69,9 +69,12 @@ object VersionedTrieProofSuite extends SimpleIOSuite {
           // a null claims absence, as in trie_verify (and the SDKs): it never holds at a present key
           .and(expect.same(Right(true), state.holds(key("fiber/3"), Some(CanonicalValue.CNull))))
           .and(expect.same(Right(false), state.holds(key("fiber/1"), Some(CanonicalValue.CNull))))
-          .and(expect.same(Left(VersionedTrieError.NotCovered("key oracle/a/b")), state.lookup(key("oracle/a/b"))))
+          .and(expect.same(Left(VersionedTrieError.NotCovered(ProofQuery.Key(key("oracle/a/b").preview))), state.lookup(key("oracle/a/b"))))
           .and(
-            expect.same(Left(VersionedTrieError.NotCovered("key oracle/a/b")), state.holds(key("oracle/a/b"), Some(CanonicalValue.CNull)))
+            expect.same(
+              Left(VersionedTrieError.NotCovered(ProofQuery.Key(key("oracle/a/b").preview))),
+              state.holds(key("oracle/a/b"), Some(CanonicalValue.CNull))
+            )
           )
     }
   }
@@ -109,8 +112,8 @@ object VersionedTrieProofSuite extends SimpleIOSuite {
           .same(
             Right(
               List(
-                key("fiber/1") -> VersionedTrie.valueHash[H](int(1)).fold(e => sys.error(e.toString), identity),
-                key("fiber/2") -> VersionedTrie.valueHash[H](text("x")).fold(e => sys.error(e.toString), identity)
+                key("fiber/1") -> get(VersionedTrie.valueHash[H](int(1))),
+                key("fiber/2") -> get(VersionedTrie.valueHash[H](text("x")))
               )
             ),
             state.namespace(ns("fiber"))
@@ -155,11 +158,30 @@ object VersionedTrieProofSuite extends SimpleIOSuite {
         val claimsAbsent = present.copy(at = present.at.map(_.copy(stateRoot = None)))
         val claimsPresent = absent.copy(at = absent.at.map(_.copy(stateRoot = Some(heads.head.stateRoot))))
         val tampered = present.copy(history = present.history.map(p => TrieProof(p.top.map(stubbed))))
-        expect(VersionedTrieVerifier.verifyVersion(root, wrongRoot, 4L).isLeft, "another state root")
-          .and(expect(VersionedTrieVerifier.verifyVersion(root, claimsAbsent, 4L).isLeft, "a committed version claimed absent"))
-          .and(expect(VersionedTrieVerifier.verifyVersion(root, claimsPresent, 3L).isLeft, "an absent version claimed present"))
+        expect
+          .same(
+            Left(VersionedTrieError.Malformed(MalformedReason.WrongHistoricalStateRoot(vk(4L)))),
+            VersionedTrieVerifier.verifyVersion(root, wrongRoot, 4L)
+          )
+          .and(
+            expect.same(
+              Left(VersionedTrieError.Malformed(MalformedReason.CommittedVersionClaimedAbsent(vk(4L)))),
+              VersionedTrieVerifier.verifyVersion(root, claimsAbsent, 4L)
+            )
+          )
+          .and(
+            expect.same(
+              Left(VersionedTrieError.Malformed(MalformedReason.AbsentVersionClaimedPresent(vk(3L)))),
+              VersionedTrieVerifier.verifyVersion(root, claimsPresent, 3L)
+            )
+          )
           .and(expect(VersionedTrieVerifier.verifyVersion(root, tampered, 4L).isLeft, "a tampered history proof"))
-          .and(expect(VersionedTrieVerifier.verifyVersion(rootOf(heads.head), present, 4L).isLeft, "another commitment root"))
+          .and(
+            expect.same(
+              Left(VersionedTrieError.RootMismatch(VtRootComponent.Root, Some(rootOf(heads.head).bytes), Some(root.bytes))),
+              VersionedTrieVerifier.verifyVersion(rootOf(heads.head), present, 4L)
+            )
+          )
     }
   }
 
@@ -184,7 +206,7 @@ object VersionedTrieProofSuite extends SimpleIOSuite {
         val narrow = get(VersionKey.unsignedLong(4))
         expect
           .same(
-            Left(VersionedTrieError.Malformed(s"the proof is about version ${vk(4L).toHex}, not ${vk(8L).toHex}")),
+            Left(VersionedTrieError.Malformed(MalformedReason.VersionMismatch(vk(4L), vk(8L)))),
             VersionedTrieVerifier.verifyVersion(root, proof, 8L)
           )
           .and(
@@ -230,8 +252,18 @@ object VersionedTrieProofSuite extends SimpleIOSuite {
           .same(Right(true), s2.holds(key("fiber/2"), Some(text("x"))))
           .and(expect.same(Right(None), s2.lookup(key("fiber"))))
           .and(expect.same(Right(true), s4.holds(key("fiber"), None)))
-          .and(expect(VersionedTrieVerifier.verifyHistoricalKey(root, at2, 4L).isLeft, "a proof about version 2 is not about 4"))
-          .and(expect(VersionedTrieVerifier.verifyState(root, at2).isLeft, "a historical proof is not about the current state"))
+          .and(
+            expect.same(
+              Left(VersionedTrieError.Malformed(MalformedReason.VersionMismatch(vk(2L), vk(4L)))),
+              VersionedTrieVerifier.verifyHistoricalKey(root, at2, 4L)
+            )
+          )
+          .and(
+            expect.same(
+              Left(VersionedTrieError.Malformed(MalformedReason.HistoricalProofForCurrent)),
+              VersionedTrieVerifier.verifyState(root, at2)
+            )
+          )
     }
   }
 
@@ -259,7 +291,12 @@ object VersionedTrieProofSuite extends SimpleIOSuite {
         val noHistory = proof.copy(history = None)
         expect
           .same(Right(heads.last), VersionedTrieVerifier.verifyHead(root, proof))
-          .and(expect(VersionedTrieVerifier.verifyHead(root, noHistory).isLeft, "the invariant needs the history tail"))
+          .and(
+            expect.same(
+              Left(VersionedTrieError.Malformed(MalformedReason.MissingProof(ProofPart.History))),
+              VersionedTrieVerifier.verifyHead(root, noHistory)
+            )
+          )
     }
   }
 
@@ -300,7 +337,7 @@ object VersionedTrieProofSuite extends SimpleIOSuite {
           VersionedTrieWire
             .encodeProof(p)
             .map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded)
-            .flatMap(bs => Cbor.decode(bs).leftMap(e => VersionedTrieError.Malformed(e.toString)))
+            .flatMap(bs => Cbor.decode(bs).leftMap(e => VersionedTrieError.Malformed(MalformedReason.Canonical(e))))
             .flatMap(VersionedTrieWire.decodeProof[Long, H])
         List(a, b, c, d)
           .foldMap(p => expect.same(Right(p), again(p)))

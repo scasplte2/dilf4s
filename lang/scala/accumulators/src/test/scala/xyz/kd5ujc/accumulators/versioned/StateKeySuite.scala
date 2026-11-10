@@ -107,10 +107,16 @@ object StateKeySuite extends SimpleIOSuite with Checkers {
     val codec = xyz.kd5ujc.models.versioned_trie.StateKey.codec
     val wire = codec.encode(key("fiber/1").value).map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded)
     expect
-      .same(Right(CanonicalValue.text("fiber/1").map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded).toOption.get), wire)
+      .same(Right(get(CanonicalValue.text("fiber/1").map(xyz.kd5ujc.core.canonical.CanonicalGens.encoded))), wire)
       .and(
         expect
-          .same(Right("fiber/1"), wire.flatMap(b => Cbor.decode(b).leftMap(_.toString)).flatMap(codec.decoder.decode(_).leftMap(_.message)))
+          .same(
+            Right("fiber/1"),
+            wire
+              .leftMap(MalformedReason.Canonical(_))
+              .flatMap(b => Cbor.decode(b).leftMap(MalformedReason.Canonical(_)))
+              .flatMap(codec.decoder.decode(_).leftMap(MalformedReason.Decode(_)))
+          )
       )
       .and(expect(get(CanonicalValue.text("Fiber/1")).pipe(codec.decoder.decode).isLeft, "the pattern rejects upper case"))
   }

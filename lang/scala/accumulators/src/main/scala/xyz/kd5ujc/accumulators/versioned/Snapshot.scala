@@ -82,55 +82,58 @@ final case class SnapshotReader[V, H] private (
 
   import SnapshotReader.Stage
 
-  private def malformed[A](reason: String): Either[VersionedTrieError, A] = VersionedTrieError.Malformed(s"snapshot: $reason").asLeft[A]
+  private def malformed[A](reason: SnapshotRefusal): Either[VersionedTrieError, A] =
+    VersionedTrieError.Malformed(MalformedReason.Snapshot(reason)).asLeft[A]
 
-  private def sized(n: Int, what: String): Either[VersionedTrieError, Unit] =
-    if (n < 1 || n > VersionedTrie.MaxChunkEntries) malformed(s"a $what chunk holds 1..${VersionedTrie.MaxChunkEntries} items, not $n")
+  private def sized(n: Int, what: SnapshotPart): Either[VersionedTrieError, Unit] =
+    if (n < 1 || n > VersionedTrie.MaxChunkEntries) malformed(SnapshotRefusal.ChunkSize(what, n, VersionedTrie.MaxChunkEntries))
     else ().asRight
 
   /**
-   * Keys in strictly increasing order, each named by `show` when one does not follow: a state key by a preview of its
-   * hex, a version by its key's full hex ([[versionHex]], bounded by the width).
+   * Keys in strictly increasing order, retaining typed details of the first out-of-order pair.
    */
   private def increasing(
     previous: Option[ByteVector],
     keys:     Vector[ByteVector],
-    what:     String,
-    show:     ByteVector => String
+    refusal:  (ByteVector, ByteVector) => SnapshotRefusal
   ): Either[VersionedTrieError, Unit] =
     (previous.toVector ++ keys).sliding(2).toVector.traverse_ {
-      case Vector(a, b) if Cbor.compareBytes(a, b) >= 0 => malformed[Unit](s"$what ${show(b)} does not follow ${show(a)}")
+      case Vector(a, b) if Cbor.compareBytes(a, b) >= 0 => malformed[Unit](refusal(a, b))
       case _                                            => ().asRight[VersionedTrieError]
     }
 
   def feed(chunk: SnapshotChunk[V, H]): Either[VersionedTrieError, SnapshotReader[V, H]] =
     (stage, chunk) match {
       case (Stage.Head, SnapshotChunk.Top(head)) =>
-        Either.cond(head == trusted, copy(stage = Stage.State), VersionedTrieError.Malformed("snapshot: its head is not the trusted head"))
-      case (Stage.Head, _)           => malformed("it starts with its head")
-      case (_, SnapshotChunk.Top(_)) => malformed("it has one head")
+        Either.cond(
+          head == trusted,
+          copy(stage = Stage.State),
+          VersionedTrieError.Malformed(MalformedReason.Snapshot(SnapshotRefusal.UntrustedHead))
+        )
+      case (Stage.Head, _)           => malformed(SnapshotRefusal.MissingInitialHead)
+      case (_, SnapshotChunk.Top(_)) => malformed(SnapshotRefusal.RepeatedHead)
       case (Stage.State, SnapshotChunk.State(es)) =>
         for {
-          _ <- sized(es.size, "state")
+          _ <- sized(es.size, SnapshotPart.State)
           _ <- es.traverse_ {
-            case (k, v) => if (v == CNull) malformed[Unit](s"${k.preview.short} is null") else VersionedTrie.checkValue(k, v)
+            case (k, v) => if (v == CNull) malformed[Unit](SnapshotRefusal.NullValue(k.preview)) else VersionedTrie.checkValue(k, v)
           }
           keys = es.map(_._1.bytes)
-          _ <- increasing(lastKey, keys, "key", k => Preview.of(k.toHex).short)
+          _ <- increasing(lastKey, keys, (a, b) => SnapshotRefusal.KeysOutOfOrder(Preview.of(a.toHex), Preview.of(b.toHex)))
         } yield copy(lastKey = keys.lastOption.orElse(lastKey), entries = entries ++ es)
-      case (Stage.Done, _)                         => malformed("nothing follows the head version")
-      case (Stage.History, SnapshotChunk.State(_)) => malformed("state entries precede the history")
+      case (Stage.Done, _)                         => malformed(SnapshotRefusal.AfterHeadVersion)
+      case (Stage.History, SnapshotChunk.State(_)) => malformed(SnapshotRefusal.StateAfterHistory)
       case (_, SnapshotChunk.History(vs)) =>
         for {
-          _    <- sized(vs.size, "history")
+          _    <- sized(vs.size, SnapshotPart.History)
           keys <- vs.traverse { case (u, _) => V.keyOf(u) }
           hk   <- V.keyOf(trusted.version)
-          _    <- increasing(lastVersion, keys, "version", versionHex)
+          _    <- increasing(lastVersion, keys, SnapshotRefusal.VersionsOutOfOrder(_, _))
           // the head version may only come last, and with the head's state root
           _ <- keys.zip(vs).traverse_ {
             case (k, (_, s)) =>
-              if (Cbor.compareBytes(k, hk) > 0) malformed[Unit](s"version ${versionHex(k)} is after the head")
-              else if (k == hk && s != trusted.stateRoot) malformed[Unit]("the head version has another state root")
+              if (Cbor.compareBytes(k, hk) > 0) malformed[Unit](SnapshotRefusal.VersionAfterHead(k))
+              else if (k == hk && s != trusted.stateRoot) malformed[Unit](SnapshotRefusal.WrongHeadStateRoot)
               else ().asRight[VersionedTrieError]
           }
         } yield
@@ -143,7 +146,7 @@ final case class SnapshotReader[V, H] private (
 
   /** The snapshot, once its history has reached the head version. */
   def finish: Either[VersionedTrieError, Snapshot[V, H]] =
-    if (stage == Stage.Done) Snapshot(trusted, entries.toList, history.toList).asRight else malformed("it ends before the head version")
+    if (stage == Stage.Done) Snapshot(trusted, entries.toList, history.toList).asRight else malformed(SnapshotRefusal.IncompleteHistory)
 }
 
 object SnapshotReader {

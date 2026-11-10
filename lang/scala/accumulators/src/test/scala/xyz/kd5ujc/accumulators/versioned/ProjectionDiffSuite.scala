@@ -20,7 +20,7 @@ object ProjectionDiffSuite extends SimpleIOSuite {
 
   private val K = 10
 
-  private def key(s: String): StateKey = StateKey.parse(s).fold(e => sys.error(e.toString), identity)
+  private def key(s: String): StateKey = Harness.get(StateKey.parse(s))
 
   /** `2^K` keys whose strings share one Java hash code. */
   private val keys: Vector[StateKey] =

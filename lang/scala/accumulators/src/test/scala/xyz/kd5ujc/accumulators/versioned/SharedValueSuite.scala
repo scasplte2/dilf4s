@@ -21,11 +21,11 @@ object SharedValueSuite extends SimpleIOSuite {
   private val doubled: CanonicalValue = (1 to 60).foldLeft(int(1))((v, _) => get(CanonicalValue.array(Vector(v, v))))
 
   /** `TooLarge` with the limit alone: nothing past the limit is measured. */
-  private def tooLarge(what: String, limit: Long)(r: Either[VersionedTrieError, ?]): Boolean =
+  private def tooLarge(what: LimitSubject, limit: Long)(r: Either[VersionedTrieError, ?]): Boolean =
     r == Left(VersionedTrieError.TooLarge(what, limit))
 
   private val k = key("a/b")
-  private val ofK = "the value of a/b"
+  private val ofK = LimitSubject.StateValue(k.preview)
   private val root = xyz.kd5ujc.core.hash.Hasher[H].digest(ByteVector.empty)
 
   pureTest("the doubled value weighs 2^61 - 1 (2^60 integers, 2^60 - 1 arrays) and is 60 levels deep, within the limit") {
@@ -113,7 +113,10 @@ object SharedValueSuite extends SimpleIOSuite {
 
   pureTest("a snapshot chunk holding it is refused by its weight before it is encoded") {
     val chunk: SnapshotChunk[Long, H] = SnapshotChunk.State(Vector(k -> doubled))
-    expect.same(Left(VersionedTrieError.TooLarge("a snapshot chunk", VersionedTrie.MaxChunkBytes)), VersionedTrieWire.encodeChunk(chunk))
+    expect.same(
+      Left(VersionedTrieError.TooLarge(LimitSubject.SnapshotChunk, VersionedTrie.MaxChunkBytes)),
+      VersionedTrieWire.encodeChunk(chunk)
+    )
   }
 
   /** One 1 MiB byte string (2^20 bytes of CBOR, the largest value), shared by every key that holds it. */
@@ -124,7 +127,7 @@ object SharedValueSuite extends SimpleIOSuite {
 
   test("a commit whose delta no replica would decode (over MaxProofWeight) is refused, and nothing is written") {
     attempt(implicit h => fresh.flatMap(s => h.attempt(s._2.commit(None, 1L, wide(17))).flatMap(r => s._2.head.map(r -> _)))).map { r =>
-      expect.same(Right((Left(VersionedTrieError.TooLarge("the delta", ProofInput.MaxProofWeight)), None)), r)
+      expect.same(Right((Left(VersionedTrieError.TooLarge(LimitSubject.Delta, ProofInput.MaxProofWeight)), None)), r)
     }
   }
 
@@ -148,7 +151,7 @@ object SharedValueSuite extends SimpleIOSuite {
       case Left(e) => failure(s"unexpected $e")
       case Right((pad, d2, head)) =>
         expect(VersionedTrie.checkValue(key("pad"), pad).isRight, "the pad is a value a commit accepts")
-          .and(expect.same(Left(VersionedTrieError.TooLarge("the delta", ProofInput.MaxProofWeight)), d2))
+          .and(expect.same(Left(VersionedTrieError.TooLarge(LimitSubject.Delta, ProofInput.MaxProofWeight)), d2))
           .and(expect.same(None, head))
     }
   }
@@ -159,7 +162,7 @@ object SharedValueSuite extends SimpleIOSuite {
         .TrieProof[H](Some(xyz.kd5ujc.accumulators.trie.ProofNode.PLeaf(scodec.bits.BitVector.low(bytes * 8), root)))
     val head = Head[Long, H](1L, root, root)
     val third = ProofInput.MaxProofWeight / 3 + 1024
-    val refused = Left(VersionedTrieError.TooLarge("the proof", ProofInput.MaxProofWeight))
+    val refused = Left(VersionedTrieError.TooLarge(LimitSubject.Proof, ProofInput.MaxProofWeight))
     expect
       .same(refused, VersionedTrieWire.encodeProof(VersionedTrieProof[Long, H](head, leafOf(ProofInput.MaxProofWeight), None, None, None)))
       .and(
@@ -177,7 +180,7 @@ object SharedValueSuite extends SimpleIOSuite {
     val long: CanonicalValue = get(CanonicalValue.array(Vector.fill(1 << 16)(CanonicalValue.CInt(1L << 40))))
     val batch = (1 to 20000).map(i => Batch.put(key(s"shared/$i"), long)).reduce(_ ++ _)
     attempt(implicit h => fresh.flatMap(s => h.attempt(s._2.commit(None, 1L, batch)))).map { r =>
-      expect.same(Right(Left(VersionedTrieError.TooLarge("the delta", ProofInput.MaxProofWeight))), r)
+      expect.same(Right(Left(VersionedTrieError.TooLarge(LimitSubject.Delta, ProofInput.MaxProofWeight))), r)
     }
   }
 

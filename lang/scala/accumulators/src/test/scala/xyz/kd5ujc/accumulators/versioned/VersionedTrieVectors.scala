@@ -60,7 +60,9 @@ object VersionedTrieVectors {
         VersionedTrieWire
           .head(h)
           .flatMap(w =>
-            xyz.kd5ujc.models.versioned_trie.VersionedTrieHead.codec.encode(w).leftMap(e => VersionedTrieError.Malformed(e.toString))
+            xyz.kd5ujc.models.versioned_trie.VersionedTrieHead.codec
+              .encode(w)
+              .leftMap(e => VersionedTrieError.Malformed(MalformedReason.Canonical(e)))
           )
       )
     ).mapN { (root, wire) =>
@@ -95,12 +97,18 @@ object VersionedTrieVectors {
   private def versionKeyCase(v: BigInt): Json = {
     val key = ByteVector.view(v.toByteArray).takeRight(8).padLeft(8)
     val decoded = VersionKey.long.decode(key)
-    val encoded =
-      Option.when(v.isValidLong)(v.toLong).toRight(VersionedTrieError.InvalidVersion("not a Long")).flatMap(VersionKey.long.encode)
-    require(decoded.isRight == encoded.isRight, s"version $v: decoding and encoding disagree")
-    require(decoded.forall(d => BigInt(d) == v) && encoded.forall(_ == key), s"version $v: the key does not round-trip")
+    val encoded = Option.when(v.isValidLong)(VersionKey.long.encode(v.toLong))
+    require(encoded.forall(_.isRight == decoded.isRight), s"version $v: decoding and encoding disagree")
+    require(decoded.forall(d => BigInt(d) == v) && encoded.forall(_.forall(_ == key)), s"version $v: the key does not round-trip")
     val outcome = decoded.fold(e => Json.obj("kind" -> e.kind.wire.asJson), _ => "accepted".asJson)
-    require(encoded.swap.toOption.map(_.kind) == decoded.swap.toOption.map(_.kind), s"version $v: the kinds differ")
+    encoded match {
+      case Some(result) => require(result.swap.toOption.map(_.kind) == decoded.swap.toOption.map(_.kind), s"version $v: the kinds differ")
+      case None =>
+        require(
+          decoded == Left(VersionedTrieError.InvalidVersion(VersionRefusal.EncodedRange(key, Long.MaxValue))),
+          s"version $v: exceeds Long"
+        )
+    }
     Json.obj("version" -> v.asJson, "key" -> hex(key), "outcome" -> outcome)
   }
 
@@ -606,12 +614,14 @@ object VersionedTrieVectorsSuite extends SimpleIOSuite {
           case "version" =>
             expect.same(
               Right(answer.flatten.map(_._2)),
-              at.toRight(VersionedTrieError.Malformed("at")).flatMap(VersionedTrieVerifier.verifyVersion(root, proof, _))
+              at.toRight(VersionedTrieVectors.Error.MissingAt)
+                .flatMap(u => VersionedTrieVerifier.verifyVersion(root, proof, u).leftMap(VersionedTrieVectors.Error.Versioned(_)))
             )
           case "asOf" =>
             expect.same(
               Right(answer.flatten),
-              at.toRight(VersionedTrieError.Malformed("at")).flatMap(VersionedTrieVerifier.verifyAsOf(root, proof, _))
+              at.toRight(VersionedTrieVectors.Error.MissingAt)
+                .flatMap(u => VersionedTrieVerifier.verifyAsOf(root, proof, u).leftMap(VersionedTrieVectors.Error.Versioned(_)))
             )
           case "versions" =>
             val versions = c.downField("versions").as[List[Json]].getOrElse(Nil).map { v =>
@@ -621,14 +631,20 @@ object VersionedTrieVectorsSuite extends SimpleIOSuite {
             expect
               .same(
                 Right(true),
-                at.toRight(VersionedTrieError.Malformed("at"))
-                  .flatMap(VersionedTrieVerifier.verifyVersions(root, proof, _, until, versions))
+                at.toRight(VersionedTrieVectors.Error.MissingAt)
+                  .flatMap(u =>
+                    VersionedTrieVerifier.verifyVersions(root, proof, u, until, versions).leftMap(VersionedTrieVectors.Error.Versioned(_))
+                  )
               )
               .and(
                 expect.same(
                   Right(false),
-                  at.toRight(VersionedTrieError.Malformed("at"))
-                    .flatMap(VersionedTrieVerifier.verifyVersions(root, proof, _, until, versions.drop(1)))
+                  at.toRight(VersionedTrieVectors.Error.MissingAt)
+                    .flatMap(u =>
+                      VersionedTrieVerifier
+                        .verifyVersions(root, proof, u, until, versions.drop(1))
+                        .leftMap(VersionedTrieVectors.Error.Versioned(_))
+                    )
                 )
               )
           case _ =>
