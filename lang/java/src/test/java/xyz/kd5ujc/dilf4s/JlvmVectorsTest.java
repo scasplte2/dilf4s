@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 
 import xyz.kd5ujc.dilf4s.error.CryptoCause;
 import xyz.kd5ujc.dilf4s.error.JlvmError;
+import xyz.kd5ujc.dilf4s.error.Preview;
 
 /**
  * {@code shared/vectors/jlvm_v1.json} through the Java API: every case evaluated by {@link Jlvm#evaluate} on the
@@ -120,13 +121,19 @@ public class JlvmVectorsTest {
   @Test
   void cases() {
     final List<Value.Map> rows = rows(vectors, "cases");
-    assertEquals(3363, rows.size(), "the cases");
+    assertEquals(3371, rows.size(), "the cases");
     assertAll(rows.stream().map(c -> () -> {
       final String name = str(c, "name");
       final Jlvm.Outcome o = run(c);
       final Value.Map expected = map(get(c, "outcome"));
       assertEquals(num(c, "gasUsed"), o.gasUsed(), name + ": the gas used");
-      assertEquals(num(c, "warnings"), (long) o.warnings().size(), name + ": the warnings");
+      final List<Jlvm.Warning> warnings = arr(get(c, "warnings")).items().stream().map(v -> {
+        final Value.Map warning = map(v);
+        assertEquals("AmbiguousPath", str(warning, "kind"), name + ": warning kind");
+        final Value.Map path = map(get(warning, "path"));
+        return (Jlvm.Warning) new Jlvm.Warning.AmbiguousPath(new Preview(str(path, "head"), num(path, "length"), bool(path, "truncated")));
+      }).toList();
+      assertEquals(warnings, o.warnings(), name + ": the warnings in order");
       switch (o.result()) {
         case Result.Ok<Value, JlvmError> v -> {
           assertEquals(opt(expected, "cbor").map(V::text), Optional.of(hex(ok(Cbor.encode(v.value()), "encode"))), name + ": the value's CBOR");
@@ -152,7 +159,7 @@ public class JlvmVectorsTest {
     final long causes = rows.stream().filter(c -> map(get(c, "outcome")).get("cause").isPresent()).count();
     final long built = rows.stream().filter(c -> c.get("built").isPresent()).count();
     assertAll(
-      () -> assertEquals(1129L, values, "the cases with a value"),
+      () -> assertEquals(1136L, values, "the cases with a value"),
       () -> assertEquals(90L, causes, "the cases with a Crypto cause"),
       () -> assertEquals(20L, built, "the cases with built bindings"),
       () -> assertTrue(rows.stream().filter(c -> c.get("built").isPresent()).flatMap(c -> map(get(c, "built")).entries().values().stream().map(V::built))

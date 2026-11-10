@@ -177,8 +177,7 @@ lazy val core = project.in(file("core"))
         IO.delete(out)
         genRunner
           .run("xyz.kd5ujc.modelsgen.Main", cp, Seq(schemas.getAbsolutePath, out.getAbsolutePath, "xyz.kd5ujc.models"), log)
-          .failed
-          .foreach(e => sys.error(s"models generator failed: ${e.getMessage}"))
+          .get
         (out ** "*.scala").get.toSet
       }
       cached(inputs).toSeq.sortBy(_.getAbsolutePath)
@@ -312,6 +311,7 @@ lazy val jlvm = project.in(file("jlvm"))
 // Its public API is Java (src/main/java). The conversions from the reference's types are Scala (src/main/scala,
 // package xyz.kd5ujc.dilf4s.internal), so every match over a reference family is checked exhaustive.
 lazy val javaApi = project.in(file("java-api"))
+  .settings(commonTestSettings)
   .settings(
     name := "dilf4s-java",
     Compile / sourceDirectory := (ThisBuild / repositoryRoot).value / "lang" / "java" / "src" / "main",

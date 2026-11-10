@@ -2,7 +2,7 @@ use alloc::{collections::BTreeMap, string::String, vec::Vec};
 use dilf4s_core::generated::jlvm_vectors::JlvmVectors;
 
 pub fn read<P>(vectors: &JlvmVectors, parse: impl Fn(&str) -> Result<P, String>) -> Vec<P> {
-    assert_eq!(vectors.cases.len(), 3363, "conformance corpus");
+    assert_eq!(vectors.cases.len(), 3371, "conformance corpus");
     assert_eq!(vectors.aliases.len(), 4, "alias rows");
     let expected: BTreeMap<_, _> = include_str!("../../../../../shared/vectors/jlvm_parse_refusals_v1.tsv")
         .lines()
@@ -26,6 +26,6 @@ pub fn read<P>(vectors: &JlvmVectors, parse: impl Fn(&str) -> Result<P, String>)
             programs.push(parse(text).unwrap_or_else(|e| panic!("{}: {e}", alias.alias)));
         }
     }
-    assert_eq!(programs.len(), 3304, "programs including aliases");
+    assert_eq!(programs.len(), 3312, "programs including aliases");
     programs
 }

@@ -87,8 +87,8 @@ object MerkleLog {
     def next(newSize: Long): Either[StoreError, ByteVector] =
       MerkleLogState.codec
         .encode(MerkleLogState(newSize, generation + 1))
-        .leftMap(e => StoreError.Corrupt(s"Merkle log state: $e"))
-        .flatMap(Cbor.encode(_).leftMap(e => StoreError.Encoding("Merkle log state", s"its encoding is over ${e.limit} bytes")))
+        .leftMap(e => StoreError.Corrupt(CorruptionReason.Canonical(StoreContext.MerkleLogState, e)))
+        .flatMap(Cbor.encode(_).leftMap(e => StoreError.Encoding(StoreContext.MerkleLogState, EncodingReason.EncodedSize(e))))
   }
 
   final private class Persistent[F[_]: Concurrent, H](
@@ -107,15 +107,19 @@ object MerkleLog {
         case Some(b) =>
           Cbor
             .decode(b)
-            .leftMap(_.toString)
-            .flatMap(MerkleLogState.codec.decoder.decode(_).leftMap(_.message))
-            .fold(e => failS(StoreError.Corrupt(s"Merkle log state: $e")), w => State(w.size, w.generation, Some(b)).pure[F])
+            .leftMap(e => StoreError.Corrupt(CorruptionReason.Canonical(StoreContext.MerkleLogState, e)))
+            .flatMap(
+              MerkleLogState.codec.decoder
+                .decode(_)
+                .leftMap(e => StoreError.Corrupt(CorruptionReason.Decode(StoreContext.MerkleLogState, e)))
+            )
+            .fold(failS[State], w => State(w.size, w.generation, Some(b)).pure[F])
       }
 
     private def perfect(level: Int, index: Long): F[Digest[H]] =
       nodes.get((level, index)).flatMap {
-        case None    => failS(StoreError.Corrupt(s"missing perfect node ($level, $index)"))
-        case Some(b) => Digest.fromBytes[H](b).fold(e => failS(StoreError.Corrupt(e.toString)), _.pure[F])
+        case None    => failS(StoreError.Corrupt(CorruptionReason.MissingPerfectNode(level, index)))
+        case Some(b) => Digest.fromBytes[H](b).fold(e => failS(StoreError.Corrupt(CorruptionReason.Hash(e))), _.pure[F])
       }
 
     private def commit(read: State, newSize: Long, batch: Batch[(Int, Long), ByteVector]): F[Unit] =
@@ -139,7 +143,9 @@ object MerkleLog {
       Stream.eval(state).flatMap { s =>
         nodes
           .scan(KeyRange.between((0, 0L), (0, s.size)))
-          .evalMap { case (_, b) => Digest.fromBytes[H](b).fold(e => failS[Digest[H]](StoreError.Corrupt(e.toString)), _.pure[F]) }
+          .evalMap {
+            case (_, b) => Digest.fromBytes[H](b).fold(e => failS[Digest[H]](StoreError.Corrupt(CorruptionReason.Hash(e))), _.pure[F])
+          }
       }
 
     /** The perfect nodes completed by `hashes` placed after `size` leaves, reading older children as needed. */

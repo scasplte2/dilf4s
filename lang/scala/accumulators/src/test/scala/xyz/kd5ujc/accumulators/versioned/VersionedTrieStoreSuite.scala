@@ -66,7 +66,7 @@ object VersionedTrieStoreSuite extends SimpleIOSuite with Checkers {
         val built = get(
           Trie.fromEntries[H](
             get(VersionedTrie.stateMode),
-            expected._2.toList.map { case (k, v) => k.bytes -> VersionedTrie.valueHash[H](v).fold(e => sys.error(e.toString), identity) }
+            expected._2.toList.map { case (k, v) => k.bytes -> get(VersionedTrie.valueHash[H](v)) }
           )
         )
         expect.same(built.nodeCount.toLong, nodes)
@@ -255,7 +255,7 @@ object VersionedTrieStoreSuite extends SimpleIOSuite with Checkers {
       case (gap, neg, first) =>
         expect
           .same(1000L, gap.version)
-          .and(expect(neg.left.exists(_.isInstanceOf[VersionedTrieError.InvalidVersion]), s"$neg"))
+          .and(expect.same(Left(VersionedTrieError.InvalidVersion(VersionRefusal.ValueRange(-1, Long.MaxValue))), neg))
           .and(expect.same(Left(VersionedTrieError.VersionConflict(Some(versionHex(vk(3L))), None)), first))
     }
   }
@@ -408,10 +408,18 @@ object VersionedTrieStoreSuite extends SimpleIOSuite with Checkers {
         )
         _ <- open(s._1)
       } yield ()
-    }.map {
-      case Left(VersionedTrieError.Store(_: xyz.kd5ujc.storage.StoreError.Corrupt)) => success
-      case other                                                                    => failure(s"expected corruption, got $other")
-    }
+    }.map(r =>
+      expect.same(
+        Left(
+          VersionedTrieError.Store(
+            xyz.kd5ujc.storage.StoreError.Corrupt(
+              xyz.kd5ujc.storage.CorruptionReason.IndexOutOfStep(1, false, false)
+            )
+          )
+        ),
+        r
+      )
+    )
   }
 
   test("the state proof at the head verifies with the trie verifier directly against the head's state root") {

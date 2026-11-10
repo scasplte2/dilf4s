@@ -5,7 +5,7 @@ import cats.mtl.{Handle, Raise}
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.canonical.CanonicalValue.CText
-import xyz.kd5ujc.core.canonical.{CanonicalValue, Codec}
+import xyz.kd5ujc.core.canonical.{CanonicalError, CanonicalValue, Codec}
 
 import org.scalacheck.Gen
 import scodec.bits.{ByteVector, hex}
@@ -32,8 +32,10 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
 
   implicit private val intValue: ValueCodec[Int] = ValueCodec.fromCodec(Codec.intIn(Int.MinValue, Int.MaxValue))
 
-  private def ns(name: String): Namespace = Namespace(name).fold(e => sys.error(e.toString), identity)
-  private def t(s:     String): CText = CanonicalValue.text(s).fold(e => sys.error(e.toString), identity)
+  private final case class FixtureFailure[E](error: E) extends RuntimeException(s"invalid fixture: $error")
+
+  private def ns(name: String): Namespace = Namespace(name).fold(e => throw FixtureFailure(e), identity)
+  private def t(s:     String): CText = CanonicalValue.text(s).fold(e => throw FixtureFailure(e), identity)
 
   // ------------------------------------------------------------------ raw
 
@@ -153,18 +155,37 @@ trait StoreBehaviours { self: SimpleIOSuite & Checkers =>
   }
 
   test(s"$backend: a batch that fails to encode writes nothing") {
-    val refuse13: ValueCodec[Int] = new ValueCodec[Int] {
-      def encode(v: Int): Either[StoreError, ByteVector] =
-        if (v == 13) StoreError.Encoding("value", "13 is refused").asLeft else intValue.encode(v)
-      def decode(b: ByteVector): Either[StoreError, Int] = intValue.decode(b)
-    }
+    val refuse13: ValueCodec[Int] = ValueCodec.fromCodec(Codec.intIn(0, 12))
     expectOk { implicit h =>
       withRaw { raw =>
         val kv = KeyValueStore[IO, CText, Int](raw, ns("kv"))(using implicitly, implicitly, refuse13, h)
         h.attempt(kv.commit(Batch.puts(List(t("a") -> 1, t("b") -> 13))))
-          .flatMap(result => kv.get(t("a")).map(a => expect(result.isLeft, "the commit fails").and(expect.same(None, a))))
+          .flatMap(result =>
+            kv.get(t("a"))
+              .map(a =>
+                expect
+                  .same(
+                    Left(
+                      StoreError
+                        .Encoding(StoreContext.Value, EncodingReason.Canonical(CanonicalError.TypeMismatch("integer 13 outside 0..12")))
+                    ),
+                    result
+                  )
+                  .and(expect.same(None, a))
+              )
+          )
       }
     }
+  }
+
+  test(s"$backend: corrupt version metadata preserves the record width") {
+    attempt { implicit r =>
+      withRaw { raw =>
+        val metadata = ns("kv/meta").prefix ++ ByteVector("latest".getBytes(java.nio.charset.StandardCharsets.UTF_8))
+        raw.write(RawBatch.put(metadata, ByteVector(1))) >>
+        VersionedStore.make[IO, Int, Int](raw, "kv").flatMap(_.latest)
+      }
+    }.map(result => expect.same(Left(StoreError.Corrupt(CorruptionReason.Width(StoredRecord.Version, 1, 8))), result))
   }
 
   // ------------------------------------------------------------------ versioned

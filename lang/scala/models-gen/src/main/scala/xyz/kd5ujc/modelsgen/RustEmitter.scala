@@ -68,7 +68,8 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
   }
 
   /** Rust type, codec type and codec expression of a field or element type. */
-  private final case class Rs(tpe: String, codecType: String, codec: String)
+  private enum Storage { case Data, Literal }
+  private final case class Rs(tpe: String, codecType: String, codec: String, storage: Storage = Storage.Data)
 
   /**
    * `from` is the module the code is emitted into: an alias's target is expanded in the alias's own context (`rule`),
@@ -83,24 +84,26 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
     case FieldType.Bool     => Rs("bool", "c::Bool", "c::Bool").asRight
     case FieldType.AnyValue => Rs("c::Value", "c::Any", "c::Any").asRight
     case FieldType.IntRange(lo, hi) =>
-      native(lo, hi)
+      NativeInteger
+        .forRange(lo, hi)
         .fold(Rs("c::BigInt", "c::BigIntIn", s"c::BigIntIn { lo: Some(${bigBound(lo)}), hi: Some(${bigBound(hi)}) }")) { n =>
-          Rs(n, s"c::${n.capitalize}In", s"c::${n.capitalize}In { lo: ${number(lo)}, hi: ${number(hi)} }")
+          Rs(n.rustType, s"c::${n.rustCodec}", s"c::${n.rustCodec} { lo: ${number(lo)}, hi: ${number(hi)} }")
         }
         .asRight
     case FieldType.SizedBytes(lo, hi) if lo == hi => Rs(s"[u8; $lo]", s"c::FixedBytes<$lo>", s"c::FixedBytes::<$lo>").asRight
     case FieldType.SizedBytes(lo, hi)             => Rs("Vec<u8>", "c::SizedBytes", s"c::SizedBytes { lo: $lo, hi: ${bound(hi)} }").asRight
     case FieldType.SizedText(lo, hi)              => Rs("String", "c::SizedText", s"c::SizedText { lo: $lo, hi: ${bound(hi)} }").asRight
     case FieldType.Matching(p)                    => Rs("String", "c::Matching", s"c::Matching(c::TextPattern::${patternName(p)})").asRight
-    case FieldType.LitInt(v)                      => Rs("()", "c::LiteralInt", s"c::LiteralInt($v)").asRight
-    case FieldType.LitText(v)                     => Rs("()", "c::LiteralText", s"c::LiteralText(${string(v)})").asRight
+    case FieldType.LitInt(v)                      => Rs("()", "c::LiteralInt", s"c::LiteralInt($v)", Storage.Literal).asRight
+    case FieldType.LitText(v)                     => Rs("()", "c::LiteralText", s"c::LiteralText(${string(v)})", Storage.Literal).asRight
     // an error's field only (Profile refuses it in a wire type): the codec runtime re-exports the core's Preview
     case FieldType.Preview => Rs("c::Preview", "", "").asRight
     case FieldType.Ref(q) =>
       models.get(q).toRight(GenError.UnresolvedName(rule.module, q.name)).flatMap {
         case ModelRule.Alias(_) if resolving(q) => outside(rule, ProfileRefusal.AliasCycle(q)).asLeft
         case ModelRule.Alias(target) =>
-          rs(q, target, resolving + q, from).map(r => Rs(path(from, q, typeName(q)), r.codecType, path(from, q, constName(q))))
+          rs(q, target, resolving + q, from)
+            .flatMap(r => element(rule, r).as(Rs(path(from, q, typeName(q)), r.codecType, path(from, q, constName(q)))))
         case _ =>
           val n = path(from, q, typeName(q))
           Rs(n, s"c::ModelOf<$n>", s"c::ModelOf::<$n>::NEW").asRight
@@ -123,7 +126,7 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
 
   /** Literals carry no data, so they only make sense as required record fields. */
   private def element(rule: QName, r: Rs): Either[GenError, Unit] =
-    Either.cond(r.tpe != "()", (), outside(rule, ProfileRefusal.LiteralOutsideRecord))
+    Either.cond(r.storage == Storage.Data, (), outside(rule, ProfileRefusal.LiteralOutsideRecord))
 
   /** A rule's doc comment: where it is defined (and `more`), then its CDDL comment. */
   private def doc(rule: QName, more: String = ""): String =
@@ -148,7 +151,7 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
           case FieldType.Ref(q) => reaches(q, rule)
           case _                => false
         }
-        if (r.tpe == "()" && f.optional) outside(rule, ProfileRefusal.OptionalLiteral(f.key)).asLeft
+        if (r.storage == Storage.Literal && f.optional) outside(rule, ProfileRefusal.OptionalLiteral(f.key)).asLeft
         else
           Field(
             f.key,
@@ -170,7 +173,7 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
   private def record(rule: QName, profiled: Vector[ProfileField]): Either[GenError, String] =
     fields(rule, profiled).map { fs =>
       val n = typeName(rule)
-      val data = fs.filter(_.rs.tpe != "()")
+      val data = fs.filter(_.rs.storage == Storage.Data)
       val struct =
         if (data.isEmpty) s"pub struct $n;"
         else
@@ -179,7 +182,7 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
               s"${documented(f.doc, s"The `${string(f.key).drop(1).dropRight(1)}` entry.", "    ")}\n    pub ${f.name}: $t,"
             }.mkString("\n")}\n}"
       val enc = fs.map { f =>
-        if (f.rs.tpe == "()") s"            c::field(${string(f.key)}, &${f.rs.codec}, &(), inner)?,"
+        if (f.rs.storage == Storage.Literal) s"            c::field(${string(f.key)}, &${f.rs.codec}, &(), inner)?,"
         else if (f.optional) s"            c::optional_field(${string(f.key)}, &${f.rs.codec}, self.${f.name}.as_ref(), inner)?,"
         else s"            c::field(${string(f.key)}, &${f.rs.codec}, &self.${f.name}, inner)?,"
       }.mkString("\n")
@@ -187,11 +190,11 @@ final class RustEmitter(models: Map[QName, ModelRule], docs: QName => Vector[Str
       val dec = fs.zipWithIndex.map {
         case (f, i) =>
           val call = s"fields.${if (f.optional) "optional" else "required"}(${string(f.key)}, &${f.rs.codec})?"
-          if (f.rs.tpe == "()") s"        $call;" else s"        let f$i = $call;"
+          if (f.rs.storage == Storage.Literal) s"        $call;" else s"        let f$i = $call;"
       }.mkString("\n")
       val build =
         if (data.isEmpty) "Self"
-        else s"Self { ${fs.zipWithIndex.collect { case (f, i) if f.rs.tpe != "()" => s"${f.name}: f$i" }.mkString(", ")} }"
+        else s"Self { ${fs.zipWithIndex.collect { case (f, i) if f.rs.storage == Storage.Data => s"${f.name}: f$i" }.mkString(", ")} }"
       val decodeBody =
         if (fs.isEmpty) s"        c::Fields::of(value, &[]).map(|_| Self)"
         else s"        let fields = c::Fields::of(value, &[$keys])?;\n$dec\n        Ok($build)"
@@ -705,14 +708,6 @@ object RustEmitter {
       case c if c < ' ' => f"\\u{${c.toInt}%x}"
       case c            => c.toString
     } + "\""
-
-  /** The smallest native integer type holding `lo..hi`, if any. */
-  def native(lo: BigInt, hi: BigInt): Option[String] =
-    if (lo >= 0 && hi <= BigInt("4294967295")) Some("u32")
-    else if (lo >= 0 && hi <= BigInt("18446744073709551615")) Some("u64")
-    else if (lo >= Int.MinValue && hi <= Int.MaxValue) Some("i32")
-    else if (lo >= Long.MinValue && hi <= Long.MaxValue) Some("i64")
-    else None
 
   /** A decimal literal with `_` every three digits (clippy's `unreadable_literal`). */
   def number(n: BigInt): String = {

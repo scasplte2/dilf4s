@@ -48,6 +48,11 @@ describe("canonical_encoding_v1.json", () => {
     expect(hexOf(expectOk(contentHash(contentAlgorithm, tag, value), "encodes"))).toBe(c.contentHash);
   });
 
+  test("the byte-limit corpus contains exactly 19 rows, including nine CBOR measurements", () => {
+    expect(vectors.limits).toHaveLength(19);
+    expect(vectors.limits.filter((c) => c.encoding === "cbor")).toHaveLength(9);
+  });
+
   it.each(vectors.limits.map((c) => [`${c.name} within ${c.maxBytes.toString()}`, c] as const))("%s: the reference's outcome", (_, c) => {
     const v = expectOk(cbor.decode(bytes(c.value)), "decodes");
     const max = Number(c.maxBytes);
@@ -56,6 +61,10 @@ describe("canonical_encoding_v1.json", () => {
     const outcome = r.ok ? "accepted" : r.error.kind === "TooLarge" ? { kind: "TooLarge", limit: BigInt(r.error.limit) } : { kind: r.error.kind };
     expect(outcome).toEqual(c.outcome);
     expect(r.ok ? r.value : undefined).toBe(c.output);
+    if (c.encoding === "cbor") {
+      const measured = cbor.encodedLengthWithin(v, max);
+      expect(measured).toEqual(r.ok ? { ok: true, value: r.value.length / 2 } : r);
+    }
   });
 
   it.each(vectors.renderRejections.map((c) => [c.cbor.slice(0, 40), c] as const))("CBOR %s does not render to JSON", (_, c) => {

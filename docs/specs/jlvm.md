@@ -296,6 +296,8 @@ This is metakit's merged scope, without its silent collisions:
   binds it too), the evaluation records an `AmbiguousPath` warning;
 - warnings never change the result or the gas. At most 64 distinct ones are kept, and two are the same when their
   paths' previews are (the first 32 code points and the length in UTF-8 bytes);
+- conformance compares warnings in first-observed order, including the kind and each preview's head, full UTF-8
+  length and truncation flag;
 - finding ambiguity means every frame is searched for the first segment, so a read pays that segment's count once
   per enclosing frame (§7);
 - `$current`, `$index` and `$accumulator` read the same values with no ambiguity.

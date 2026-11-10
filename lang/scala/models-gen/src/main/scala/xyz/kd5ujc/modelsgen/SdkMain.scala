@@ -180,7 +180,7 @@ object SdkMain extends IOApp {
       }
     } yield ()
 
-  private def failed(e: GenError): Throwable = new IllegalArgumentException(e.message)
+  private def failed(e: GenError): Throwable = GenError.Failure(e)
 
   def run(args: List[String]): IO[ExitCode] =
     args match {

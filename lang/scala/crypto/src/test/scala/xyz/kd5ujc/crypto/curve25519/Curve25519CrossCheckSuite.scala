@@ -10,6 +10,7 @@ import scala.annotation.tailrec
 import xyz.kd5ujc.core.hash.{Hasher, Sha512}
 import xyz.kd5ujc.crypto.signing.{Ed25519, Signature, VerifyingKey}
 import xyz.kd5ujc.crypto.vrf._
+import xyz.kd5ujc.models.crypto_errors.VrfErrorKind
 
 import cafe.cryptography.curve25519.{CompressedEdwardsY, Constants, EdwardsPoint, Scalar}
 import org.bouncycastle.crypto.digests.SHA512Digest
@@ -292,7 +293,7 @@ object Curve25519CrossCheckSuite extends SimpleIOSuite with Checkers {
   private enum Suite { case Tai, Ell2, Draft03 }
 
   /** The previous verifier, on elisabeth (hash-to-curve's `BigInt` maps are shared; their points are re-decoded). */
-  private def vrfOracle(suite: Suite, key: ByteVector, alpha: ByteVector, proof: ByteVector): Either[String, ByteVector] = {
+  private def vrfOracle(suite: Suite, key: ByteVector, alpha: ByteVector, proof: ByteVector): Either[VrfErrorKind, ByteVector] = {
     val id = if (suite == Suite.Tai) 3 else 4
     val decode = if (suite == Suite.Draft03) draft03 else strict
     def h2c(pk: ByteVector): Option[EdwardsPoint] = suite match {
@@ -316,36 +317,31 @@ object Curve25519CrossCheckSuite extends SimpleIOSuite with Checkers {
       if (suite == Suite.Draft03) hash(ByteVector(4, 2), h, g, u, v).take(16)
       else hash(ByteVector(id, 2), key, h, g, u, v, ByteVector(0)).take(16)
     for {
-      _     <- Either.cond(proof.size == 80 && key.size == 32, (), "malformed")
-      y     <- decode(key).toRight("key")
-      _     <- Either.cond(!y.multiplyByCofactor().isIdentity, (), "small")
-      gamma <- decode(proof.take(32)).toRight("gamma")
+      _     <- Either.cond(proof.size == 80 && key.size == 32, (), VrfErrorKind.Malformed)
+      y     <- decode(key).toRight(VrfErrorKind.InvalidPublicKey)
+      _     <- Either.cond(!y.multiplyByCofactor().isIdentity, (), VrfErrorKind.SmallOrderPublicKey)
+      gamma <- decode(proof.take(32)).toRight(VrfErrorKind.InvalidGamma)
       c = Scalar.fromBytesModOrder(proof.slice(32, 48).padRight(32).toArray)
-      _ <- Either.cond(BigInt(1, proof.drop(48).reverse.toArray) < l, (), "scalar")
+      _ <- Either.cond(BigInt(1, proof.drop(48).reverse.toArray) < l, (), VrfErrorKind.NonCanonicalScalar)
       s = Scalar.fromBytesModOrder(proof.drop(48).toArray)
-      h <- h2c(eBytes(y)).toRight("h2c")
+      h <- h2c(eBytes(y)).toRight(VrfErrorKind.HashToCurveFailed)
       u = eq(y, Constants.ED25519_BASEPOINT, c, s)
       v = eq(gamma, h, c, s)
-      _ <- Either.cond(challenge(eBytes(h), proof.take(32), eBytes(u), eBytes(v)) == proof.slice(32, 48), (), "challenge")
+      _ <- Either.cond(
+        challenge(eBytes(h), proof.take(32), eBytes(u), eBytes(v)) == proof.slice(32, 48),
+        (),
+        VrfErrorKind.ChallengeMismatch
+      )
     } yield hash(ByteVector(id, 3), eBytes(gamma.multiplyByCofactor()), if (suite == Suite.Draft03) ByteVector.empty else ByteVector(0))
   }
 
-  private def vrfOurs(suite: Suite, key: ByteVector, alpha: ByteVector, proof: ByteVector): Either[String, ByteVector] = {
+  private def vrfOurs(suite: Suite, key: ByteVector, alpha: ByteVector, proof: ByteVector): Either[VrfErrorKind, ByteVector] = {
     val r = suite match {
       case Suite.Tai     => Vrf.tai.verifyBytes(key, alpha, proof).map(_.bytes)
       case Suite.Ell2    => Vrf.ell2.verifyBytes(key, alpha, proof).map(_.bytes)
       case Suite.Draft03 => Vrf.draft03.verifyBytes(key, alpha, proof).map(_.bytes)
     }
-    r.leftMap {
-      case VrfError.Malformed(_, _)      => "malformed"
-      case VrfError.InvalidPublicKey     => "key"
-      case VrfError.SmallOrderPublicKey  => "small"
-      case VrfError.InvalidGamma         => "gamma"
-      case VrfError.NonCanonicalScalar   => "scalar"
-      case VrfError.HashToCurveFailed(_) => "h2c"
-      case VrfError.ChallengeMismatch    => "challenge"
-      case VrfError.KeyMismatch          => "key mismatch"
-    }
+    r.leftMap(_.kind)
   }
 
   private def prove(suite: Suite, seed: ByteVector, alpha: ByteVector): (ByteVector, ByteVector) = {

@@ -11,6 +11,8 @@ import weaver.scalacheck.Checkers
 
 object KeyCodecSuite extends SimpleIOSuite with Checkers {
 
+  private final case class FixtureFailure[E](error: E) extends RuntimeException(s"invalid fixture: $error")
+
   private def preservesOrder[K](gen: Gen[K])(implicit K: KeyCodec[K], O: Ordering[K], S: cats.Show[K]) =
     forall(Gen.zip(gen, gen)) {
       case (a, b) =>
@@ -101,14 +103,24 @@ object KeyCodecSuite extends SimpleIOSuite with Checkers {
     expect(Namespace("a").map(_.prefix) != Namespace("ab").map(_.prefix).map(_.take(2)), "'a' is not a prefix of 'ab'")
       .and(expect(Namespace("").isLeft, "empty names are rejected"))
       .and(expect(Namespace("x" * 256).isLeft, "names over 255 bytes are rejected"))
-      .and(expect.same(Left(StoreError.Encoding("namespace", "1048576 characters, more than 255 UTF-8 bytes")), Namespace("x" * (1 << 20))))
+      .and(
+        expect.same(
+          Left(StoreError.Encoding(StoreContext.Namespace, EncodingReason.NamespaceCharacters(1048576, 255))),
+          Namespace("x" * (1 << 20))
+        )
+      )
   }
 
   pureTest("a canonical value whose encoding is past the ceiling is a Codec failure naming the limit, never a throw") {
-    val abc = CanonicalValue.text("abc").fold(e => sys.error(e.toString), identity)
+    val abc = CanonicalValue.text("abc").fold(e => throw FixtureFailure(e), identity)
     val heavy =
-      (1 to 70).foldLeft[CanonicalValue](abc)((x, _) => CanonicalValue.array(Vector(x, x)).fold(e => sys.error(e.toString), identity))
-    val refused = Left(StoreError.Encoding("value", s"its encoding is over ${xyz.kd5ujc.core.canonical.Cbor.MaxEncodedBytes} bytes"))
+      (1 to 70).foldLeft[CanonicalValue](abc)((x, _) => CanonicalValue.array(Vector(x, x)).fold(e => throw FixtureFailure(e), identity))
+    val refused = Left(
+      StoreError.Encoding(
+        StoreContext.Value,
+        EncodingReason.EncodedSize(xyz.kd5ujc.core.canonical.Cbor.TooLarge(xyz.kd5ujc.core.canonical.Cbor.MaxEncodedBytes))
+      )
+    )
     expect
       .same(refused, ValueCodec[CanonicalValue].encode(heavy))
       .and(expect.same(Right(ByteVector(0x63, 0x61, 0x62, 0x63)), ValueCodec[CanonicalValue].encode(abc)))

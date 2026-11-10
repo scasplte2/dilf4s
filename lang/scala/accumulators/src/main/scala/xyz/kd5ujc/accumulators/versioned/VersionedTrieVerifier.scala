@@ -12,7 +12,7 @@ import scodec.bits.BitVector
 /** A state proof checked against its state root: what it shows about keys, namespaces and ranges. */
 final class VerifiedState[H] private[versioned] (proof: VerifiedProof[H])(implicit T: TrieHashing[H]) {
 
-  private def covered[A](what: String)(a: Option[A]): Either[VersionedTrieError, A] = a.toRight(VersionedTrieError.NotCovered(what))
+  private def covered[A](what: ProofQuery)(a: Option[A]): Either[VersionedTrieError, A] = a.toRight(VersionedTrieError.NotCovered(what))
 
   private def keyed(listing: List[(BitVector, Digest[H])]): Either[VersionedTrieError, List[(StateKey, Digest[H])]] =
     listing.traverse { case (bits, h) => StateKey.fromBytes(bits.bytes).bimap(VersionedTrieError.Key(_), _ -> h) }
@@ -21,9 +21,10 @@ final class VerifiedState[H] private[versioned] (proof: VerifiedProof[H])(implic
   def lookup(key: StateKey): Either[VersionedTrieError, Option[Digest[H]]] =
     proof.lookup(key.bytes.bits) match {
       // `Lookup` is covariant, so its digest is re-typed through the checked constructor
-      case Lookup.Present(h) => Digest.fromBytes[H](h.bytes)(using T.hasher).bimap(e => VersionedTrieError.Malformed(e.toString), Some(_))
+      case Lookup.Present(h) =>
+        Digest.fromBytes[H](h.bytes)(using T.hasher).bimap(e => VersionedTrieError.Malformed(MalformedReason.Digest(e)), Some(_))
       case Lookup.Absent     => None.asRight
-      case Lookup.NotCovered => VersionedTrieError.NotCovered(s"key ${key.preview.short}").asLeft
+      case Lookup.NotCovered => VersionedTrieError.NotCovered(ProofQuery.Key(key.preview)).asLeft
     }
 
   /**
@@ -43,11 +44,11 @@ final class VerifiedState[H] private[versioned] (proof: VerifiedProof[H])(implic
 
   /** Every entry under the namespace, complete. */
   def namespace(ns: StateNamespace): Either[VersionedTrieError, List[(StateKey, Digest[H])]] =
-    covered(s"namespace ${ns.preview.short}")(proof.prefix(ns.prefix.bits)).flatMap(keyed)
+    covered(ProofQuery.Namespace(ns.preview))(proof.prefix(ns.prefix.bits)).flatMap(keyed)
 
   /** Every entry in `[from, until)`, complete. */
   def range(from: StateKey, until: Option[StateKey]): Either[VersionedTrieError, List[(StateKey, Digest[H])]] =
-    covered(s"range [${from.preview.short}, ${until.fold("")(_.preview.short)})")(proof.range(from.bytes.bits, until.map(_.bytes.bits)))
+    covered(ProofQuery.StateRange(from.preview, until.map(_.preview)))(proof.range(from.bytes.bits, until.map(_.bytes.bits)))
       .flatMap(keyed)
 }
 
@@ -59,12 +60,12 @@ final class VerifiedState[H] private[versioned] (proof: VerifiedProof[H])(implic
 object VersionedTrieVerifier {
 
   private def mismatch(component: VtRootComponent, expected: Digest[?], computed: Digest[?]): VersionedTrieError =
-    VersionedTrieError.RootMismatch(component, expected.hex, computed.hex)
+    VersionedTrieError.RootMismatch(component, Some(expected.bytes), Some(computed.bytes))
 
-  private def verified[H: TrieHashing](mode: Either[VersionedTrieError, KeyMode], root: Digest[H], what: String)(
+  private def verified[H: TrieHashing](mode: Either[VersionedTrieError, KeyMode], root: Digest[H], what: ProofPart)(
     proof: Option[TrieProof[H]]
   ): Either[VersionedTrieError, VerifiedProof[H]] =
-    (mode, proof.toRight(VersionedTrieError.Malformed(s"the proof has no $what proof"))).tupled.flatMap {
+    (mode, proof.toRight(VersionedTrieError.Malformed(MalformedReason.MissingProof(what)))).tupled.flatMap {
       case (m, p) => VersionedTrie.trie(TrieProofs.verify(m, root, p))
     }
 
@@ -75,7 +76,7 @@ object VersionedTrieVerifier {
     for {
       claimed <- VersionedTrie.root(proof.head)
       _       <- Either.cond(claimed == root, (), mismatch(VtRootComponent.Root, root, claimed))
-      top     <- verified(VersionedTrie.topMode, root, "top")(Some(proof.top))
+      top     <- verified(VersionedTrie.topMode, root, ProofPart.Top)(Some(proof.top))
       vkey    <- VersionKey[V].keyOf(proof.head.version)
       _ <- List(
         VersionedTrie.VersionSlot -> vkey,
@@ -85,8 +86,8 @@ object VersionedTrieVerifier {
         case (slot, value) =>
           top.lookup(slot.bits) match {
             case Lookup.Present(h) if h == VersionedTrie.bytesHash[H](value) => ().asRight[VersionedTrieError]
-            case Lookup.NotCovered => VersionedTrieError.NotCovered(s"top slot ${slot.toHex}").asLeft[Unit]
-            case _                 => VersionedTrieError.Malformed(s"top slot ${slot.toHex} does not hold the head's value").asLeft[Unit]
+            case Lookup.NotCovered => VersionedTrieError.NotCovered(ProofQuery.TopSlot(slot)).asLeft[Unit]
+            case _                 => VersionedTrieError.Malformed(MalformedReason.WrongTopSlot(slot)).asLeft[Unit]
           }
       }
     } yield proof.head
@@ -95,12 +96,12 @@ object VersionedTrieVerifier {
     head:  Head[V, H],
     proof: VersionedTrieProof[V, H]
   ): Either[VersionedTrieError, VerifiedProof[H]] =
-    verified(VersionedTrie.historyMode[V], head.historyRoot, "history")(proof.history)
+    verified(VersionedTrie.historyMode[V], head.historyRoot, ProofPart.History)(proof.history)
 
   private def asked[V, H](proof: VersionedTrieProof[V, H], u: V)(implicit V: VersionKey[V]): Either[VersionedTrieError, At[V, H]] =
-    proof.at.toRight(VersionedTrieError.Malformed("the proof names no version")).flatMap { at =>
+    proof.at.toRight(VersionedTrieError.Malformed(MalformedReason.MissingVersion)).flatMap { at =>
       (V.keyOf(at.version), V.keyOf(u)).tupled.flatMap {
-        case (a, b) => Either.cond(a == b, at, VersionedTrieError.Malformed(s"the proof is about version ${a.toHex}, not ${b.toHex}"))
+        case (a, b) => Either.cond(a == b, at, VersionedTrieError.Malformed(MalformedReason.VersionMismatch(a, b)))
       }
     }
 
@@ -118,14 +119,14 @@ object VersionedTrieVerifier {
           Either.cond(
             h == VersionedTrie.bytesHash[H](s.bytes),
             Option(s),
-            VersionedTrieError.Malformed(s"history holds another state root for ${vkey.toHex}")
+            VersionedTrieError.Malformed(MalformedReason.WrongHistoricalStateRoot(vkey))
           )
         case (Lookup.Absent, None)  => Option.empty[Digest[H]].asRight[VersionedTrieError]
-        case (Lookup.NotCovered, _) => VersionedTrieError.NotCovered(s"version ${vkey.toHex}").asLeft
+        case (Lookup.NotCovered, _) => VersionedTrieError.NotCovered(ProofQuery.Version(vkey)).asLeft
         case (Lookup.Present(_), None) =>
-          VersionedTrieError.Malformed(s"version ${vkey.toHex} is committed; the proof claims it is not").asLeft
+          VersionedTrieError.Malformed(MalformedReason.CommittedVersionClaimedAbsent(vkey)).asLeft
         case (Lookup.Absent, Some(_)) =>
-          VersionedTrieError.Malformed(s"version ${vkey.toHex} is not committed; the proof claims a state").asLeft
+          VersionedTrieError.Malformed(MalformedReason.AbsentVersionClaimedPresent(vkey)).asLeft
       }
     } yield root
 
@@ -141,11 +142,11 @@ object VersionedTrieVerifier {
       head <- bind(root, proof)
       hist <- history(head, proof)
       vkey <- V.keyOf(head.version)
-      tail <- hist.range(vkey.bits, None).toRight(VersionedTrieError.NotCovered("history from the head version up"))
+      tail <- hist.range(vkey.bits, None).toRight(VersionedTrieError.NotCovered(ProofQuery.HistoryFromHead))
       _ <- Either.cond(
         tail == List(vkey.bits -> VersionedTrie.bytesHash[H](head.stateRoot.bytes)),
         (),
-        VersionedTrieError.Malformed("the history trie does not end at the head version with the head's state root")
+        VersionedTrieError.Malformed(MalformedReason.InvalidHeadHistory)
       )
     } yield head
 
@@ -156,8 +157,8 @@ object VersionedTrieVerifier {
   ): Either[VersionedTrieError, VerifiedState[H]] =
     for {
       head  <- bind(root, proof)
-      _     <- Either.cond(proof.at.isEmpty, (), VersionedTrieError.Malformed("a historical proof is not about the current state"))
-      state <- verified(VersionedTrie.stateMode, head.stateRoot, "state")(proof.state)
+      _     <- Either.cond(proof.at.isEmpty, (), VersionedTrieError.Malformed(MalformedReason.HistoricalProofForCurrent))
+      state <- verified(VersionedTrie.stateMode, head.stateRoot, ProofPart.State)(proof.state)
     } yield new VerifiedState[H](state)
 
   /** Whether version `u` was committed by the head: its state root, or `None` if it provably never was. */
@@ -178,7 +179,7 @@ object VersionedTrieVerifier {
       head  <- bind(root, proof)
       uk    <- VersionKey[V].keyOf(u)
       s     <- versionRoot(head, proof, u).flatMap(_.toRight(VersionedTrieError.UnknownVersion(versionHex(uk))))
-      state <- verified(VersionedTrie.stateMode, s, "state")(proof.state)
+      state <- verified(VersionedTrie.stateMode, s, ProofPart.State)(proof.state)
     } yield new VerifiedState[H](state)
 
   /**
@@ -196,7 +197,7 @@ object VersionedTrieVerifier {
       uk   <- until.traverse(V.keyOf)
       listing <- hist
         .range(fk.bits, uk.map(_.bits))
-        .toRight(VersionedTrieError.NotCovered(s"versions [${fk.toHex}, ${uk.fold("")(_.toHex)})"))
+        .toRight(VersionedTrieError.NotCovered(ProofQuery.Versions(fk, uk)))
       expected <- claimed.traverse { case (v, s) => V.keyOf(v).map(k => k.bits -> VersionedTrie.bytesHash[H](s.bytes)) }
     } yield listing == expected
 
@@ -215,18 +216,18 @@ object VersionedTrieVerifier {
       tkey <- V.keyOf(t)
       bound = (tkey :+ 0x00.toByte).bits
       found <- proof.at.traverse { at =>
-        (V.keyOf(at.version), at.stateRoot.toRight(VersionedTrieError.Malformed("an as-of answer names its state root"))).tupled.flatMap {
+        (V.keyOf(at.version), at.stateRoot.toRight(VersionedTrieError.Malformed(MalformedReason.MissingAsOfStateRoot))).tupled.flatMap {
           case (pkey, s) =>
             Either.cond(
               xyz.kd5ujc.core.canonical.Cbor.compareBytes(pkey, tkey) <= 0,
               (pkey, s, at.version),
-              VersionedTrieError.Malformed(s"the answer ${pkey.toHex} is after ${tkey.toHex}")
+              VersionedTrieError.Malformed(MalformedReason.AnswerAfterTarget(pkey, tkey))
             )
         }
       }
       from = found.fold(BitVector.empty)(_._1.bits)
-      listing <- hist.range(from, Some(bound)).toRight(VersionedTrieError.NotCovered(s"history up to ${tkey.toHex}"))
+      listing <- hist.range(from, Some(bound)).toRight(VersionedTrieError.NotCovered(ProofQuery.HistoryThrough(tkey)))
       expected = found.toList.map { case (pkey, s, _) => pkey.bits -> VersionedTrie.bytesHash[H](s.bytes) }
-      _ <- Either.cond(listing == expected, (), VersionedTrieError.Malformed(s"the history up to ${tkey.toHex} is not the claimed answer"))
+      _ <- Either.cond(listing == expected, (), VersionedTrieError.Malformed(MalformedReason.WrongAsOfHistory(tkey)))
     } yield found.map { case (_, s, p) => p -> s }
 }

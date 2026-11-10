@@ -4,8 +4,9 @@ import cats.effect.IO
 import cats.mtl.{Handle, Raise}
 import cats.syntax.all._
 
+import xyz.kd5ujc.core.canonical.{CanonicalError, DecodeFailure, DecodeReason, ValueKind}
 import xyz.kd5ujc.core.hash.Sha256
-import xyz.kd5ujc.storage.{RawStore, StoreError}
+import xyz.kd5ujc.storage.{CorruptionReason, Namespace, RawBatch, RawStore, StoreContext, StoreError}
 
 import org.scalacheck.Gen
 import scodec.bits.ByteVector
@@ -175,5 +176,28 @@ object MerkleLogSuite extends SimpleIOSuite with Checkers {
       given Raise[IO, MerkleError] = rm
       MerkleLog.inMemory[IO, Sha256].flatMap(_.update(3, leaf(1)))
     }.map(r => expect.same(Left(Tree(MerkleError.IndexOutOfRange(3, 0))), r))
+  }
+
+  test("stored Merkle state retains canonical and schema corruption causes") {
+    List(
+      ByteVector.empty -> CorruptionReason.Canonical(StoreContext.MerkleLogState, CanonicalError.UnexpectedEnd(0)),
+      ByteVector(1) -> CorruptionReason.Decode(
+        StoreContext.MerkleLogState,
+        DecodeFailure(Nil, DecodeReason.ExpectedType(Vector(ValueKind.Map), ValueKind.Int))
+      )
+    ).traverse {
+      case (bytes, expected) =>
+        run { (rs, rm) =>
+          given Raise[IO, StoreError] = rs
+          given Raise[IO, MerkleError] = rm
+          for {
+            raw       <- RawStore.inMemory[IO]
+            namespace <- Namespace("log/meta").fold(rs.raise[StoreError, Namespace], _.pure[IO])
+            _   <- raw.write(RawBatch.put(namespace.prefix ++ ByteVector("state".getBytes(java.nio.charset.StandardCharsets.UTF_8)), bytes))
+            log <- MerkleLog.persistent[IO, Sha256](raw, "log")
+            size <- log.size
+          } yield size
+        }.map(result => expect.same(Left(Store(StoreError.Corrupt(expected))), result))
+    }.map(_.combineAll)
   }
 }

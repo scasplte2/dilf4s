@@ -2,6 +2,7 @@ package xyz.kd5ujc.accumulators
 
 import cats.Show
 
+import xyz.kd5ujc.accumulators.versioned.LimitSubject
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Cbor}
 
 import org.scalacheck.Gen
@@ -83,7 +84,7 @@ object ValueCommitmentSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Left(TrieError.TooLarge(Cbor.MaxEncodedBytes)), trie.putCanonical(ByteVector(1), heavy).map(_ => ())))
       .and(
         expect.same(
-          Left(VersionedTrieError.TooLarge("the value's commitment", Cbor.MaxEncodedBytes)),
+          Left(VersionedTrieError.TooLarge(LimitSubject.ValueCommitment, Cbor.MaxEncodedBytes)),
           VersionedTrie.valueHash[Sha256](heavy)
         )
       )
@@ -118,7 +119,7 @@ object ValueCommitmentSuite extends SimpleIOSuite with Checkers {
       .and(expect.same(Left(Cbor.TooLarge(Cbor.MaxEncodedBytes)), ValueCommitment.source(past).map(_ => ())))
       .and(
         expect.same(
-          Left(VersionedTrieError.TooLarge("the value's commitment", Cbor.MaxEncodedBytes)),
+          Left(VersionedTrieError.TooLarge(LimitSubject.ValueCommitment, Cbor.MaxEncodedBytes)),
           VersionedTrie.valueHash[Sha256](past)
         )
       )

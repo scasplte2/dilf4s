@@ -226,8 +226,8 @@ The vector columns above say what is gated. These tables say where each capabili
 
 | Capability | Scala | Rust | TS |
 |---|---|---|---|
-| §6 Generated error families: `crypto-errors`, `hash-errors`, `codec-errors`, `proofs-errors`, `store-errors`, `jlvm-errors` | generated into `core` at build time (`xyz.kd5ujc.models.*`), golden at `lang/scala/models-gen/src/test/resources/golden/` | committed, `rs/core/src/generated/` | committed, `ts/core/src/generated/` |
-| `store-error` (`StoreError`) | raised by the stores | generated, never raised (no store) | generated, never raised (no store) |
+| §6 Generated error families: `crypto-errors`, `hash-errors`, `codec-errors`, `proofs-errors`, `store-errors`, `jlvm-errors` | generated schema kinds/models in `core` (`xyz.kd5ujc.models.*`), golden at `lang/scala/models-gen/src/test/resources/golden/`; runtime `VersionedTrieError` and `StoreError` are native ADTs retaining typed causes | committed, `rs/core/src/generated/` | committed, `ts/core/src/generated/` |
+| `store-error` (`StoreError`) | native ADT raised by the stores; generated kind enum | generated, never raised (no store) | generated, never raised (no store) |
 | §5 `MaxProofWeight` (2^24) on proofs and claims, before decoding | `lang/scala/accumulators/m/ProofInput.scala:14` | `rs/proofs/src/lib.rs:27` | `ts/proofs/src/input.ts:11` |
 | §7 Boolean forms answer `false` for well-formed proofs of something else | per verifier (§3.7 to §3.9) | per verifier | per verifier |
 | §8 Previews (`Preview.of`) | `lang/scala/core/m/canonical/Preview.scala:29` | `rs/core/src/preview.rs:21` | `ts/core/src/preview.ts:59` |

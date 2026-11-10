@@ -33,7 +33,7 @@ object Main extends IOApp {
         for {
           paths <- cddlFiles(Paths.get(schemaDir))
           texts <- paths.traverse(p => IO.blocking(Files.readString(p, UTF_8)).map(p.getFileName.toString.stripSuffix(".cddl") -> _))
-          out   <- IO.fromEither(generate(texts, packagePrefix).leftMap(e => new IllegalArgumentException(e.message)))
+          out   <- IO.fromEither(generate(texts, packagePrefix).leftMap(e => GenError.Failure(e)))
           _     <- IO.blocking(Files.createDirectories(Paths.get(outDir)))
           _ <- out.traverse_ {
             case (m, src) => IO.blocking(Files.writeString(Paths.get(outDir, s"${CanonicalEmitter.packageSegment(m)}.scala"), src, UTF_8))
