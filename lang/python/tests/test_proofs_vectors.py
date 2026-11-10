@@ -45,7 +45,7 @@ from dilf4s.proofs import (
     trie_root,
     trie_verify_proof,
 )
-from tests.support import Json, err, failures, kind_of, load, ok
+from tests.support import Json, err, failures, kind_of, load, ok, untyped
 
 MERKLE: Final = load("merkle_v1.json")
 TAGGED: Final = ok(MerkleHashing.tagged("SHA-256"), "tagged")
@@ -97,6 +97,39 @@ def test_merkle_trees_under_both_profiles() -> None:
                 if 0 < m < n:
                     wrong = ok(merkle_root(profile, hashes[: m - 1]), "wrong root")
                     assert merkle_verify_consistency(profile, wrong, root, q) == Ok(False), "a wrong old root"
+
+
+def test_merkle_digest_lists_keep_exact_refusals_after_an_invalid_width() -> None:
+    valid = bytes(32)
+    bad = b"x"
+    for path in ([bad], [valid, bad], [valid, bad, *([valid] * 64)], [bad, b"yy"]):
+        expected = Err(merkle_errors.Encoding(reason="a digest is 32 bytes, got 1"))
+        assert merkle_root(TAGGED, path) == expected
+        assert InclusionProof.of(TAGGED, 0, 1, path) == expected
+        assert ConsistencyProof.of(TAGGED, 0, 1, path) == expected
+    # Boundary type errors still take precedence, including after an invalid-width digest.
+    for result in (
+        merkle_root(TAGGED, untyped([bad, object()])),
+        InclusionProof.of(TAGGED, 0, 1, untyped([bad, object()])),
+        ConsistencyProof.of(TAGGED, 0, 1, untyped([bad, object()])),
+    ):
+        assert result == Err(TypeMismatch(reason="expected bytes, a bytearray or a memoryview"))
+
+    for tail in (bytearray(valid), memoryview(valid)):
+        path = untyped([bad, tail])
+        expected = Err(merkle_errors.Encoding(reason="a digest is 32 bytes, got 1"))
+        assert merkle_root(TAGGED, path) == expected
+        assert InclusionProof.of(TAGGED, 0, 1, path) == expected
+        assert ConsistencyProof.of(TAGGED, 0, 1, path) == expected
+    released = memoryview(valid)
+    released.release()
+    path = untyped([bad, released])
+    for result in (
+        merkle_root(TAGGED, path),
+        InclusionProof.of(TAGGED, 0, 1, path),
+        ConsistencyProof.of(TAGGED, 0, 1, path),
+    ):
+        assert result == Err(TypeMismatch(reason="expected bytes, a bytearray or a memoryview that is not released"))
 
 
 def test_value_commitments_hash_as_the_leaf_of_a_value() -> None:
