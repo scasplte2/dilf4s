@@ -5,7 +5,7 @@ import cats.mtl.{Handle, Raise}
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.hash.{Digest, Sha256}
-import xyz.kd5ujc.storage.{ByteRange, Generations, RawBatch, RawStore, StoreError, Version, WatchedRawStore}
+import xyz.kd5ujc.storage._
 
 import org.scalacheck.Gen
 import scodec.bits.ByteVector
@@ -352,5 +352,21 @@ object TrieStoreSuite extends SimpleIOSuite with Checkers {
       case Left(Tree(e)) => expect.same(TrieError.TooLarge(xyz.kd5ujc.accumulators.ProofInput.MaxProofWeight), e)
       case other         => failure(s"expected TooLarge, got $other")
     }
+  }
+
+  test("stored trie state retains its malformed width") {
+    run { (rs, rt) =>
+      given Raise[IO, StoreError] = rs
+      given Raise[IO, TrieError] = rt
+      for {
+        raw       <- RawStore.inMemory[IO]
+        namespace <- Namespace("trie/meta").fold(rs.raise[StoreError, Namespace], _.pure[IO])
+        _ <- raw.write(
+          RawBatch.put(namespace.prefix ++ ByteVector("state".getBytes(java.nio.charset.StandardCharsets.UTF_8)), ByteVector(1))
+        )
+        store  <- TrieStore.make[IO, Sha256](raw, "trie", mode)
+        latest <- store.latest
+      } yield latest
+    }.map(result => expect.same(Left(Store(StoreError.Corrupt(CorruptionReason.Width(StoredRecord.TrieState, 1, 24)))), result))
   }
 }

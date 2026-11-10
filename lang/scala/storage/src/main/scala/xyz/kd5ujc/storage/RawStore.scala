@@ -83,13 +83,13 @@ object Namespace {
    * is encoded or previewed (docs/specs/conformance.md §8).
    */
   def apply(name: String): Either[StoreError, Namespace] =
-    if (name.length > 255) StoreError.Encoding("namespace", s"${name.length} characters, more than 255 UTF-8 bytes").asLeft
+    if (name.length > 255) StoreError.Encoding(StoreContext.Namespace, EncodingReason.NamespaceCharacters(name.length, 255)).asLeft
     else {
       val bytes = ByteVector(name.getBytes(UTF_8))
       Either.cond(
         bytes.nonEmpty && bytes.size <= 255,
         new Namespace(ByteVector(bytes.size.toInt) ++ bytes) {},
-        StoreError.Encoding("namespace", s"${Preview.of(name)} must be 1..255 UTF-8 bytes")
+        StoreError.Encoding(StoreContext.Namespace, EncodingReason.NamespaceBytes(Preview.of(name), 1, 255))
       )
     }
 }

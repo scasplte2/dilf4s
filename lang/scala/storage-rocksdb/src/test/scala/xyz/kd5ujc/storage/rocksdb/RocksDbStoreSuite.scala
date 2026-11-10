@@ -6,7 +6,7 @@ import java.util.Comparator
 import cats.effect.{IO, Resource}
 import cats.mtl.Raise
 
-import xyz.kd5ujc.storage.{RawStore, StoreBehaviours, StoreError}
+import xyz.kd5ujc.storage.{BackendOperation, RawStore, StoreBehaviours, StoreError}
 
 import weaver.SimpleIOSuite
 import weaver.scalacheck.Checkers
@@ -58,5 +58,19 @@ object RocksDbStoreSuite extends SimpleIOSuite with Checkers with StoreBehaviour
       case Left(StoreError.Backend(_, _)) => success
       case other                          => failure(s"expected a backend error, got $other")
     }
+  }
+
+  test("native failures retain the exact operation and original RocksDB exception") {
+    val cause = new org.rocksdb.RocksDBException("injected native failure")
+    attempt { implicit r =>
+      RocksDbStore.native[IO, Unit](BackendOperation.Get)(throw cause)
+    }.map(result => expect.same(Left(StoreError.Backend(BackendOperation.Get, cause)), result))
+  }
+
+  test("non-RocksDB failures remain in the effect error channel") {
+    val cause = new IllegalStateException("injected non-native failure")
+    attempt { implicit r =>
+      RocksDbStore.native[IO, Unit](BackendOperation.Get)(throw cause)
+    }.attempt.map(result => expect.same(Left(cause), result))
   }
 }

@@ -159,7 +159,7 @@ object VersionedTrieStore {
 
     private def fail[A](e:         VersionedTrieError): F[A] = R.raise[VersionedTrieError, A](e)
     private def lift[A](e:         Either[VersionedTrieError, A]): F[A] = e.fold(fail[A], _.pure[F])
-    private def corrupt[A](reason: String): F[A] = fail(VersionedTrieError.Store(StoreError.Corrupt(reason)))
+    private def corrupt[A](reason: CorruptionReason): F[A] = fail(VersionedTrieError.Store(StoreError.Corrupt(reason)))
     private def vkey(v:            V): F[ByteVector] = lift(V.keyOf(v))
     private def version(n:         Long): Version = Version.unsafe(n)
     private def after(a:           ByteVector, b: ByteVector): Boolean = Cbor.compareBytes(a, b) > 0
@@ -174,17 +174,24 @@ object VersionedTrieStore {
     private def seqOf(vk: ByteVector): F[Option[Long]] =
       raw
         .get(byVersion ++ vk)
-        .flatMap(_.traverse(b => if (b.size == 8L) b.toLong(signed = false).pure[F] else corrupt[Long]("version index record")))
+        .flatMap(
+          _.traverse(b =>
+            if (b.size == 8L) b.toLong(signed = false).pure[F]
+            else corrupt[Long](CorruptionReason.Width(StoredRecord.VersionIndex, b.size, 8))
+          )
+        )
 
     private def decodeEntry(b: ByteVector): F[(ByteVector, Digest[H])] =
-      if (b.size <= V.width.toLong) corrupt("sequence index record")
+      if (b.size <= V.width.toLong) corrupt(CorruptionReason.SequenceRecordTooShort(b.size, V.width.toLong + 1))
       else
-        Digest.fromBytes[H](b.drop(V.width.toLong))(using T.hasher).fold(e => corrupt(e.toString), d => (b.take(V.width.toLong), d).pure[F])
+        Digest
+          .fromBytes[H](b.drop(V.width.toLong))(using T.hasher)
+          .fold(e => corrupt(CorruptionReason.Hash(e)), d => (b.take(V.width.toLong), d).pure[F])
 
     private def entryAt(n: Long): F[Option[(ByteVector, Digest[H])]] = raw.get(seqKey(n)).flatMap(_.traverse(decodeEntry))
 
     private def requireEntry(n: Long): F[(ByteVector, Digest[H])] =
-      entryAt(n).flatMap(_.fold(corrupt[(ByteVector, Digest[H])](s"no index entry for sequence $n"))(_.pure[F]))
+      entryAt(n).flatMap(_.fold(corrupt[(ByteVector, Digest[H])](CorruptionReason.MissingSequenceEntry(n)))(_.pure[F]))
 
     private def requireSeq(vk: ByteVector): F[Long] =
       seqOf(vk).flatMap(_.fold(fail[Long](VersionedTrieError.UnknownVersion(versionHex(vk))))(_.pure[F]))
@@ -258,11 +265,13 @@ object VersionedTrieStore {
     def checkAligned: F[Unit] =
       stable((state.latest, history.latest, values.latest).tupled.flatMap {
         case (s, h, v) =>
-          if (s != h || s != v) Option(s"stores out of step: state ${s.value}, history ${h.value}, values ${v.value}").pure[F]
+          if (s != h || s != v) Option(CorruptionReason.StoresOutOfStep(s.value, h.value, v.value): CorruptionReason).pure[F]
           else
             (entryAt(s.value), entryAt(s.value + 1)).tupled.map {
               case (here, next) =>
-                Option.when((s.value > 0L && here.isEmpty) || next.isDefined)(s"version index out of step at sequence ${s.value}")
+                Option.when((s.value > 0L && here.isEmpty) || next.isDefined)(
+                  CorruptionReason.IndexOutOfStep(s.value, here.isDefined, next.isDefined): CorruptionReason
+                )
             }
       }).flatMap(_.traverse_(corrupt[Unit]))
 
@@ -544,7 +553,7 @@ object VersionedTrieStore {
           floor   <- values.floor
           _       <- if (floor.value > 0L && n <= floor.value) fail[Unit](VersionedTrieError.NotRetained(versionHex(vk))) else ().pure[F]
           parent  <- headOfSeq(n - 1)
-          h       <- headOfSeq(n).flatMap(_.fold(corrupt[Head[V, H]](s"no head at sequence $n"))(_.pure[F]))
+          h       <- headOfSeq(n).flatMap(_.fold(corrupt[Head[V, H]](CorruptionReason.MissingHead(n)))(_.pure[F]))
           changes <- values.changes(version(n))
         } yield
           Delta(

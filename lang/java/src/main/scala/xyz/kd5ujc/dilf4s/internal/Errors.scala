@@ -279,21 +279,21 @@ object Errors {
         new xyz.kd5ujc.dilf4s.error.StateKeyError.NamespaceFull(preview(namespace))
     }
 
-  def storeError(e: xyz.kd5ujc.models.store_errors.StoreError): xyz.kd5ujc.dilf4s.error.StoreError =
+  def storeError(e: xyz.kd5ujc.storage.StoreError): xyz.kd5ujc.dilf4s.error.StoreError =
     e match {
-      case xyz.kd5ujc.models.store_errors.StoreError.Encoding(context, reason) =>
-        new xyz.kd5ujc.dilf4s.error.StoreError.Encoding(context, reason)
-      case xyz.kd5ujc.models.store_errors.StoreError.NotFound(keyBytes, prefix) =>
+      case xyz.kd5ujc.storage.StoreError.Encoding(context, reason) =>
+        new xyz.kd5ujc.dilf4s.error.StoreError.Encoding(context.label, reason.message)
+      case xyz.kd5ujc.storage.StoreError.NotFound(keyBytes, prefix) =>
         new xyz.kd5ujc.dilf4s.error.StoreError.NotFound(keyBytes, preview(prefix))
-      case xyz.kd5ujc.models.store_errors.StoreError.VersionConflict(expected, actual) =>
+      case xyz.kd5ujc.storage.StoreError.VersionConflict(expected, actual) =>
         new xyz.kd5ujc.dilf4s.error.StoreError.VersionConflict(expected, actual)
-      case xyz.kd5ujc.models.store_errors.StoreError.UnknownVersion(requested, latest) =>
+      case xyz.kd5ujc.storage.StoreError.UnknownVersion(requested, latest) =>
         new xyz.kd5ujc.dilf4s.error.StoreError.UnknownVersion(requested, latest)
-      case xyz.kd5ujc.models.store_errors.StoreError.Pruned(requested, floor) =>
+      case xyz.kd5ujc.storage.StoreError.Pruned(requested, floor) =>
         new xyz.kd5ujc.dilf4s.error.StoreError.Pruned(requested, floor)
-      case xyz.kd5ujc.models.store_errors.StoreError.Backend(operation, reason) =>
-        new xyz.kd5ujc.dilf4s.error.StoreError.Backend(operation, reason)
-      case xyz.kd5ujc.models.store_errors.StoreError.Corrupt(reason) => new xyz.kd5ujc.dilf4s.error.StoreError.Corrupt(reason)
+      case xyz.kd5ujc.storage.StoreError.Backend(operation, cause) =>
+        new xyz.kd5ujc.dilf4s.error.StoreError.Backend(operation.label, Option(cause.getMessage).getOrElse(cause.getClass.getName))
+      case xyz.kd5ujc.storage.StoreError.Corrupt(reason) => new xyz.kd5ujc.dilf4s.error.StoreError.Corrupt(reason.message)
     }
 
   def versionedTrieError(e: xyz.kd5ujc.accumulators.versioned.VersionedTrieError): xyz.kd5ujc.dilf4s.error.VersionedTrieError =

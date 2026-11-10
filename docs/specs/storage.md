@@ -4,7 +4,7 @@ Status: normative for record values; informative for key layout.
 Refusals (their kinds, normative fields and the work allowed before them) follow `conformance.md`. The reference store's
 refusals are `StoreError` (`shared/schemas/store-errors.cddl`): `Encoding` (a key or value that does not encode or
 decode), `NotFound`, `VersionConflict`, `UnknownVersion`, `Pruned`, `Backend` and `Corrupt`; a versioned trie's
-`Store` kind holds one. No SDK has a store, and no vector pins it.
+`Store` kind holds one. Scala uses a native ADT with typed codec and corruption reasons, backend operations and original exception causes; its `kind` uses the generated schema enum. Java renders those details at the API boundary. Other implementations retain the generated family; no SDK has a store, and no vector pins it.
 
 ## 1. Keys
 

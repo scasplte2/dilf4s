@@ -294,13 +294,16 @@ tests check each row's kind and `limit`, and that every kind has a row. `state-k
 **The proof families.** `shared/schemas/proofs-errors.cddl` defines `merkle-error` (`MerkleError`), `trie-error`
 (`TrieError`), `versioned-trie-error` (`VersionedTrieError`), `poseidon-error` (`PoseidonError`) and
 `poseidon-merkle-error` (`PoseidonMerkleError`) as `crypto-errors.cddl` defines the crypto families, so each is
-generated in every language with the same kinds and fields (Scala under `xyz.kd5ujc.accumulators.merkle`, `.trie`,
+represented in every language with the same normative kinds and fields (Scala under `xyz.kd5ujc.accumulators.merkle`, `.trie`,
 `.versioned` and `.poseidon`, and `xyz.kd5ujc.core.hash` for `PoseidonError`; Rust `dilf4s_proofs::merkle`, `::trie`,
 `::versioned` and `::poseidon`; TypeScript the proofs package's `merkle`, `trie`, `versioned` and `poseidon`, all from
 `models.proofsErrors`). A versioned trie's `Key`, `Trie` and `Store` hold the state key's, the trie's and the store's
 refusal (`store-errors.cddl`'s `store-error`, the reference store's `StoreError`, which no SDK raises); Rust converts
 each into its kind with `From`. A versioned-trie refusal names a version by its key's full lowercase hex
 (`version-key-hex`, at most 2048 characters) and a recomputed root by a closed `component` (`vt-root-component`).
+Scala's native `VersionedTrieError` and `StoreError` retain typed reasons and causes while using the generated kind enums.
+Absent roots are `None` internally; the Java boundary renders the documented `none` representation. Diagnostic messages
+are presentation output and do not select failures or control flow.
 Merkle indexes and sizes are `merkle-position` (`int`), so a caller's index is held exactly in every SDK. The kinds no
 SDK verifier reaches are the exemptions above; besides them, the Rust and TypeScript SDKs have no store or tree
 builder, so `Empty`, `VersionConflict`, `CommitRewrite`, `NotRetained`, `Store`, `MissingNode`, `InvalidNode` and
