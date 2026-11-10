@@ -249,16 +249,42 @@ pub enum Output {
     Address(Option<Vec<u8>>),
     /// Success with nothing to return.
     Unit,
-    /// A JLVM outcome: the value's canonical CBOR or the error, the gas and the number of warnings.
+    /// A JLVM outcome: the value's canonical CBOR or the error, the gas and the ordered warning contents.
     Jlvm {
         /// The value's canonical CBOR, or the error's kind, its normative `op` and `cause` (jlvm.md section 3, the
         /// cause as `Family.Kind`) and its `Debug` rendering.
         result: Result<Vec<u8>, JlvmFailure>,
         /// The gas used.
         gas: u64,
-        /// The number of warnings.
-        warnings: u64,
+        /// The warnings, including their full preview contents, in order.
+        warnings: Vec<Warning>,
     },
+}
+
+/// An ordered JLVM warning with every normative preview field, committed by the conformance guest.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum Warning {
+    /// A plain path in a callback also names a key in an enclosing frame or the data.
+    AmbiguousPath {
+        /// The first 32 Unicode code points of the path.
+        head: String,
+        /// The full path's UTF-8 length.
+        length: u64,
+        /// Whether the full path extends beyond the preview.
+        truncated: bool,
+    },
+}
+
+impl From<dilf4s_jlvm::Warning> for Warning {
+    fn from(warning: dilf4s_jlvm::Warning) -> Self {
+        match warning {
+            dilf4s_jlvm::Warning::AmbiguousPath(path) => Self::AmbiguousPath {
+                head: path.head().to_string(),
+                length: u64::try_from(path.length()).unwrap_or(u64::MAX),
+                truncated: path.is_truncated(),
+            },
+        }
+    }
 }
 
 /// A JLVM error as a case reports it: its kind, its `op`, its `cause` (`Family.Kind`) and its `Debug` rendering.
@@ -347,12 +373,12 @@ fn jlvm_case(
     // a recipe that does not build is a broken vector, not an outcome
     let built = built.iter().map(|(k, r)| r.build().map(|v| (k.clone(), v))).collect::<Result<Vec<_>, _>>()?;
     let (result, gas, warnings) = match parse_inputs(program, data, env) {
-        Err(e) => (Err(e), Gas::ZERO, 0),
+        Err(e) => (Err(e), Gas::ZERO, Vec::new()),
         Ok((program, data, mut env)) => {
             env.extend(built);
             let config = Config { limit: GasLimit(Gas::new(gas_limit)), schedule: GasSchedule::LATEST };
             let o = jlvm.evaluate(&program, &data, &env, &config);
-            (o.result, o.gas_used, o.warnings.len())
+            (o.result, o.gas_used, o.warnings.into_iter().map(Warning::from).collect())
         }
     };
     Ok(Output::Jlvm {
@@ -360,7 +386,7 @@ fn jlvm_case(
             .map(|v| cbor::encode(&v))
             .map_err(|e| (e.kind().to_string(), e.site().map(|s| s.to_string()), cause(&e), debug(&e))),
         gas: gas.value(),
-        warnings: u64::try_from(warnings).unwrap_or(u64::MAX),
+        warnings,
     })
 }
 

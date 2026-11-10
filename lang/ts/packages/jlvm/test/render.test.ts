@@ -12,7 +12,7 @@ const vectors = loadVectors("jlvm_v1.json", models.jlvmVectors.JlvmVectors);
 
 describe("rendering", { timeout: 120_000 }, () => {
   it("reads back as the same program, for every program of the vectors that parses", () => {
-    expect(vectors.cases).toHaveLength(3363);
+    expect(vectors.cases).toHaveLength(3371);
     expect(vectors.aliases).toHaveLength(4);
     const expected = readRepoFile("shared/vectors/jlvm_parse_refusals_v1.tsv").trimEnd().split("\n").map(line => line.split("\t"));
     expect(expected).toHaveLength(67);
@@ -29,7 +29,7 @@ describe("rendering", { timeout: 120_000 }, () => {
       expect(expectOk(render(back), "renders again")).toBe(surface);
       rendered++;
     }
-    expect(rendered).toBe(3304);
+    expect(rendered).toBe(3312);
   });
 
   it("writes single-key maps as object, quotes data headed by a call's name, and bytes as 0x text", () => {

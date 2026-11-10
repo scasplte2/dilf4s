@@ -2,7 +2,7 @@
 //! program, the data and the host bindings (the first failure is the outcome, with no gas), add the bindings built
 //! with shared parts (`built`, which no JSON text could carry), then evaluate with the
 //! case's gas limit (the file's when absent), the latest schedule and the native cryptographic backend. Every case must
-//! give the same value (canonical CBOR) or error (its kind and `op`), the same gas and the same number of warnings.
+//! give the same value (canonical CBOR) or error (its kind and `op`), the same gas and the same ordered warning kinds and preview contents.
 //!
 //! `JLVM_CASE=<substring>` runs only the matching cases and prints each outcome.
 
@@ -24,13 +24,13 @@ use dilf4s_core::codec::Model;
 use dilf4s_core::generated::jlvm_vectors::{
     BuiltStep, BuiltValue, JlvmCase, JlvmCause, JlvmErrorKind, JlvmGroth16Cause, JlvmHashCause, JlvmMerkleCause,
     JlvmOutcome, JlvmPoseidonCause, JlvmPoseidonMerkleCause, JlvmSigmaCause, JlvmSigningCause, JlvmTrieCause,
-    JlvmVectors, JlvmVrfCause, JlvmZkCause,
+    JlvmVectors, JlvmVrfCause, JlvmWarning, JlvmWarningPreview, JlvmZkCause,
 };
 use dilf4s_core::hash::HashAlgorithm;
 use dilf4s_core::{cbor, hex, json};
 use dilf4s_jlvm::{
     Compiled, Config, CryptoCause, ErrorSite, Gas, GasLimit, GasSchedule, Jlvm, JlvmError, Native, Op, OpClass,
-    Outcome, Site, Value, decode, from_canonical, parse, parse_value,
+    Outcome, Site, Value, Warning, decode, from_canonical, parse, parse_value,
 };
 
 fn load() -> JlvmVectors {
@@ -134,14 +134,30 @@ fn aliases_parse_to_their_operations() {
     }
 }
 
+fn warnings(o: &Outcome) -> Vec<JlvmWarning> {
+    o.warnings
+        .iter()
+        .map(|w| match w {
+            Warning::AmbiguousPath(p) => JlvmWarning {
+                path: JlvmWarningPreview {
+                    head: p.head().to_owned(),
+                    length: u64::try_from(p.length()).unwrap_or(u64::MAX),
+                    truncated: p.is_truncated(),
+                },
+            },
+        })
+        .collect()
+}
+
 /// Where a case's outcome differs from the vector's, if it does: the bucket and a description.
 fn mismatch(case: &JlvmCase, o: &Outcome) -> Option<(&'static str, String)> {
     let (want, got) = (expected(case), actual(o));
+    let actual_warnings = warnings(o);
     let bucket = if want != got {
         "outcome"
     } else if o.gas_used.value() != case.gas_used {
         "gas"
-    } else if u64::try_from(o.warnings.len()).unwrap_or(u64::MAX) != case.warnings {
+    } else if actual_warnings != case.warnings {
         "warnings"
     } else {
         return None;
@@ -149,12 +165,12 @@ fn mismatch(case: &JlvmCase, o: &Outcome) -> Option<(&'static str, String)> {
     Some((
         bucket,
         format!(
-            "{}: want {want} gas {} warnings {}, got {got} gas {} warnings {} ({:?})",
+            "{}: want {want} gas {} warnings {:?}, got {got} gas {} warnings {:?} ({:?})",
             case.name,
             case.gas_used,
             case.warnings,
             o.gas_used.value(),
-            o.warnings.len(),
+            actual_warnings,
             o.result.as_ref().err()
         ),
     ))
@@ -163,7 +179,7 @@ fn mismatch(case: &JlvmCase, o: &Outcome) -> Option<(&'static str, String)> {
 #[test]
 fn conformance_vectors() {
     let vectors = load();
-    assert_eq!(vectors.cases.len(), 3363, "conformance corpus");
+    assert_eq!(vectors.cases.len(), 3371, "conformance corpus");
     let filter = std::env::var("JLVM_CASE").ok();
     let jlvm = Jlvm::new(Native::new().unwrap());
     let mut passed = 0usize;

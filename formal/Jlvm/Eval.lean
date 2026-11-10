@@ -616,7 +616,7 @@ end
 structure Outcome where
   gasUsed : Nat
   result : Except Fault Value
-  warnings : Nat
+  warnings : List (String × Nat)
   steps : Nat
 
 def initial (limit : Nat) : Meter := ⟨0, limit, [], 0⟩
@@ -629,8 +629,8 @@ def maxGasLimit : Nat := 2 ^ 53 - 1
 def evaluate (root : Node) (data : Value) (env : List (String × Value)) (limit : Nat) : Outcome :=
   if limit ≤ maxGasLimit then
     match (eval root ⟨data, env, []⟩).run (initial limit) with
-    | .ok v m => ⟨m.used, .ok v, m.warnings.length, m.steps⟩
-    | .fail f m => ⟨m.used, .error f, m.warnings.length, m.steps⟩
-  else ⟨0, .error (.err .limit), 0, 0⟩
+    | .ok v m => ⟨m.used, .ok v, m.warnings, m.steps⟩
+    | .fail f m => ⟨m.used, .error f, m.warnings, m.steps⟩
+  else ⟨0, .error (.err .limit), [], 0⟩
 
 end Jlvm
