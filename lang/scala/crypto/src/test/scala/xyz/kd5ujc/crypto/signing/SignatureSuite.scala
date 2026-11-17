@@ -242,7 +242,8 @@ object SignatureSuite extends IOSuite with Checkers {
 
   test("key decoders: a wrong length is InvalidEncoding, bytes that are no key InvalidKey (never BackendFailure)") { backend =>
     IO {
-      def kind(r: Either[CryptoError, ?]): String = r.fold(_.productPrefix, _ => "accepted")
+      import xyz.kd5ujc.models.crypto_errors.CryptoErrorKind
+      def kind(r: Either[CryptoError, ?]): Option[CryptoErrorKind] = r.left.toOption.map(_.kind)
       val p = hex"fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
       val vk =
         backend.ecdsaPublicKeyOf.verifyingKey(backend.ecdsaSeedDerivation.fromSeed(ByteVector.fill(32)(7)).toOption.get.signing).bytes
@@ -263,8 +264,13 @@ object SignatureSuite extends IOSuite with Checkers {
         "P-256 tag 00"               -> kind(P256Ecdsa.codec.verifyingKey(hex"00" ++ vk.drop(1))),
         "Ed25519-BIP32 kL unclamped" -> kind(xyz.kd5ujc.crypto.keys.Ed25519Bip32.codec.signingKey(ByteVector.fill(64)(1)))
       )
-      shortKeys.foldMap { case (what, k) => expect.same("InvalidEncoding", k).and(expect(k == "InvalidEncoding", what)) } |+|
-      notKeys.foldMap { case (what, k) => expect.same("InvalidKey", k).and(expect(k == "InvalidKey", what)) }
+      shortKeys.foldMap {
+        case (what, k) =>
+          expect.same(Some(CryptoErrorKind.InvalidEncoding), k).and(expect(k.contains(CryptoErrorKind.InvalidEncoding), what))
+      } |+|
+      notKeys.foldMap {
+        case (what, k) => expect.same(Some(CryptoErrorKind.InvalidKey), k).and(expect(k.contains(CryptoErrorKind.InvalidKey), what))
+      }
     }
   }
 

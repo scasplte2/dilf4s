@@ -30,9 +30,9 @@ object ChildIndex {
   }
 
   def soft(i: Long): Either[KeyError, ChildIndex] =
-    Either.cond(i >= 0 && i < 0x80000000L, Soft(i), KeyError.InvalidDerivation(s"index $i out of range"))
+    Either.cond(i >= 0 && i < 0x80000000L, Soft(i), KeyError.InvalidDerivation(KeyError.DerivationReason.IndexOutOfRange(i)))
   def hardened(i: Long): Either[KeyError, ChildIndex] =
-    Either.cond(i >= 0 && i < 0x80000000L, Hardened(i), KeyError.InvalidDerivation(s"index $i out of range"))
+    Either.cond(i >= 0 && i < 0x80000000L, Hardened(i), KeyError.InvalidDerivation(KeyError.DerivationReason.IndexOutOfRange(i)))
 
   /** The most digits a segment may have: 2^31 - 1 has ten. */
   val MaxSegmentDigits: Int = xyz.kd5ujc.models.limits.PathMaxSegmentDigits
@@ -56,7 +56,7 @@ object ChildIndex {
       val end = if (slash < 0) p.length else slash
       val parsed =
         if (at < MaxDepth) segment(p.substring(from, end), at)
-        else KeyError.InvalidPath(PathRefusal.TooDeep, s"path has more than $MaxDepth segments").asLeft
+        else KeyError.InvalidPath(KeyError.PathReason.TooDeep).asLeft
       parsed match {
         case Left(e)               => e.asLeft
         case Right(c) if slash < 0 => (c :: acc).reverse.asRight
@@ -65,31 +65,31 @@ object ChildIndex {
     }
     if (p == "m") Nil.asRight
     else if (p.startsWith("m/")) scan(2, 0, Nil)
-    else KeyError.InvalidPath(PathRefusal.MissingMaster, "path must start with m").asLeft
+    else KeyError.InvalidPath(KeyError.PathReason.MissingMaster).asLeft
   }
 
   private def segment(seg: String, at: Int): Either[KeyError.InvalidPath, ChildIndex] = {
     val hard = seg.endsWith("'") || seg.endsWith("h")
     val digits = if (hard) seg.dropRight(1) else seg
     for {
-      _ <- Either.cond(
+      _ <- Either.cond[KeyError.InvalidPath, Unit](
         digits.nonEmpty && digits.forall(c => c >= '0' && c <= '9'),
         (),
-        KeyError.InvalidPath(PathRefusal.Malformed, s"path segment $at is malformed")
+        KeyError.InvalidPath(KeyError.PathReason.Malformed(at))
       )
-      _ <- Either.cond(
+      _ <- Either.cond[KeyError.InvalidPath, Unit](
         digits == "0" || !digits.startsWith("0"),
         (),
-        KeyError.InvalidPath(PathRefusal.LeadingZero, s"path segment $at has a leading zero")
+        KeyError.InvalidPath(KeyError.PathReason.LeadingZero(at))
       )
-      _ <- Either.cond(
+      _ <- Either.cond[KeyError.InvalidPath, Unit](
         digits.length <= MaxSegmentDigits,
         (),
-        KeyError.InvalidPath(PathRefusal.TooManyDigits, s"path segment $at has ${digits.length} digits, more than $MaxSegmentDigits")
+        KeyError.InvalidPath(KeyError.PathReason.TooManyDigits(at, digits.length))
       )
       // at most ten digits: no overflow
       i = digits.foldLeft(0L)((acc, c) => acc * 10 + (c - '0'))
-      index <- Either.cond(i < 0x80000000L, i, KeyError.InvalidPath(PathRefusal.OutOfRange, s"path segment $at is out of range"))
+      index <- Either.cond[KeyError.InvalidPath, Long](i < 0x80000000L, i, KeyError.InvalidPath(KeyError.PathReason.OutOfRange(at)))
     } yield if (hard) Hardened(index) else Soft(index)
   }
 
@@ -106,7 +106,7 @@ object ExtendedKey {
   private[keys] val ChainCodeLength: Long = 32
 
   private[keys] def chainCode(cc: ByteVector): Either[KeyError, ByteVector] =
-    Either.cond(cc.size == ChainCodeLength, cc, KeyError.InvalidDerivation(s"a chain code is $ChainCodeLength bytes, got ${cc.size}"))
+    Either.cond(cc.size == ChainCodeLength, cc, KeyError.InvalidDerivation(KeyError.DerivationReason.ChainCodeLength(cc.size)))
 
   /** An extended key from its parts; the chain code must be 32 bytes. */
   def from[S](key: SigningKey[S], chainCode: ByteVector): Either[KeyError, ExtendedKey[S]] =
@@ -119,15 +119,21 @@ object Slip10Ed25519 {
   private val curveKey = ByteVector("ed25519 seed".getBytes(UTF_8))
 
   private def split(i: ByteVector): Either[KeyError, ExtendedKey[Ed25519]] =
-    Ed25519.codec.signingKey(i.take(32)).bimap(e => KeyError.InvalidDerivation(e.toString), ExtendedKey(_, i.drop(32)))
+    Ed25519.codec
+      .signingKey(i.take(32))
+      .bimap(e => KeyError.InvalidDerivation(KeyError.DerivationReason.Crypto(e)), ExtendedKey(_, i.drop(32)))
 
   def master(seed: Secret): Either[KeyError, ExtendedKey[Ed25519]] =
     Either
-      .cond(seed.bytes.size >= 16 && seed.bytes.size <= 64, seed, KeyError.InvalidDerivation("seed must be 16..64 bytes"))
+      .cond(
+        seed.bytes.size >= 16 && seed.bytes.size <= 64,
+        seed,
+        KeyError.InvalidDerivation(KeyError.DerivationReason.SeedLength(seed.bytes.size))
+      )
       .flatMap(s => split(Hmac.sha512(curveKey, s.bytes)))
 
   def child(parent: ExtendedKey[Ed25519], index: ChildIndex): Either[KeyError, ExtendedKey[Ed25519]] =
-    if (!index.hardened) KeyError.InvalidDerivation("SLIP-10 Ed25519 supports hardened indices only").asLeft
+    if (!index.hardened) KeyError.InvalidDerivation(KeyError.DerivationReason.HardenedOnly).asLeft
     else split(Hmac.sha512(parent.chainCode, ByteVector(0) ++ parent.key.bytes ++ ChildIndex.be32(index)))
 
   def derive(seed: Secret, path: List[ChildIndex]): Either[KeyError, ExtendedKey[Ed25519]] = master(seed).flatMap(m => path.foldM(m)(child))
@@ -143,18 +149,23 @@ final class Bip32Secp256k1(backend: Secp256k1) {
   private def keyOf(b: ByteVector): Either[KeyError, SigningKey[Secp256k1Ecdsa]] =
     backend.ecdsaCodec
       .signingKey(b)
-      .leftMap(_ => KeyError.InvalidDerivation("derived key is not a valid scalar (skip this index, per BIP32)"))
+      .leftMap(e => KeyError.InvalidDerivation(KeyError.DerivationReason.InvalidScalar(e)))
 
   /** A child's tweak `I_L`: an index with `I_L >= n` is skipped (BIP32, signing.md §2.3); `I_L = 0` is a valid tweak. */
   private def tweakOf(iL: ByteVector): Either[KeyError, ByteVector] =
-    Either.cond(BigInt(1, iL.toArray) < n, iL, KeyError.InvalidDerivation("I_L is not below n (skip this index, per BIP32)"))
+    Either.cond(BigInt(1, iL.toArray) < n, iL, KeyError.InvalidDerivation(KeyError.DerivationReason.TweakOutOfRange))
 
   def master(seed: Secret): Either[KeyError, ExtendedKey[Secp256k1Ecdsa]] =
-    Either.cond(seed.bytes.size >= 16 && seed.bytes.size <= 64, seed, KeyError.InvalidDerivation("seed must be 16..64 bytes")).flatMap {
-      s =>
+    Either
+      .cond(
+        seed.bytes.size >= 16 && seed.bytes.size <= 64,
+        seed,
+        KeyError.InvalidDerivation(KeyError.DerivationReason.SeedLength(seed.bytes.size))
+      )
+      .flatMap { s =>
         val i = Hmac.sha512(curveKey, s.bytes)
         keyOf(i.take(32)).map(ExtendedKey(_, i.drop(32)))
-    }
+      }
 
   def child(parent: ExtendedKey[Secp256k1Ecdsa], index: ChildIndex): Either[KeyError, ExtendedKey[Secp256k1Ecdsa]] = {
     val data =
@@ -167,7 +178,7 @@ final class Bip32Secp256k1(backend: Secp256k1) {
   private[keys] def childOf(parent: ExtendedKey[Secp256k1Ecdsa], i: ByteVector): Either[KeyError, ExtendedKey[Secp256k1Ecdsa]] =
     for {
       tweak <- tweakOf(i.take(32))
-      sum   <- backend.tweakAdd(parent.key.bytes, tweak).leftMap(e => KeyError.InvalidDerivation(e.toString))
+      sum   <- backend.tweakAdd(parent.key.bytes, tweak).leftMap(e => KeyError.InvalidDerivation(KeyError.DerivationReason.Crypto(e)))
       key   <- keyOf(sum)
     } yield ExtendedKey(key, i.drop(32))
 
@@ -177,7 +188,7 @@ final class Bip32Secp256k1(backend: Secp256k1) {
     chainCode: ByteVector,
     index:     ChildIndex
   ): Either[KeyError, (VerifyingKey[Secp256k1Ecdsa], ByteVector)] =
-    if (index.hardened) KeyError.InvalidDerivation("hardened children need the private key").asLeft
+    if (index.hardened) KeyError.InvalidDerivation(KeyError.DerivationReason.PrivateKeyRequired).asLeft
     else ExtendedKey.chainCode(chainCode).flatMap(cc => publicChildOf(key, Hmac.sha512(cc, key.bytes ++ ChildIndex.be32(index))))
 
   /** CKDpub from `I`: `K' = K + [I_L]G`, chain code `I_R`. */
@@ -187,8 +198,8 @@ final class Bip32Secp256k1(backend: Secp256k1) {
   ): Either[KeyError, (VerifyingKey[Secp256k1Ecdsa], ByteVector)] =
     for {
       tweak <- tweakOf(i.take(32))
-      child <- backend.pubTweakAdd(key.bytes, tweak).leftMap(e => KeyError.InvalidDerivation(e.toString))
-      vk    <- backend.ecdsaCodec.verifyingKey(child).leftMap(e => KeyError.InvalidDerivation(e.toString))
+      child <- backend.pubTweakAdd(key.bytes, tweak).leftMap(e => KeyError.InvalidDerivation(KeyError.DerivationReason.Crypto(e)))
+      vk    <- backend.ecdsaCodec.verifyingKey(child).leftMap(e => KeyError.InvalidDerivation(KeyError.DerivationReason.Crypto(e)))
     } yield (vk, i.drop(32))
 
   def derive(seed: Secret, path: List[ChildIndex]): Either[KeyError, ExtendedKey[Secp256k1Ecdsa]] =

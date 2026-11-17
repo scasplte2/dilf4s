@@ -38,7 +38,13 @@ object CanonicalEmitterSuite extends FunSuite {
 
   test("native error ownership is limited to the exact registered families") {
     import CanonicalEmitter.NativeErrorFamily
-    val rules = Vector(QName("jlvm-errors", "jlvm-error"), QName("jlvm-errors", "jlvm-crypto-cause"), QName("crypto-errors", "sigma-error"))
+    val rules = Vector(
+      QName("jlvm-errors", "jlvm-error"),
+      QName("jlvm-errors", "jlvm-crypto-cause"),
+      QName("crypto-errors", "sigma-error"),
+      QName("crypto-errors", "crypto-error"),
+      QName("crypto-errors", "key-error")
+    )
     val cddl = """extra-kind = "Failed" / "Missing"
                   |extra = { "kind": "Failed" // "kind": "Missing" }
                   |""".stripMargin
@@ -47,7 +53,7 @@ object CanonicalEmitterSuite extends FunSuite {
       .same(rules, NativeErrorFamily.values.toVector.map(_.rule))
       .and(expect.same(NativeErrorFamily.values.toVector.map(Some(_)), rules.map(NativeErrorFamily.fromRule)))
       .and(expect.same(None, NativeErrorFamily.fromRule(QName("jlvm-errors", "extra"))))
-      .and(expect.same(Vector(None, None, None), rules.map(q => NativeErrorFamily.fromRule(QName("other", q.name)))))
+      .and(expect.same(Vector(None, None, None, None, None), rules.map(q => NativeErrorFamily.fromRule(QName("other", q.name)))))
       .and(expect(generated.exists(_.contains("sealed trait Extra")), "an additional error family in the same module is generated"))
   }
 

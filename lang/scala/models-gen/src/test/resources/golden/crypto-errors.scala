@@ -3,32 +3,6 @@ package xyz.kd5ujc.models.crypto_errors
 
 import xyz.kd5ujc.core.canonical.{CanonicalValue, Codec}
 
-/**
- * `crypto-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[CryptoErrorKind]]).
- *
- * A signing key, verifying key or signature that its scheme does not accept (signing.md section 4). BackendFailure is
- * a JVM provider's own failure: no SDK produces it.
- */
-sealed trait CryptoError extends Product with Serializable {
-
-  /** This error's kind. */
-  def kind: CryptoErrorKind
-}
-
-object CryptoError {
-  final case class InvalidEncoding(what: String, reason: String) extends CryptoError {
-    def kind: CryptoErrorKind = CryptoErrorKind.InvalidEncoding
-  }
-
-  final case class InvalidKey(reason: String) extends CryptoError {
-    def kind: CryptoErrorKind = CryptoErrorKind.InvalidKey
-  }
-
-  final case class BackendFailure(operation: String, reason: String) extends CryptoError {
-    def kind: CryptoErrorKind = CryptoErrorKind.BackendFailure
-  }
-}
-
 enum CryptoErrorKind(val wire: String) {
   case InvalidEncoding extends CryptoErrorKind("InvalidEncoding")
   case InvalidKey extends CryptoErrorKind("InvalidKey")
@@ -146,47 +120,6 @@ object KesErrorKind {
     m => Codec.text.encode(m.wire),
     (v: CanonicalValue) => Codec.selectAlternative[KesErrorKind](v, List(), List(("Malformed", KesErrorKind.Malformed), ("PeriodOutOfRange", KesErrorKind.PeriodOutOfRange), ("Exhausted", KesErrorKind.Exhausted), ("InconsistentKey", KesErrorKind.InconsistentKey)))
   )
-}
-
-/**
- * `key-error` (`shared/schemas/crypto-errors.cddl`): an error family, by kind ([[KeyErrorKind]]).
- *
- * A key derivation the reference refuses (signing.md sections 2 and 3). InvalidMnemonic, InvalidWordList and
- * InvalidPassphrase include a phrase, a word or a passphrase holding a code point Unicode 15.0 does not assign
- * (section 2.1). InvalidPath carries the first rule the path breaks. InvalidWordList carries a caller's phrase separator that parsing does not split on as `separator`, a preview
- * (a separator of more than one character is refused by its length, before it is read, and has none); the reference's
- * word lists are its own languages', so it never names one.
- */
-sealed trait KeyError extends Product with Serializable {
-
-  /** This error's kind. */
-  def kind: KeyErrorKind
-}
-
-object KeyError {
-  final case class InvalidEntropy(reason: String) extends KeyError {
-    def kind: KeyErrorKind = KeyErrorKind.InvalidEntropy
-  }
-
-  final case class InvalidMnemonic(reason: String) extends KeyError {
-    def kind: KeyErrorKind = KeyErrorKind.InvalidMnemonic
-  }
-
-  final case class InvalidWordList(reason: String, separator: Option[xyz.kd5ujc.core.canonical.Preview]) extends KeyError {
-    def kind: KeyErrorKind = KeyErrorKind.InvalidWordList
-  }
-
-  final case class InvalidPassphrase(reason: String) extends KeyError {
-    def kind: KeyErrorKind = KeyErrorKind.InvalidPassphrase
-  }
-
-  final case class InvalidDerivation(reason: String) extends KeyError {
-    def kind: KeyErrorKind = KeyErrorKind.InvalidDerivation
-  }
-
-  final case class InvalidPath(refusal: PathRefusal, reason: String) extends KeyError {
-    def kind: KeyErrorKind = KeyErrorKind.InvalidPath
-  }
 }
 
 enum KeyErrorKind(val wire: String) {

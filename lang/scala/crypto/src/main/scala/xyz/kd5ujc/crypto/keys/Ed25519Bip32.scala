@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 
 import cats.syntax.all._
 
+import xyz.kd5ujc.crypto.signing.CryptoError.{KeyReason, Scheme, Subject}
 import xyz.kd5ujc.crypto.signing._
 
 import cafe.cryptography.curve25519.{CompressedEdwardsY, Constants, Scalar}
@@ -32,10 +33,10 @@ object Ed25519Bip32 {
     val name: String = "Ed25519-BIP32"
     def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[Ed25519Bip32]] =
       SchemeCodec
-        .sized("Ed25519-BIP32 signing key", 64, bytes)
+        .sized(Subject.SigningKey(Scheme.Ed25519Bip32), 64, bytes)
         .flatMap(b =>
           Either
-            .cond(validKL(b.take(32)), new SigningKey[Ed25519Bip32](b), CryptoError.InvalidKey("kL must be a multiple of 8 below 2^255"))
+            .cond(validKL(b.take(32)), new SigningKey[Ed25519Bip32](b), CryptoError.InvalidKey(KeyReason.Ed25519Bip32Scalar))
         )
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[Ed25519Bip32]] =
       Ed25519.codec.verifyingKey(bytes).map(k => VerifyingKey[Ed25519Bip32](k.bytes))
@@ -65,10 +66,18 @@ object Ed25519Bip32 {
 
   /** Root key from 96 bytes (`kL || kR || chainCode`), clamped per CIP-0003. */
   def root(secret: Secret): Either[KeyError, ExtendedKey[Ed25519Bip32]] =
-    Either.cond(secret.bytes.size == 96L, secret.bytes, KeyError.InvalidDerivation("root secret must be 96 bytes")).flatMap { b =>
-      val clamped = b.update(0, (b(0) & 0xf8).toByte).update(31, ((b(31) & 0x1f) | 0x40).toByte)
-      codec.signingKey(clamped.take(64)).bimap(e => KeyError.InvalidDerivation(e.toString), ExtendedKey(_, clamped.drop(64)))
-    }
+    Either
+      .cond(
+        secret.bytes.size == 96L,
+        secret.bytes,
+        KeyError.InvalidDerivation(KeyError.DerivationReason.RootSecretLength(secret.bytes.size))
+      )
+      .flatMap { b =>
+        val clamped = b.update(0, (b(0) & 0xf8).toByte).update(31, ((b(31) & 0x1f) | 0x40).toByte)
+        codec
+          .signingKey(clamped.take(64))
+          .bimap(e => KeyError.InvalidDerivation(KeyError.DerivationReason.Crypto(e)), ExtendedKey(_, clamped.drop(64)))
+      }
 
   /** Icarus (CIP-0003) master key: PBKDF2-HMAC-SHA512(passphrase, entropy, 4096, 96), clamped. */
   def icarus(entropy: Secret, passphrase: String = ""): Either[KeyError, ExtendedKey[Ed25519Bip32]] =
@@ -108,7 +117,10 @@ object Ed25519Bip32 {
     val childKey = add256(times8(z), kL) ++ add256(z.drop(32), kR)
     codec
       .signingKey(childKey)
-      .bimap(e => KeyError.InvalidDerivation(e.toString), ExtendedKey(_, Hmac.sha512(parent.chainCode, ccData).drop(32)))
+      .bimap(
+        e => KeyError.InvalidDerivation(KeyError.DerivationReason.Crypto(e)),
+        ExtendedKey(_, Hmac.sha512(parent.chainCode, ccData).drop(32))
+      )
   }
 
   def derive(root: ExtendedKey[Ed25519Bip32], path: List[ChildIndex]): Either[KeyError, ExtendedKey[Ed25519Bip32]] = path.foldM(root)(child)
@@ -122,7 +134,7 @@ object Ed25519Bip32 {
     chainCode: ByteVector,
     index:     ChildIndex
   ): Either[KeyError, (VerifyingKey[Ed25519Bip32], ByteVector)] =
-    if (index.hardened) KeyError.InvalidDerivation("hardened children need the private key").asLeft
+    if (index.hardened) KeyError.InvalidDerivation(KeyError.DerivationReason.PrivateKeyRequired).asLeft
     else {
       val idx = ChildIndex.le32(index)
       val z = Hmac.sha512(chainCode, ByteVector(0x02) ++ key.bytes ++ idx)
@@ -131,9 +143,11 @@ object Ed25519Bip32 {
         .flatMap(_ =>
           Either
             .catchNonFatal(new CompressedEdwardsY(key.bytes.toArray).decompress())
-            .toOption
-            .filter(p => ByteVector.view(p.compress().toByteArray) == key.bytes)
-            .toRight(KeyError.InvalidDerivation("verifying key is not a canonical point encoding"))
+            .leftMap(e => KeyError.InvalidDerivation(KeyError.DerivationReason.PointDecode(e)))
+            .filterOrElse(
+              p => ByteVector.view(p.compress().toByteArray) == key.bytes,
+              KeyError.InvalidDerivation(KeyError.DerivationReason.NonCanonicalPoint)
+            )
         )
         .map { point =>
           val child = Constants.ED25519_BASEPOINT_TABLE.multiply(Scalar.fromBytesModOrder(times8(z).toArray)).add(point)

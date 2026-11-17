@@ -5,6 +5,7 @@ import java.math.BigInteger
 import cats.syntax.all._
 
 import xyz.kd5ujc.core.hash.{Hasher, Sha256}
+import xyz.kd5ujc.crypto.signing.CryptoError.{DecodeFailure, EncodingReason, KeyReason, Scheme, Subject}
 
 import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.ec.CustomNamedCurves
@@ -29,41 +30,43 @@ object P256Ecdsa {
 
   private def scalar(b:  ByteVector): BigInt = BigInt(1, b.toArray)
   private def fixed32(i: BigInt): ByteVector = ByteVector.view(i.toByteArray).takeRight(32).padLeft(32)
-  private def point(b: ByteVector): Either[Throwable, ECPoint] =
-    Either.catchNonFatal(curve.getCurve.decodePoint(b.toArray)).filterOrElse(_.isValid, new IllegalArgumentException("not a valid point"))
+  private def point(b: ByteVector): Either[CryptoError, ECPoint] =
+    Either
+      .catchNonFatal(curve.getCurve.decodePoint(b.toArray))
+      .leftMap(e => CryptoError.InvalidKey(KeyReason.Decode(Scheme.P256, DecodeFailure.Foreign(e))))
+      .filterOrElse(_.isValid, CryptoError.InvalidKey(KeyReason.InvalidPoint(Scheme.P256)))
 
   implicit val codec: SchemeCodec[P256Ecdsa] = new SchemeCodec[P256Ecdsa] {
     val name: String = "P-256-ECDSA"
     def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[P256Ecdsa]] =
       SchemeCodec
-        .sized("P-256 signing key", 32, bytes)
+        .sized(Subject.SigningKey(Scheme.P256), 32, bytes)
         .flatMap(b =>
           Either.cond(
             scalar(b) >= 1 && scalar(b) < n,
             new SigningKey[P256Ecdsa](b),
-            CryptoError.InvalidKey("P-256 secret key must be a scalar in [1, n)")
+            CryptoError.InvalidKey(KeyReason.ScalarRange(Scheme.P256))
           )
         )
 
     /** 33-byte compressed SEC1 (tag 02 or 03), on the curve: the tag is checked here, not left to the backend. */
     def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[P256Ecdsa]] =
       SchemeCodec
-        .sized("P-256 verifying key", 33, bytes)
+        .sized(Subject.VerifyingKey(Scheme.P256), 33, bytes)
         .flatMap(b =>
-          Option
-            .when(SchemeCodec.compressedTag(b))(b)
-            .flatMap(point(_).toOption)
-            .toRight(CryptoError.InvalidKey("P-256 verifying key is not a valid point"))
+          Either
+            .cond(SchemeCodec.compressedTag(b), b, CryptoError.InvalidKey(KeyReason.CompressedPoint(Scheme.P256)))
+            .flatMap(point)
             .as(VerifyingKey[P256Ecdsa](b))
         )
     def signature(bytes: ByteVector): Either[CryptoError, Signature[P256Ecdsa]] =
-      if (bytes.size != 64L) CryptoError.InvalidEncoding("P-256 signature", s"expected 64 bytes, got ${bytes.size}").asLeft
+      if (bytes.size != 64L) CryptoError.InvalidEncoding(Subject.Signature(Scheme.P256), EncodingReason.Length(64, bytes.size)).asLeft
       else {
         val (r, s) = (scalar(bytes.take(32)), scalar(bytes.drop(32)))
         Either.cond(
           r >= 1 && r < n && s >= 1 && s <= n / 2,
           Signature[P256Ecdsa](bytes),
-          CryptoError.InvalidEncoding("P-256 signature", "r and s must be in range and s must be low (canonical)")
+          CryptoError.InvalidEncoding(Subject.Signature(Scheme.P256), EncodingReason.NonCanonicalEcdsa)
         )
       }
   }

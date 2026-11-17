@@ -115,7 +115,7 @@ object Signatures {
   private def icarusKey(k: Signing.ExtendedKey): Either[KeyError, ExtendedKey[Ed25519Bip32]] =
     Ed25519Bip32.codec
       .signingKey(bv(k.key()))
-      .leftMap(e => KeyError.InvalidDerivation(e.toString))
+      .leftMap(e => KeyError.InvalidDerivation(KeyError.DerivationReason.Crypto(e)))
       .flatMap(ExtendedKey.from(_, bv(k.chainCode())))
 
   private def index(i: Signing.ChildIndex): Either[KeyError, ChildIndex] =
@@ -222,7 +222,7 @@ object Signatures {
     keys(
       b.ecdsaCodec
         .verifyingKey(bv(key))
-        .leftMap(e => KeyError.InvalidDerivation(e.toString): KeyError)
+        .leftMap(e => KeyError.InvalidDerivation(KeyError.DerivationReason.Crypto(e)): KeyError)
         .flatMap(vk => index(i).flatMap(new Bip32Secp256k1(b).publicChild(vk, bv(chainCode), _)))
         .map { case (vk, cc) => new Signing.PublicChild(vk.bytes.toArray, cc.toArray) }
     )

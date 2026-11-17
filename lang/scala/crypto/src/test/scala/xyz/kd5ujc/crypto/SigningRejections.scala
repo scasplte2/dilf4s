@@ -20,31 +20,38 @@ import scodec.bits.ByteVector
  * before the signature, so no case has both malformed.
  */
 object SigningRejections {
+  import xyz.kd5ujc.models.crypto_errors.{CryptoErrorKind, VrfErrorKind}
+  import xyz.kd5ujc.crypto.keys.KeyError
+  import VerificationVerdict.{Invalid, MalformedKey, MalformedSignature, Valid}
 
-  private def get[A](e: Either[?, A]): A = e.fold(err => sys.error(err.toString), identity)
+  private def get[A](e: Either[CryptoError | KeyError | xyz.kd5ujc.crypto.vrf.VrfError, A]): A =
+    e.leftMap(CryptoFixtureFailure(_)).toTry.get
 
   /**
    * The verdict of a scheme's decoders and verifier, in that order: `valid` or `invalid`, or the part whose decoding
    * failed (`malformedKey`, `malformedSignature`) with the [[CryptoError]] kind of the refusal.
    */
-  private def verdict[S](vk: ByteVector, m: ByteVector, sig: ByteVector)(implicit C: SchemeCodec[S], V: Verifier[S]): (String, Json) =
+  private def verdict[S](vk: ByteVector, m: ByteVector, sig: ByteVector)(
+    implicit C: SchemeCodec[S],
+    V:          Verifier[S]
+  ): (VerificationVerdict, Json) =
     C.verifyingKey(vk)
       .fold(
-        e => "malformedKey" -> Json.obj("part" -> "verifyingKey".asJson, "kind" -> e.productPrefix.asJson),
+        e => MalformedKey -> Json.obj("part" -> "verifyingKey".asJson, "kind" -> e.kind.wire.asJson),
         k =>
           C.signature(sig)
             .fold(
-              e => "malformedSignature" -> Json.obj("part" -> "signature".asJson, "kind" -> e.productPrefix.asJson),
-              s => if (V.verify(k, m, s)) "valid" -> "valid".asJson else "invalid" -> "invalid".asJson
+              e => MalformedSignature -> Json.obj("part" -> "signature".asJson, "kind" -> e.kind.wire.asJson),
+              s => if (V.verify(k, m, s)) Valid -> "valid".asJson else Invalid -> "invalid".asJson
             )
       )
 
-  private def row[S](scheme: String, name: String, vk: ByteVector, m: ByteVector, sig: ByteVector, expected: String)(
+  private def row[S](scheme: String, name: String, vk: ByteVector, m: ByteVector, sig: ByteVector, expected: VerificationVerdict)(
     implicit C: SchemeCodec[S],
     V:          Verifier[S]
   ): Json = {
     val (result, recorded) = verdict[S](vk, m, sig)
-    require(expected == result, s"$scheme $name: expected $expected, got $result")
+    FixtureViolation.ensure(expected == result, FixtureInvariant.Verification(expected, result))
     Json.obj(
       "scheme"       -> scheme.asJson,
       "name"         -> name.asJson,
@@ -91,7 +98,13 @@ object SigningRejections {
 
   /** The smallest `y` whose 32-byte encoding decodes to no point. */
   private val notAPoint: ByteVector =
-    LazyList.from(2).map(y => le32(BigInt(y))).find(edwards(_).isLeft).getOrElse(sys.error("unreachable"))
+    LazyList
+      .from(2)
+      .map(y => le32(BigInt(y)))
+      .find(edwards(_).isLeft)
+      .toRight(FixtureViolation(FixtureInvariant.MissingEdwardsPoint))
+      .toTry
+      .get
 
   /** The smallest `x >= 1` whose `size`-byte encoding `prefix || x` the scheme's codec rejects: no point has it. */
   private def offCurve(codec: ByteVector => Either[?, ?], prefix: ByteVector, size: Long): ByteVector =
@@ -99,7 +112,9 @@ object SigningRejections {
       .from(1)
       .map(x => prefix ++ ByteVector.view(BigInt(x).toByteArray).dropWhile(_ == 0).padLeft(size - prefix.size))
       .find(codec(_).isLeft)
-      .getOrElse(sys.error("unreachable"))
+      .toRight(FixtureViolation(FixtureInvariant.MissingOffCurvePoint))
+      .toTry
+      .get
 
   private val zcash: ByteVector = ByteVector("Zcash".getBytes(UTF_8))
   private val abc: ByteVector = ByteVector("abc".getBytes(UTF_8))
@@ -113,25 +128,25 @@ object SigningRejections {
     val sig = Ed25519.signer.sign(kp.signing, abc).bytes
     val highS = sig.take(32) ++ le32(leInt(sig.drop(32)) + L)
     val badR = notAPoint ++ sig.drop(32)
-    smallOrder.foreach(e => require(edwards(e).exists(_.multiplyByCofactor().isIdentity), s"${e.toHex} is not small order"))
+    smallOrder.foreach(e => FixtureViolation.ensure(edwards(e).exists(_.multiplyByCofactor().isIdentity), FixtureInvariant.NotSmallOrder))
     val zero = ByteVector.low(32)
     val zip215 = for {
       (a, i) <- smallOrder.zipWithIndex
       (r, j) <- smallOrder.zipWithIndex
     } yield (s"small-order-a$i-r$j", a, r ++ zero)
-    def both(name: String, k: ByteVector, m: ByteVector, s: ByteVector, zip: String, sodium: String): List[Json] =
+    def both(name: String, k: ByteVector, m: ByteVector, s: ByteVector, zip: VerificationVerdict, sodium: VerificationVerdict): List[Json] =
       List(
         row[Ed25519]("Ed25519", name, k, m, s, zip)(using codec, Ed25519.verifier),
         row[Ed25519]("Ed25519-libsodium", name, k, m, s, sodium)(using codec, libsodium)
       )
-    both("valid", vk, abc, sig, "valid", "valid") ++
-    both("wrong-message", vk, abd, sig, "invalid", "invalid") ++
-    both("s-plus-l", vk, abc, highS, "invalid", "invalid") ++
-    both("r-not-a-point", vk, abc, badR, "invalid", "invalid") ++
-    both("key-not-a-point", notAPoint, abc, sig, "malformedKey", "malformedKey") ++
-    both("short-key", vk.take(31), abc, sig, "malformedKey", "malformedKey") ++
-    both("short-signature", vk, abc, sig.take(63), "malformedSignature", "malformedSignature") ++
-    zip215.flatMap { case (name, a, s) => both(name, a, zcash, s, "valid", "invalid") }
+    both("valid", vk, abc, sig, Valid, Valid) ++
+    both("wrong-message", vk, abd, sig, Invalid, Invalid) ++
+    both("s-plus-l", vk, abc, highS, Invalid, Invalid) ++
+    both("r-not-a-point", vk, abc, badR, Invalid, Invalid) ++
+    both("key-not-a-point", notAPoint, abc, sig, MalformedKey, MalformedKey) ++
+    both("short-key", vk.take(31), abc, sig, MalformedKey, MalformedKey) ++
+    both("short-signature", vk, abc, sig.take(63), MalformedSignature, MalformedSignature) ++
+    zip215.flatMap { case (name, a, s) => both(name, a, zcash, s, Valid, Invalid) }
   }
 
   private def ecdsa[S](scheme: String, n: BigInt, kp: KeyPair[S], sig: ByteVector)(
@@ -141,16 +156,16 @@ object SigningRejections {
     val (r, s) = (beInt(sig.take(32)), beInt(sig.drop(32)))
     val vk = kp.verifying.bytes
     List(
-      row[S](scheme, "valid", vk, abc, sig, "valid"),
-      row[S](scheme, "wrong-message", vk, abd, sig, "invalid"),
-      row[S](scheme, "high-s", vk, abc, be32(r) ++ be32(n - s), "malformedSignature"),
-      row[S](scheme, "r-zero", vk, abc, be32(0) ++ be32(s), "malformedSignature"),
-      row[S](scheme, "s-zero", vk, abc, be32(r) ++ be32(0), "malformedSignature"),
-      row[S](scheme, "r-is-n", vk, abc, be32(n) ++ be32(s), "malformedSignature"),
-      row[S](scheme, "key-off-curve", offCurve(C.verifyingKey, ByteVector(0x02), 33), abc, sig, "malformedKey"),
-      row[S](scheme, "key-bad-prefix", ByteVector(0x05) ++ vk.drop(1), abc, sig, "malformedKey"),
-      row[S](scheme, "uncompressed-length-key", vk ++ vk.drop(1), abc, sig, "malformedKey"),
-      row[S](scheme, "short-signature", vk, abc, sig.take(63), "malformedSignature")
+      row[S](scheme, "valid", vk, abc, sig, Valid),
+      row[S](scheme, "wrong-message", vk, abd, sig, Invalid),
+      row[S](scheme, "high-s", vk, abc, be32(r) ++ be32(n - s), MalformedSignature),
+      row[S](scheme, "r-zero", vk, abc, be32(0) ++ be32(s), MalformedSignature),
+      row[S](scheme, "s-zero", vk, abc, be32(r) ++ be32(0), MalformedSignature),
+      row[S](scheme, "r-is-n", vk, abc, be32(n) ++ be32(s), MalformedSignature),
+      row[S](scheme, "key-off-curve", offCurve(C.verifyingKey, ByteVector(0x02), 33), abc, sig, MalformedKey),
+      row[S](scheme, "key-bad-prefix", ByteVector(0x05) ++ vk.drop(1), abc, sig, MalformedKey),
+      row[S](scheme, "uncompressed-length-key", vk ++ vk.drop(1), abc, sig, MalformedKey),
+      row[S](scheme, "short-signature", vk, abc, sig.take(63), MalformedSignature)
     )
   }
 
@@ -173,22 +188,22 @@ object SigningRejections {
       implicit val v: Verifier[Bip340] = bip340Verifier
       val vk = bip.verifying.bytes
       List(
-        row[Bip340]("BIP-340", "valid", vk, m32, bipSig, "valid"),
-        row[Bip340]("BIP-340", "wrong-message", vk, m32.update(0, (m32(0) ^ 1).toByte), bipSig, "invalid"),
-        row[Bip340]("BIP-340", "tagged-signature", vk, m32, taggedSig, "invalid"),
-        row[Bip340]("BIP-340", "s-not-below-n", vk, m32, bipSig.take(32) ++ be32(beInt(bipSig.drop(32)) + nSecp256k1), "invalid"),
-        row[Bip340]("BIP-340", "key-off-curve", offCurve(bip340Codec.verifyingKey, ByteVector.empty, 32), m32, bipSig, "malformedKey"),
-        row[Bip340]("BIP-340", "short-signature", vk, m32, bipSig.take(63), "malformedSignature")
+        row[Bip340]("BIP-340", "valid", vk, m32, bipSig, Valid),
+        row[Bip340]("BIP-340", "wrong-message", vk, m32.update(0, (m32(0) ^ 1).toByte), bipSig, Invalid),
+        row[Bip340]("BIP-340", "tagged-signature", vk, m32, taggedSig, Invalid),
+        row[Bip340]("BIP-340", "s-not-below-n", vk, m32, bipSig.take(32) ++ be32(beInt(bipSig.drop(32)) + nSecp256k1), Invalid),
+        row[Bip340]("BIP-340", "key-off-curve", offCurve(bip340Codec.verifyingKey, ByteVector.empty, 32), m32, bipSig, MalformedKey),
+        row[Bip340]("BIP-340", "short-signature", vk, m32, bipSig.take(63), MalformedSignature)
       )
     }
     val taggedCases = {
       val vk = tagged.verifying.bytes
       List(
-        row[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr", "valid", vk, abc, taggedSig, "valid"),
-        row[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr", "wrong-message", vk, abd, taggedSig, "invalid"),
+        row[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr", "valid", vk, abc, taggedSig, Valid),
+        row[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr", "wrong-message", vk, abd, taggedSig, Invalid),
         // the BIP-340 signature of SHA-256("abc"): the same key, but neither scheme accepts the other's signatures
-        row[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr", "bip340-signature", vk, abc, bipSig, "invalid"),
-        row[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr", "bip340-signature-of-digest", vk, m32, bipSig, "invalid")
+        row[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr", "bip340-signature", vk, abc, bipSig, Invalid),
+        row[Secp256k1TaggedSchnorr]("secp256k1-tagged-Schnorr", "bip340-signature-of-digest", vk, m32, bipSig, Invalid)
       )
     }
 
@@ -198,13 +213,13 @@ object SigningRejections {
       val sig = get(Ristretto255Schnorr.signWithRandomness(kp.signing, abc, CryptoVectors.randomness)).bytes
       val scheme = "ristretto255-Schnorr"
       List(
-        row[Ristretto255Schnorr](scheme, "valid", vk, abc, sig, "valid"),
-        row[Ristretto255Schnorr](scheme, "wrong-message", vk, abd, sig, "invalid"),
-        row[Ristretto255Schnorr](scheme, "identity-key", ByteVector.low(32), abc, sig, "malformedKey"),
-        row[Ristretto255Schnorr](scheme, "non-canonical-key", ByteVector(1) ++ ByteVector.low(31), abc, sig, "malformedKey"),
-        row[Ristretto255Schnorr](scheme, "identity-r", vk, abc, ByteVector.low(32) ++ sig.drop(32), "malformedSignature"),
-        row[Ristretto255Schnorr](scheme, "z-plus-l", vk, abc, sig.take(32) ++ le32(leInt(sig.drop(32)) + L), "malformedSignature"),
-        row[Ristretto255Schnorr](scheme, "short-signature", vk, abc, sig.take(63), "malformedSignature")
+        row[Ristretto255Schnorr](scheme, "valid", vk, abc, sig, Valid),
+        row[Ristretto255Schnorr](scheme, "wrong-message", vk, abd, sig, Invalid),
+        row[Ristretto255Schnorr](scheme, "identity-key", ByteVector.low(32), abc, sig, MalformedKey),
+        row[Ristretto255Schnorr](scheme, "non-canonical-key", ByteVector(1) ++ ByteVector.low(31), abc, sig, MalformedKey),
+        row[Ristretto255Schnorr](scheme, "identity-r", vk, abc, ByteVector.low(32) ++ sig.drop(32), MalformedSignature),
+        row[Ristretto255Schnorr](scheme, "z-plus-l", vk, abc, sig.take(32) ++ le32(leInt(sig.drop(32)) + L), MalformedSignature),
+        row[Ristretto255Schnorr](scheme, "short-signature", vk, abc, sig.take(63), MalformedSignature)
       )
     }
 
@@ -218,16 +233,16 @@ object SigningRejections {
       val identityKey = ByteVector(0xc0) ++ ByteVector.low(47)
       val identitySig = ByteVector(0xc0) ++ ByteVector.low(95)
       List(
-        row[BlsPop](scheme, "valid", vk, abc, sig, "valid"),
-        row[BlsPop](scheme, "wrong-message", vk, abd, sig, "invalid"),
-        row[BlsPop](scheme, "other-key", other.verifying.bytes, abc, sig, "invalid"),
-        row[BlsPop](scheme, "pop-as-signature", vk, vk, get(bls.popProve(kp.signing)).bytes, "invalid"),
-        row[BlsPop](scheme, "identity-signature", vk, abc, identitySig, "invalid"),
-        row[BlsPop](scheme, "identity-key", identityKey, abc, sig, "malformedKey"),
-        row[BlsPop](scheme, "uncompressed-flag-key", vk.update(0, (vk(0) & 0x7f).toByte), abc, sig, "malformedKey"),
-        row[BlsPop](scheme, "uncompressed-flag-signature", vk, abc, sig.update(0, (sig(0) & 0x7f).toByte), "malformedSignature"),
-        row[BlsPop](scheme, "key-off-curve", offCurve(bls.codec.verifyingKey, ByteVector(0x80), 48), abc, sig, "malformedKey"),
-        row[BlsPop](scheme, "short-signature", vk, abc, sig.take(95), "malformedSignature")
+        row[BlsPop](scheme, "valid", vk, abc, sig, Valid),
+        row[BlsPop](scheme, "wrong-message", vk, abd, sig, Invalid),
+        row[BlsPop](scheme, "other-key", other.verifying.bytes, abc, sig, Invalid),
+        row[BlsPop](scheme, "pop-as-signature", vk, vk, get(bls.popProve(kp.signing)).bytes, Invalid),
+        row[BlsPop](scheme, "identity-signature", vk, abc, identitySig, Invalid),
+        row[BlsPop](scheme, "identity-key", identityKey, abc, sig, MalformedKey),
+        row[BlsPop](scheme, "uncompressed-flag-key", vk.update(0, (vk(0) & 0x7f).toByte), abc, sig, MalformedKey),
+        row[BlsPop](scheme, "uncompressed-flag-signature", vk, abc, sig.update(0, (sig(0) & 0x7f).toByte), MalformedSignature),
+        row[BlsPop](scheme, "key-off-curve", offCurve(bls.codec.verifyingKey, ByteVector(0x80), 48), abc, sig, MalformedKey),
+        row[BlsPop](scheme, "short-signature", vk, abc, sig.take(95), MalformedSignature)
       )
     }
 
@@ -240,19 +255,19 @@ object SigningRejections {
   // ---- key decoding: which typed error each decoder gives
 
   /** The decoder's verdict: `"accepted"`, or the [[CryptoError]] kind. */
-  private def decoded(r: Either[CryptoError, ?]): String = r.fold(_.productPrefix, _ => "accepted")
+  private def decoded(r: Either[CryptoError, ?]): Option[CryptoErrorKind] = r.left.toOption.map(_.kind)
 
-  private def keyRow(scheme: String, name: String, part: String, bytes: ByteVector, expected: String)(
+  private def keyRow(scheme: String, name: String, part: String, bytes: ByteVector, expected: Option[CryptoErrorKind])(
     decode: ByteVector => Either[CryptoError, ?]
   ): Json = {
     val result = decoded(decode(bytes))
-    require(expected == result, s"$scheme $part $name: expected $expected, got $result")
+    FixtureViolation.ensure(expected == result, FixtureInvariant.KeyDecode(expected, result))
     Json.obj(
       "scheme" -> scheme.asJson,
       "name"   -> name.asJson,
       "part"   -> part.asJson,
       "bytes"  -> bytes.toHex.asJson,
-      "result" -> result.asJson
+      "result" -> result.fold("accepted")(_.wire).asJson
     )
   }
 
@@ -260,25 +275,27 @@ object SigningRejections {
   private def signingKeys[S](scheme: String, valid: ByteVector, invalid: List[(String, ByteVector)])(
     implicit C: SchemeCodec[S]
   ): List[Json] = {
-    val row = (name: String, b: ByteVector, expected: String) => keyRow(scheme, name, "signingKey", b, expected)(C.signingKey)
+    val row = (name: String, b: ByteVector, expected: Option[CryptoErrorKind]) =>
+      keyRow(scheme, name, "signingKey", b, expected)(C.signingKey)
     List(
-      row("valid", valid, "accepted"),
-      row("short", valid.dropRight(1), "InvalidEncoding"),
-      row("long", valid :+ 0.toByte, "InvalidEncoding"),
-      row("empty", ByteVector.empty, "InvalidEncoding")
-    ) ++ invalid.map { case (name, b) => row(name, b, "InvalidKey") }
+      row("valid", valid, None),
+      row("short", valid.dropRight(1), Some(CryptoErrorKind.InvalidEncoding)),
+      row("long", valid :+ 0.toByte, Some(CryptoErrorKind.InvalidEncoding)),
+      row("empty", ByteVector.empty, Some(CryptoErrorKind.InvalidEncoding))
+    ) ++ invalid.map { case (name, b) => row(name, b, Some(CryptoErrorKind.InvalidKey)) }
   }
 
   /** Verifying-key rows, as [[signingKeys]]. */
   private def verifyingKeys[S](scheme: String, valid: ByteVector, invalid: List[(String, ByteVector)])(
     implicit C: SchemeCodec[S]
   ): List[Json] = {
-    val row = (name: String, b: ByteVector, expected: String) => keyRow(scheme, name, "verifyingKey", b, expected)(C.verifyingKey)
+    val row = (name: String, b: ByteVector, expected: Option[CryptoErrorKind]) =>
+      keyRow(scheme, name, "verifyingKey", b, expected)(C.verifyingKey)
     List(
-      row("valid", valid, "accepted"),
-      row("short", valid.dropRight(1), "InvalidEncoding"),
-      row("long", valid :+ 0.toByte, "InvalidEncoding")
-    ) ++ invalid.map { case (name, b) => row(name, b, "InvalidKey") }
+      row("valid", valid, None),
+      row("short", valid.dropRight(1), Some(CryptoErrorKind.InvalidEncoding)),
+      row("long", valid :+ 0.toByte, Some(CryptoErrorKind.InvalidEncoding))
+    ) ++ invalid.map { case (name, b) => row(name, b, Some(CryptoErrorKind.InvalidKey)) }
   }
 
   /** 33-byte keys over a valid key's x with a tag other than 02 or 03: SEC1 parsers take some of these tags. */
@@ -305,7 +322,9 @@ object SigningRejections {
       List("off-curve" -> offCurve(C.verifyingKey, ByteVector(0x02), 33), "x-is-p" -> (ByteVector(0x02) ++ be32(p))) ++
       badTags(kp.verifying.bytes)
     ) :+
-    keyRow(scheme, "uncompressed", "verifyingKey", uncompressed(curveName, kp.verifying.bytes), "InvalidEncoding")(C.verifyingKey)
+    keyRow(scheme, "uncompressed", "verifyingKey", uncompressed(curveName, kp.verifying.bytes), Some(CryptoErrorKind.InvalidEncoding))(
+      C.verifyingKey
+    )
 
   private def schnorrKeys[S](scheme: String, kp: KeyPair[?])(implicit C: SchemeCodec[S]): List[Json] =
     signingKeys[S](scheme, kp.signing.bytes, List("zero" -> ByteVector.low(32), "n" -> be32(nSecp256k1))) ++
@@ -364,7 +383,7 @@ object SigningRejections {
     CryptoVectors.seeds.map { seed =>
       val kp = get(bls.seedDerivation.fromSeed(seed))
       val proof = get(bls.popProve(kp.signing))
-      require(bls.popVerify(kp.verifying, proof), "PopVerify accepts PopProve")
+      FixtureViolation.ensure(bls.popVerify(kp.verifying, proof), FixtureInvariant.PopRejected)
       Json.obj(
         "signingKey"   -> kp.signing.bytes.toHex.asJson,
         "verifyingKey" -> kp.verifying.bytes.toHex.asJson,
@@ -374,16 +393,18 @@ object SigningRejections {
 
   // ---- VRF
 
-  private def vrfRow[S](name: String, vk: ByteVector, alpha: ByteVector, pi: ByteVector, expected: String)(implicit V: Vrf[S]): Json = {
-    val result = V.verifyBytes(vk, alpha, pi).fold(_.productPrefix, _ => "valid")
-    require(result == expected, s"${V.name} $name: expected $expected, got $result")
+  private def vrfRow[S](name: String, vk: ByteVector, alpha: ByteVector, pi: ByteVector, expected: Option[VrfErrorKind])(
+    implicit V: Vrf[S]
+  ): Json = {
+    val result = V.verifyBytes(vk, alpha, pi).left.toOption.map(_.kind)
+    FixtureViolation.ensure(result == expected, FixtureInvariant.Vrf(expected, result))
     Json.obj(
       "suite"        -> V.name.asJson,
       "name"         -> name.asJson,
       "verifyingKey" -> vk.toHex.asJson,
       "alpha"        -> alpha.toHex.asJson,
       "pi"           -> pi.toHex.asJson,
-      "result"       -> result.asJson
+      "result"       -> result.fold("valid")(_.wire).asJson
     )
   }
 
@@ -393,7 +414,9 @@ object SigningRejections {
       .map(y => (le32(BigInt(y)), le32(BigInt(y) + p25519)))
       .find { case (canonical, _) => edwards(canonical).exists(pt => !pt.multiplyByCofactor().isIdentity) }
       .map(_._2)
-      .getOrElse(sys.error("unreachable"))
+      .toRight(FixtureViolation(FixtureInvariant.MissingNonCanonicalPoint))
+      .toTry
+      .get
 
   private def vrfSuite[S](implicit V: Vrf[S]): List[Json] = {
     val kp = get(Vrf.fromSeed[S](CryptoVectors.seeds.head))
@@ -401,35 +424,40 @@ object SigningRejections {
     val pi = get(V.prove(kp.signing, abc))._1.bytes
     val (gamma, c, s) = (pi.take(32), pi.slice(32, 48), pi.drop(48))
     List(
-      vrfRow[S]("valid", vk, abc, pi, "valid"),
-      vrfRow[S]("wrong-alpha", vk, abd, pi, "ChallengeMismatch"),
-      vrfRow[S]("flipped-challenge", vk, abc, gamma ++ c.update(0, (c(0) ^ 1).toByte) ++ s, "ChallengeMismatch"),
-      vrfRow[S]("s-plus-l", vk, abc, gamma ++ c ++ le32(leInt(s) + L), "NonCanonicalScalar"),
-      vrfRow[S]("gamma-not-a-point", vk, abc, notAPoint ++ c ++ s, "InvalidGamma"),
-      vrfRow[S]("key-not-a-point", notAPoint, abc, pi, "InvalidPublicKey"),
-      vrfRow[S]("key-non-canonical", nonCanonicalPoint, abc, pi, "InvalidPublicKey"),
-      vrfRow[S]("key-identity", smallOrder.head, abc, pi, "SmallOrderPublicKey"),
-      vrfRow[S]("key-order-8", smallOrder(4), abc, pi, "SmallOrderPublicKey"),
-      vrfRow[S]("short-key", vk.take(31), abc, pi, "Malformed"),
-      vrfRow[S]("short-proof", vk, abc, pi.take(79), "Malformed")
+      vrfRow[S]("valid", vk, abc, pi, None),
+      vrfRow[S]("wrong-alpha", vk, abd, pi, Some(VrfErrorKind.ChallengeMismatch)),
+      vrfRow[S]("flipped-challenge", vk, abc, gamma ++ c.update(0, (c(0) ^ 1).toByte) ++ s, Some(VrfErrorKind.ChallengeMismatch)),
+      vrfRow[S]("s-plus-l", vk, abc, gamma ++ c ++ le32(leInt(s) + L), Some(VrfErrorKind.NonCanonicalScalar)),
+      vrfRow[S]("gamma-not-a-point", vk, abc, notAPoint ++ c ++ s, Some(VrfErrorKind.InvalidGamma)),
+      vrfRow[S]("key-not-a-point", notAPoint, abc, pi, Some(VrfErrorKind.InvalidPublicKey)),
+      vrfRow[S]("key-non-canonical", nonCanonicalPoint, abc, pi, Some(VrfErrorKind.InvalidPublicKey)),
+      vrfRow[S]("key-identity", smallOrder.head, abc, pi, Some(VrfErrorKind.SmallOrderPublicKey)),
+      vrfRow[S]("key-order-8", smallOrder(4), abc, pi, Some(VrfErrorKind.SmallOrderPublicKey)),
+      vrfRow[S]("short-key", vk.take(31), abc, pi, Some(VrfErrorKind.Malformed)),
+      vrfRow[S]("short-proof", vk, abc, pi.take(79), Some(VrfErrorKind.Malformed))
     )
   }
 
   def vrf: List[Json] = vrfSuite[EcVrfTai] ++ vrfSuite[EcVrfEll2] ++ vrfSuite[EcVrfDraft03]
 
-  private def vrfKeyRow[S](name: String, bytes: ByteVector, expected: String)(implicit V: Vrf[S]): Json = {
-    val result = V.signingKey(bytes).fold(_.productPrefix, _ => "accepted")
-    require(result == expected, s"${V.name} signing key $name: expected $expected, got $result")
-    Json.obj("suite" -> V.name.asJson, "name" -> name.asJson, "bytes" -> bytes.toHex.asJson, "result" -> result.asJson)
+  private def vrfKeyRow[S](name: String, bytes: ByteVector, expected: Option[VrfErrorKind])(implicit V: Vrf[S]): Json = {
+    val result = V.signingKey(bytes).left.toOption.map(_.kind)
+    FixtureViolation.ensure(result == expected, FixtureInvariant.Vrf(expected, result))
+    Json.obj(
+      "suite"  -> V.name.asJson,
+      "name"   -> name.asJson,
+      "bytes"  -> bytes.toHex.asJson,
+      "result" -> result.fold("accepted")(_.wire).asJson
+    )
   }
 
   private def vrfKeys[S](implicit V: Vrf[S]): List[Json] = {
     val sk = get(Vrf.fromSeed[S](CryptoVectors.seeds.head)).signing.bytes
     List(
-      vrfKeyRow[S]("valid", sk, "accepted"),
-      vrfKeyRow[S]("short", sk.dropRight(1), "Malformed"),
-      vrfKeyRow[S]("long", sk :+ 0.toByte, "Malformed"),
-      vrfKeyRow[S]("empty", ByteVector.empty, "Malformed")
+      vrfKeyRow[S]("valid", sk, None),
+      vrfKeyRow[S]("short", sk.dropRight(1), Some(VrfErrorKind.Malformed)),
+      vrfKeyRow[S]("long", sk :+ 0.toByte, Some(VrfErrorKind.Malformed)),
+      vrfKeyRow[S]("empty", ByteVector.empty, Some(VrfErrorKind.Malformed))
     )
   }
 
@@ -438,6 +466,6 @@ object SigningRejections {
     val other = get(Vrf.fromSeed[EcVrfDraft03](CryptoVectors.seeds(1))).signing.bytes
     val sk = get(Vrf.fromSeed[EcVrfDraft03](CryptoVectors.seeds.head)).signing.bytes
     vrfKeys[EcVrfTai] ++ vrfKeys[EcVrfEll2] ++ vrfKeys[EcVrfDraft03] :+
-    vrfKeyRow[EcVrfDraft03]("other-public-key", sk.take(32) ++ other.drop(32), "KeyMismatch")
+    vrfKeyRow[EcVrfDraft03]("other-public-key", sk.take(32) ++ other.drop(32), Some(VrfErrorKind.KeyMismatch))
   }
 }

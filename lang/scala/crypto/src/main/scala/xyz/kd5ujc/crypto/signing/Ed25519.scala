@@ -3,6 +3,7 @@ package xyz.kd5ujc.crypto.signing
 import cats.syntax.all._
 
 import xyz.kd5ujc.crypto.curve25519.Point
+import xyz.kd5ujc.crypto.signing.CryptoError.Scheme
 
 import cafe.cryptography.curve25519.Scalar
 import org.bouncycastle.crypto.digests.SHA512Digest
@@ -29,7 +30,7 @@ object Ed25519 {
 
   /** Verifying keys must decode to a curve point under ZIP-215 rules (non-canonical encodings allowed). */
   implicit val codec: SchemeCodec[Ed25519] =
-    SchemeCodec.fixed[Ed25519]("Ed25519", KeyLength, KeyLength, SignatureLength, vk => Zip215.decode(vk).isDefined)
+    SchemeCodec.fixed[Ed25519](Scheme.Ed25519, KeyLength, KeyLength, SignatureLength, vk => Zip215.decode(vk).isDefined)
 
   implicit val publicKeyOf: PublicKeyOf[Ed25519] = (key: SigningKey[Ed25519]) => {
     val pk = new Array[Byte](Rfc8032.PUBLIC_KEY_SIZE)

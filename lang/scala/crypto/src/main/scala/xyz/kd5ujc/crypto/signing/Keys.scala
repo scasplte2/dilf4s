@@ -4,10 +4,9 @@ import java.security.MessageDigest
 
 import cats.{Eq, Show}
 
-import scodec.bits.ByteVector
+import xyz.kd5ujc.crypto.signing.CryptoError.{EncodingReason, KeyReason, Scheme, Subject}
 
-/** A key or signature its scheme does not accept, by kind: generated from `shared/schemas/crypto-errors.cddl`. */
-export xyz.kd5ujc.models.crypto_errors.CryptoError
+import scodec.bits.ByteVector
 
 /**
  * A secret signing key for scheme `S`. Its bytes never appear in `toString`, and equality is constant-time. Built only
@@ -49,29 +48,30 @@ object SchemeCodec {
   def apply[S](implicit C: SchemeCodec[S]): SchemeCodec[S] = C
 
   /** Exactly `expected` bytes, or `InvalidEncoding`: a wrong length is malformed, never an invalid key. */
-  def sized(what: String, expected: Long, bytes: ByteVector): Either[CryptoError, ByteVector] =
-    Either.cond(bytes.size == expected, bytes, CryptoError.InvalidEncoding(what, s"expected $expected bytes, got ${bytes.size}"))
+  def sized(what: Subject, expected: Long, bytes: ByteVector): Either[CryptoError, ByteVector] =
+    Either.cond(bytes.size == expected, bytes, CryptoError.InvalidEncoding(what, EncodingReason.Length(expected, bytes.size)))
 
   /** A SEC1 compressed tag (02 or 03) leads `b`; SEC1 parsers also take other tags (00, 04, 06, 07) at other lengths. */
   def compressedTag(b: ByteVector): Boolean = b.headOption.exists(t => t == 0x02 || t == 0x03)
 
   /** Fixed-length codec with optional extra validation of verifying keys. */
   def fixed[S](
-    scheme:    String,
+    scheme:    Scheme,
     skLength:  Long,
     vkLength:  Long,
     sigLength: Long,
     validVk:   ByteVector => Boolean = _ => true
   ): SchemeCodec[S] =
     new SchemeCodec[S] {
-      val name: String = scheme
-      private def length(what: String, expected: Long, b: ByteVector): Either[CryptoError, ByteVector] =
-        sized(s"$scheme $what", expected, b)
+      val name: String = scheme.label
+      private def length(what: Subject, expected: Long, b: ByteVector): Either[CryptoError, ByteVector] =
+        sized(what, expected, b)
       def signingKey(bytes: ByteVector): Either[CryptoError, SigningKey[S]] =
-        length("signing key", skLength, bytes).map(new SigningKey[S](_))
+        length(Subject.SigningKey(scheme), skLength, bytes).map(new SigningKey[S](_))
       def verifyingKey(bytes: ByteVector): Either[CryptoError, VerifyingKey[S]] =
-        length("verifying key", vkLength, bytes)
-          .flatMap(b => Either.cond(validVk(b), VerifyingKey[S](b), CryptoError.InvalidKey(s"$scheme verifying key is not a valid point")))
-      def signature(bytes: ByteVector): Either[CryptoError, Signature[S]] = length("signature", sigLength, bytes).map(Signature[S](_))
+        length(Subject.VerifyingKey(scheme), vkLength, bytes)
+          .flatMap(b => Either.cond(validVk(b), VerifyingKey[S](b), CryptoError.InvalidKey(KeyReason.InvalidPoint(scheme))))
+      def signature(bytes: ByteVector): Either[CryptoError, Signature[S]] =
+        length(Subject.Signature(scheme), sigLength, bytes).map(Signature[S](_))
     }
 }

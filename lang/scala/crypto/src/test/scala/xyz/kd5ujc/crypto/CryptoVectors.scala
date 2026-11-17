@@ -30,7 +30,8 @@ object CryptoVectors {
   /** Fixed nonce / auxiliary randomness for the randomised schemes. */
   val randomness: ByteVector = ByteVector.fill(32)(0x42)
 
-  private def get[A](e: Either[?, A]): A = e.fold(err => sys.error(err.toString), identity)
+  private def get[A](e: Either[CryptoError | KeyError | xyz.kd5ujc.crypto.vrf.VrfError, A]): A =
+    e.leftMap(CryptoFixtureFailure(_)).toTry.get
 
   /** Standard BIP-340 signs exact 32-byte messages: the SHA-256 digests of [[messages]]. */
   val messages32: List[ByteVector] = messages.map(m => xyz.kd5ujc.core.hash.Hasher[xyz.kd5ujc.core.hash.Sha256].digest(m).bytes)
@@ -132,21 +133,37 @@ object CryptoVectors {
    * each row's kind is the reference's, and `expected` checks it is the kind the case is for.
    */
   def keyRefusals(english: WordList, bip32: Bip32Secp256k1, secp: Secp256k1, hdSeed: Secret): List[Json] = {
-    def row(name: String, check: String, fields: List[(String, Json)], expected: String)(r: Either[KeyError, ?]): Json = {
-      val kind = r.fold(_.productPrefix, _ => "accepted")
-      require(kind == expected, s"$check $name: expected $expected, got $kind")
-      Json.obj((List("name" -> name.asJson, "check" -> check.asJson) ++ fields :+ ("kind" -> kind.asJson))*)
+    def row(name: String, check: String, fields: List[(String, Json)], expected: xyz.kd5ujc.models.crypto_errors.KeyErrorKind)(
+      r: Either[KeyError, ?]
+    ): Json = {
+      val kind = r.left.toOption.map(_.kind)
+      FixtureViolation.ensure(kind.contains(expected), FixtureInvariant.Derivation(expected, kind))
+      Json.obj((List("name" -> name.asJson, "check" -> check.asJson) ++ fields :+ ("kind" -> expected.wire.asJson))*)
     }
     def entropy(name: String, e: ByteVector) =
-      row(name, "bip39-entropy", List("entropy" -> e.toHex.asJson), "InvalidEntropy")(Bip39.toMnemonic(Secret(e), english))
+      row(name, "bip39-entropy", List("entropy" -> e.toHex.asJson), xyz.kd5ujc.models.crypto_errors.KeyErrorKind.InvalidEntropy)(
+        Bip39.toMnemonic(Secret(e), english)
+      )
     def phrase(name: String, p: String) =
-      row(name, "bip39-phrase", List("phrase" -> p.asJson), "InvalidMnemonic")(Bip39.toEntropy(p, english))
+      row(name, "bip39-phrase", List("phrase" -> p.asJson), xyz.kd5ujc.models.crypto_errors.KeyErrorKind.InvalidMnemonic)(
+        Bip39.toEntropy(p, english)
+      )
     def derived(name: String, check: String, seed: ByteVector, p: String)(derive: (Secret, List[ChildIndex]) => Either[KeyError, ?]) =
-      row(name, check, List("seed" -> seed.toHex.asJson, "path" -> p.asJson), "InvalidDerivation")(
+      row(
+        name,
+        check,
+        List("seed" -> seed.toHex.asJson, "path" -> p.asJson),
+        xyz.kd5ujc.models.crypto_errors.KeyErrorKind.InvalidDerivation
+      )(
         ChildIndex.path(p).flatMap(derive(Secret(seed), _))
       )
     def public(name: String, check: String, vk: ByteVector, cc: ByteVector, p: String)(child: ChildIndex => Either[KeyError, ?]) =
-      row(name, check, List("verifyingKey" -> vk.toHex.asJson, "chainCode" -> cc.toHex.asJson, "path" -> p.asJson), "InvalidDerivation")(
+      row(
+        name,
+        check,
+        List("verifyingKey" -> vk.toHex.asJson, "chainCode" -> cc.toHex.asJson, "path" -> p.asJson),
+        xyz.kd5ujc.models.crypto_errors.KeyErrorKind.InvalidDerivation
+      )(
         ChildIndex.path(p).flatMap(_.traverse(child))
       )
     val abandon = List.fill(11)("abandon")
@@ -156,7 +173,12 @@ object CryptoVectors {
     val noncharacter = "\ufdd0"
     val valid = (abandon :+ "about").mkString(" ")
     def seeded(name: String, passphrase: String) =
-      row(name, "bip39-seed", List("phrase" -> valid.asJson, "passphrase" -> passphrase.asJson), "InvalidPassphrase")(
+      row(
+        name,
+        "bip39-seed",
+        List("phrase" -> valid.asJson, "passphrase" -> passphrase.asJson),
+        xyz.kd5ujc.models.crypto_errors.KeyErrorKind.InvalidPassphrase
+      )(
         Bip39.toEntropy(valid, english).flatMap { case (m, _) => Bip39.seed(m, passphrase) }
       )
     val account = get(ChildIndex.path("m/44'/0'/0'").flatMap(bip32.derive(hdSeed, _)))
@@ -180,11 +202,21 @@ object CryptoVectors {
       phrase("trailing-nul", valid + "\u0000"),
       seeded("unassigned-code-point", s"dilf4s$unicode16"),
       seeded("noncharacter", s"dilf4s$noncharacter"),
-      row("two-words", "word-list", List("words" -> List("abandon", "ability").asJson), "InvalidWordList")(
+      row(
+        "two-words",
+        "word-list",
+        List("words" -> List("abandon", "ability").asJson),
+        xyz.kd5ujc.models.crypto_errors.KeyErrorKind.InvalidWordList
+      )(
         WordList(Bip39.Language.English, Vector("abandon", "ability"))
       ), {
         val words = english.words.updated(0, s"abandon$unicode16")
-        row("unassigned-code-point", "word-list", List("words" -> words.asJson), "InvalidWordList")(WordList(Bip39.Language.English, words))
+        row(
+          "unassigned-code-point",
+          "word-list",
+          List("words" -> words.asJson),
+          xyz.kd5ujc.models.crypto_errors.KeyErrorKind.InvalidWordList
+        )(WordList(Bip39.Language.English, words))
       },
       derived("soft-index", "slip10", hdSeed.bytes, "m/0")(Slip10Ed25519.derive),
       derived("15-byte-seed", "slip10", seeds.head.take(15), "m")(Slip10Ed25519.derive),
@@ -233,9 +265,9 @@ object CryptoVectors {
           case ((vk, cc), i) => bip32.publicChild(vk, cc, i)
         })
     )
-    require(
+    FixtureViolation.ensure(
       bip32PublicVk == secp.ecdsaPublicKeyOf.verifyingKey(bip32Key.key) && bip32PublicCc == bip32Key.chainCode,
-      "CKDpub matches CKDpriv"
+      FixtureInvariant.DerivationMismatch
     )
 
     val icarusRoot = get(Ed25519Bip32.icarus(Secret(seeds.head.take(16))))
@@ -304,7 +336,7 @@ object CryptoVectors {
   val render: IO[String] =
     (
       Secp256k1.load[IO],
-      WordList.load[IO](Bip39.Language.English).flatMap(_.leftMap(e => new IllegalStateException(e.toString)).liftTo[IO]),
+      WordList.load[IO](Bip39.Language.English).flatMap(_.leftMap(CryptoFixtureFailure(_)).liftTo[IO]),
       xyz.kd5ujc.crypto.bls.Bls12381.load[IO]
     )
       .mapN(build)
